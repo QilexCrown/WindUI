@@ -24738,6 +24738,64 @@ function WindUI:Loading(Config)
 	return WindUI.LoadingModule.New(Config)
 end
 
+-- The boot card arms itself on mount.
+--
+-- Nothing in a host script has to call :Loading() for the element to appear:
+-- mounting WindUI is the boot, so the element rides the same mount, fills while
+-- the script comes up, then pulls back into the dot it was born as. A host that
+-- wants to drive it keeps the handle instead - WindUI.BootCardHandle - and a
+-- host that wants no card sets WindUI.BootCard = false before requiring this
+-- file, or replaces it with { Title, Content, Icon, Duration, Hold }.
+do
+	local BootConfig = WindUI.BootCard
+	if BootConfig ~= false then
+		BootConfig = type(BootConfig) == "table" and BootConfig or {}
+		task.spawn(function()
+			-- One frame: the host assigns the module to its own local on the
+			-- same tick, and the screen gui needs a frame to render before the
+			-- element has a parent worth measuring against.
+			task.wait()
+			if WindUI.BootCard == false then
+				return
+			end
+
+			local Ok, Card = pcall(function()
+				return WindUI:Loading({
+					Title = BootConfig.Title or "Ender Hub",
+					Content = BootConfig.Content or "Loading",
+					-- Left nil on purpose: the element then falls back to
+					-- LoadingModule.DefaultIcon, the hub mark. A lucide name
+					-- here would be resolved to whatever that pack maps it to.
+					Icon = BootConfig.Icon,
+				})
+			end)
+			if not Ok or type(Card) ~= "table" then
+				return
+			end
+			WindUI.BootCardHandle = Card
+
+			-- The bar is read off the clock in one place, so the number on it
+			-- and the fill under it never disagree: both come from the same
+			-- elapsed fraction.
+			local Duration = tonumber(BootConfig.Duration) or 1.8
+			local Started = tick()
+			while not Card.Closed do
+				local Ratio = math.clamp((tick() - Started) / Duration, 0, 1)
+				Card:SetProgress(0.04 + 0.96 * Ratio)
+				if Ratio >= 1 then
+					break
+				end
+				task.wait(0.12)
+			end
+
+			task.wait(tonumber(BootConfig.Hold) or 0.35)
+			if not Card.Closed then
+				Card:Close()
+			end
+		end)
+	end
+end
+
 function WindUI:SetNotificationLower(Val)
 	Holder.SetLower(Val)
 end
@@ -25521,22 +25579,29 @@ local Tween = Creator.Tween
 	The boot element.
 
 	It is the notification, copied line for line and then given a home at the
-	top of the screen:
+	top of the screen - but every colour on it is read from the theme that is
+	selected, not from a palette of its own:
 
-	  * the same two-squircle surface - Main on Notification at 0.05
-	    transparency, Inner on Notification2 / Notification2Transparency, both
-	    at the notification's 18 px corner. No glass texture, no outline: the
-	    toast does not draw one and neither does this;
-	  * the same 14 px padding, the same 26 px icon slot, the same title at 18
-	    SemiBold on NotificationTitle and the same content at 15 Medium on
-	    NotificationContent / NotificationContentTransparency;
-	  * the bar is the ProgressBar element's own bar - 6 px tall, radius 99,
-	    fill on ProgressBar, track on ProgressBarTrack at 0.9, and the value
-	    label at 14 Medium, 0.25 transparency, right aligned on ProgressBarText.
+	  * the outer squircle is the theme's Accent, at the notification's own
+	    0.05 transparency; the face over it is the theme's Dialog. A theme that
+	    sets only Accent / Dialog / Outline / Text / Icon - the five keys every
+	    theme pack in this library defines - lands on the element without a
+	    single extra entry;
+	  * a one-pixel UIStroke would be the obvious rim, but the surface is a
+	    sliced squircle art, so a rectangle stroke would trace the bounding
+	    box instead of the pill. The rim is the glass layer at the top edge
+	    instead - the same highlight the rest of the library uses;
+	  * the title is the theme's Text at 18 SemiBold, the content is the same
+	    colour at 15 Medium and 0.42, the value is 14 Medium at 0.28;
+	  * the bar is white by default - the ProgressBar element's geometry, 6 px
+	    tall at radius 99, a track on Text at 0.9 - because a fill that inherits
+	    Accent disappears the moment a theme puts Accent near the surface;
+	  * the icon is the hub's own mark, tinted with the theme's Icon only when
+	    the caller passes a lucide name instead of an asset id.
 
 	Because every one of those is a theme tag, the element repaints with the
-	active theme the moment it is set: the boot element in a hub is the same
-	surface as the toasts the hub fires next to it, in the hub's own palette.
+	active theme the moment it is set: switch to Warden Soul Light and the pill
+	turns with it, no rebuild.
 
 	The arrival: the element is not slid into place, it is formed.
 
@@ -25562,8 +25627,8 @@ local Tween = Creator.Tween
 	surface holding its own volume rather than a box being scaled. Zeta 0.56
 	leaves two or three visible swings, the wide-narrow-wide settle the
 	reference has. All of it is pixels and two transparencies: there is no
-	colour anywhere in the response, so it reads the same in every theme the
-	element is mounted under.
+	colour in the response, so it reads the same in every theme the element is
+	mounted under.
 
 	Nothing here reads or writes the notification module. A live toast and the
 	boot element can share the screen and no state is shared between them.
@@ -25578,6 +25643,9 @@ local LoadingModule = {
 	IconSize = 26, -- the notification's icon slot
 	BarHeight = 6, -- the ProgressBar element's bar
 	MarginTop = 14,
+
+	-- The icon an element gets when the caller passes none. The hub's own mark.
+	DefaultIcon = "rbxassetid://84919257334887",
 
 	-- The dot the element is born as, and the droplet it lengthens into
 	-- before it spreads. Both in pixels.
@@ -25596,7 +25664,11 @@ local LoadingModule = {
 
 	-- The glass sheen settles to this transparency once the shape has formed.
 	-- 1 is invisible, 0 is opaque white.
-	GlassTransparency = 0.72,
+	GlassTransparency = 0.86,
+
+	-- The face: the theme's Dialog over the theme's Accent. At 0 the face is
+	-- solid Dialog and the accent never shows; at 1 the face is gone.
+	FaceTransparency = 0.35,
 
 	-- Fade and bar timing, in seconds.
 	FadeTime = 0.20,
@@ -25666,7 +25738,7 @@ function LoadingModule.New(Config)
 		__type = "Loading",
 		Title = Config.Title or "Loading",
 		Content = Config.Content or "",
-		Icon = Config.Icon,
+		Icon = Config.Icon or LoadingModule.DefaultIcon,
 		IconThemed = Config.IconThemed,
 		Progress = nil,
 		Closed = false,
@@ -25734,8 +25806,7 @@ function LoadingModule.New(Config)
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
 		ZIndex = 52,
 		ThemeTag = {
-			TextColor3 = "NotificationTitle",
-			TextTransparency = "NotificationTitleTransparency",
+			TextColor3 = "Text",
 		},
 	})
 
@@ -25754,10 +25825,10 @@ function LoadingModule.New(Config)
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
 		ZIndex = 52,
 		ThemeTag = {
-			TextColor3 = "NotificationContent",
-			TextTransparency = "NotificationContentTransparency",
+			TextColor3 = "Text",
 		},
 	})
+	Content.TextTransparency = 0.42
 
 	-- Value: the ProgressBar element's own label.
 	local Percent = New("TextLabel", {
@@ -25771,21 +25842,23 @@ function LoadingModule.New(Config)
 		BackgroundTransparency = 1,
 		Text = "0%",
 		TextSize = 14,
-		TextTransparency = 0.25,
+		TextTransparency = 0.28,
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
 		ZIndex = 52,
 		ThemeTag = {
-			TextColor3 = "ProgressBarText",
+			TextColor3 = "Text",
 		},
 	})
 
-	-- Bar, exactly as src/elements/ProgressBar.lua builds it.
+	-- Bar, exactly as src/elements/ProgressBar.lua builds it, but the fill is
+	-- white rather than the theme's accent: an accent-coloured fill vanishes
+	-- the moment a theme's accent sits near the surface it is drawn on.
 	local Fill = Creator.NewRoundFrame(99, "Squircle", {
 		Name = "Fill",
 		Size = UDim2.new(0, 0, 1, 0),
 		ZIndex = 52,
 		ThemeTag = {
-			ImageColor3 = "ProgressBar",
+			ImageColor3 = "White",
 		},
 	})
 
@@ -25796,8 +25869,7 @@ function LoadingModule.New(Config)
 		ImageTransparency = 0.9,
 		ZIndex = 51,
 		ThemeTag = {
-			ImageColor3 = "ProgressBarTrack",
-			ImageTransparency = "ProgressBarTrackTransparency",
+			ImageColor3 = "Text",
 		},
 	}, {
 		Fill,
@@ -25836,18 +25908,17 @@ function LoadingModule.New(Config)
 		}, FaceChildren)
 	end
 
-	-- The notification surface: outer squircle on Notification, inner squircle
-	-- on Notification2, then one glass layer over both. The glass is the same
-	-- SquircleGlass the slider thumb and every other glassy WindUI control
-	-- uses - it is what gives the surface its sheen, and it is the only layer
-	-- here drawn from elsewhere in the library.
+	-- The surface: the theme's Accent underneath, the theme's Dialog over it,
+	-- the theme's Outline as a one-pixel rim, then the glass sheen. Every one
+	-- of those five keys exists in every theme pack, so the element lands on
+	-- the selected theme without the pack having to learn a new tag.
 	local Inner, InnerShape = Creator.NewRoundFrame(Corner, "Squircle", {
 		Name = "Inner",
 		Size = UDim2.new(1, 0, 1, 0),
+		ImageTransparency = LoadingModule.FaceTransparency,
 		ZIndex = 50,
 		ThemeTag = {
-			ImageColor3 = "Notification2",
-			ImageTransparency = "Notification2Transparency",
+			ImageColor3 = "Dialog",
 		},
 	})
 
@@ -25869,7 +25940,7 @@ function LoadingModule.New(Config)
 		ImageTransparency = 0.05,
 		ZIndex = 50,
 		ThemeTag = {
-			ImageColor3 = "Notification",
+			ImageColor3 = "Accent",
 		},
 	}, {
 		Inner,

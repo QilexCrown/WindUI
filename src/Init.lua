@@ -191,6 +191,64 @@ function WindUI:Loading(Config)
 	return WindUI.LoadingModule.New(Config)
 end
 
+-- The boot card arms itself on mount.
+--
+-- Nothing in a host script has to call :Loading() for the element to appear:
+-- mounting WindUI is the boot, so the element rides the same mount, fills while
+-- the script comes up, then pulls back into the dot it was born as. A host that
+-- wants to drive it keeps the handle instead - WindUI.BootCardHandle - and a
+-- host that wants no card sets WindUI.BootCard = false before requiring this
+-- file, or replaces it with { Title, Content, Icon, Duration, Hold }.
+do
+	local BootConfig = WindUI.BootCard
+	if BootConfig ~= false then
+		BootConfig = type(BootConfig) == "table" and BootConfig or {}
+		task.spawn(function()
+			-- One frame: the host assigns the module to its own local on the
+			-- same tick, and the screen gui needs a frame to render before the
+			-- element has a parent worth measuring against.
+			task.wait()
+			if WindUI.BootCard == false then
+				return
+			end
+
+			local Ok, Card = pcall(function()
+				return WindUI:Loading({
+					Title = BootConfig.Title or "Ender Hub",
+					Content = BootConfig.Content or "Loading",
+					-- Left nil on purpose: the element then falls back to
+					-- LoadingModule.DefaultIcon, the hub mark. A lucide name
+					-- here would be resolved to whatever that pack maps it to.
+					Icon = BootConfig.Icon,
+				})
+			end)
+			if not Ok or type(Card) ~= "table" then
+				return
+			end
+			WindUI.BootCardHandle = Card
+
+			-- The bar is read off the clock in one place, so the number on it
+			-- and the fill under it never disagree: both come from the same
+			-- elapsed fraction.
+			local Duration = tonumber(BootConfig.Duration) or 1.8
+			local Started = tick()
+			while not Card.Closed do
+				local Ratio = math.clamp((tick() - Started) / Duration, 0, 1)
+				Card:SetProgress(0.04 + 0.96 * Ratio)
+				if Ratio >= 1 then
+					break
+				end
+				task.wait(0.12)
+			end
+
+			task.wait(tonumber(BootConfig.Hold) or 0.35)
+			if not Card.Closed then
+				Card:Close()
+			end
+		end)
+	end
+end
+
 function WindUI:SetNotificationLower(Val)
 	Holder.SetLower(Val)
 end
