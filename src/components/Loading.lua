@@ -3,76 +3,87 @@ local New = Creator.New
 local Tween = Creator.Tween
 
 --[[
-	The boot pill.
+	The boot element.
 
-	It is the notification element copied, then laid on its side: the same
-	squircle glass the toast uses, the same Notification / Notification2 /
-	NotificationTitle / NotificationContent theme tags, the same icon slot.
-	What is different is the geometry and the arrival, because a boot bar is
-	not a toast:
+	It is the notification, copied line for line and then given a home at the
+	top of the screen:
 
-	  * it is wide and short - a bar across the top centre, not a card in the
-	    stack, sized so it reads as a pill in the same family as a phone's
-	    island cutout;
-	  * the bar is determinate - ProgressBar fill, ProgressBarTrack track, and
-	    a live percentage on the right;
-	  * it arrives as a bead from above the screen and stretches into the pill.
+	  * the same two-squircle surface - Main on Notification at 0.05
+	    transparency, Inner on Notification2 / Notification2Transparency, both
+	    at the notification's 18 px corner. No glass texture, no outline: the
+	    toast does not draw one and neither does this;
+	  * the same 14 px padding, the same 26 px icon slot, the same title at 18
+	    SemiBold on NotificationTitle and the same content at 15 Medium on
+	    NotificationContent / NotificationContentTransparency;
+	  * the bar is the ProgressBar element's own bar - 6 px tall, radius 99,
+	    fill on ProgressBar, track on ProgressBarTrack at 0.9, and the value
+	    label at 14 Medium, 0.25 transparency, right aligned on ProgressBarText.
 
-	The arrival is the whole point. The element is born as a small capsule
-	above the top edge and travels down while its size runs in the opposite
-	direction, so the shape is *falling* and *unfolding* at the same time.
-	DynamicShape swaps the slice asset as the aspect crosses, so the capsule
-	and the pill are one image being stretched rather than two images being
-	swapped. It lands with a spring overshoot, then goes through three short
-	squash steps that carry the lip of the glass past its own edge and back -
-	that overshoot is the liquid part, and it is what stops the shape reading
-	as a slide-in.
+	Because every one of those is a theme tag, the element repaints with the
+	active theme the moment it is set: the boot element in a hub is the same
+	surface as the toasts the hub fires next to it, in the hub's own palette.
+
+	The arrival: the element is born above the top edge of the viewport as a
+	thin line, full width, and comes down while it thickens. The fall is
+	Back/Out so it passes its resting spot and springs back up into it; the
+	height run is Quint/Out at 94% of the fall, so the shape finishes forming
+	a hair before the body lands. Then four short squash steps carry the
+	surface past its own edges and back before the text cross-fades in.
 
 	Nothing here reads or writes the notification module. A live toast and the
-	boot pill can share the screen and no state is shared between them.
+	boot element can share the screen and no state is shared between them.
 ]]
 
 local LoadingModule = {
-	-- Geometry. These are the only numbers to touch if the pill needs to be
-	-- wider or taller; every child is positioned from them at build time.
-	Width = 300,
-	Height = 52,
-	UICorner = 26, -- half the height: fully rounded ends, no flat lip
-	UIPadding = 12,
-	IconSize = 22,
-	BarHeight = 3,
+	-- Every child is positioned from these at build time.
+	Width = 360,
+	Height = 86,
+	UICorner = 18, -- the notification's corner, not a capsule
+	UIPadding = 14, -- the notification's padding
+	IconSize = 26, -- the notification's icon slot
+	BarHeight = 6, -- the ProgressBar element's bar
 	MarginTop = 14,
 
-	-- The bead the pill is born as, before it unfolds.
-	BeadWidth = 96,
-	BeadHeight = 8,
-	BeadGap = 10, -- clear space above the viewport edge at birth
+	-- The line the element is born as, before it thickens.
+	BeadWidthRatio = 0.92,
+	BeadHeight = 10,
+	BeadGap = 8, -- clear space above the viewport edge at birth
 
-	-- Arrival timing, in seconds. Detach and settle are read by both the
-	-- position run and the size run so the two land on the same frame.
-	FallTime = 0.62,
-	SettleTime = 0.30,
-	FadeTime = 0.22,
+	-- Arrival timing, in seconds.
+	FallTime = 0.60,
+	SettleTime = 0.28,
+	FadeTime = 0.20,
+	BarTime = 0.20,
 
 	Holder = nil,
 	LoadingIndex = 0,
 	Loadings = {},
 }
 
-function LoadingModule.Init(Parent)
-	local Module = {}
-
-	-- The notification screen ignores the gui inset, so the holder has to
-	-- clear the topbar itself or the pill lands above the visible screen.
+local function GuiInset()
 	local Inset = 0
 	pcall(function()
 		Inset = game:GetService("GuiService"):GetGuiInset().Y
 	end)
+	if type(Inset) ~= "number" or Inset ~= Inset then
+		Inset = 0
+	end
+	return Inset
+end
 
+local function TopOffset()
+	return GuiInset() + LoadingModule.MarginTop
+end
+
+function LoadingModule.Init(Parent)
+	local Module = {}
+
+	-- The notification screen ignores the gui inset, so the holder has to
+	-- clear the topbar itself or the element lands under it.
 	Module.Frame = New("Frame", {
 		Name = "LoadingHolder",
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, Inset + LoadingModule.MarginTop),
+		Position = UDim2.new(0.5, 0, 0, TopOffset()),
 		Size = UDim2.new(0, LoadingModule.Width, 0, LoadingModule.Height),
 		BackgroundTransparency = 1,
 		ZIndex = 50,
@@ -106,34 +117,51 @@ function LoadingModule.New(Config)
 		error("WindUI.Loading: no holder parent", 0)
 	end
 
+	-- Resolved on every build, not only at load: an executor can answer a zero
+	-- inset while the module is initialising and the holder would then park
+	-- under the Roblox topbar for the rest of the session.
+	if LoadingModule.Holder and Holder == LoadingModule.Holder.Frame then
+		Holder.Position = UDim2.new(0.5, 0, 0, TopOffset())
+	end
+
 	local Width = LoadingModule.Width
 	local Height = LoadingModule.Height
 	local Pad = LoadingModule.UIPadding
+	local Corner = LoadingModule.UICorner
 
-	-- Where the text column starts: it clears the icon only when there is one,
-	-- so an iconless pill gets the full width instead of a dead gutter.
-	local TextX = Pad + (Loading.Icon and (LoadingModule.IconSize + 10) or 0)
-	local PercentWidth = 42
-	local TextWidth = Width - TextX - Pad - PercentWidth
+	-- The text column clears the icon only when there is one, so an iconless
+	-- element gets the full width instead of a dead gutter.
+	local TextX = Pad + (Loading.Icon and (LoadingModule.IconSize + 16) or 0)
+	local TextW = Width - TextX - Pad
+
+	local TitleH = 22
+	local ContentY = Pad + TitleH + 5
+	local PercentW = 54
+	local BarY = Height - Pad - LoadingModule.BarHeight
 
 	local Icon
 	if Loading.Icon then
 		Icon = Creator.Image(Loading.Icon, Loading.Title .. ":" .. Loading.Icon, 0, Config.Window, "Loading", Loading.IconThemed)
+		Icon.Name = "Icon"
 		Icon.Size = UDim2.new(0, LoadingModule.IconSize, 0, LoadingModule.IconSize)
-		Icon.Position = UDim2.new(0, Pad, 0, (Height - LoadingModule.IconSize) / 2)
+		-- Centred on the two text lines, not pinned to the top edge: the
+		-- notification's icon sits level with its single title, this one has
+		-- a second line under it.
+		Icon.Position = UDim2.new(0, Pad, 0, Pad + (ContentY + 20 - Pad - LoadingModule.IconSize) / 2)
 		Icon.ZIndex = 52
 	end
 
+	-- Title: the notification's own type ramp.
 	local Title = New("TextLabel", {
 		Name = "Title",
-		Position = UDim2.new(0, TextX, 0, 9),
-		Size = UDim2.new(0, TextWidth, 0, 16),
+		Position = UDim2.new(0, TextX, 0, Pad),
+		Size = UDim2.new(0, TextW - PercentW - 6, 0, TitleH),
 		TextXAlignment = "Left",
 		TextYAlignment = "Top",
 		TextTruncate = "AtEnd",
 		RichText = true,
 		BackgroundTransparency = 1,
-		TextSize = 13,
+		TextSize = 18,
 		Text = Loading.Title,
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
 		ZIndex = 52,
@@ -143,16 +171,17 @@ function LoadingModule.New(Config)
 		},
 	})
 
+	-- Content: the notification's second line, same tag, same 0.4 wash.
 	local Content = New("TextLabel", {
 		Name = "Content",
-		Position = UDim2.new(0, TextX, 0, 26),
-		Size = UDim2.new(0, TextWidth, 0, 14),
+		Position = UDim2.new(0, TextX, 0, ContentY),
+		Size = UDim2.new(0, TextW, 0, 20),
 		TextXAlignment = "Left",
 		TextYAlignment = "Top",
 		TextTruncate = "AtEnd",
 		RichText = true,
 		BackgroundTransparency = 1,
-		TextSize = 11,
+		TextSize = 15,
 		Text = Loading.Content,
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
 		ZIndex = 52,
@@ -162,40 +191,41 @@ function LoadingModule.New(Config)
 		},
 	})
 
+	-- Value: the ProgressBar element's own label.
 	local Percent = New("TextLabel", {
 		Name = "Percent",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -Pad, 0, 10),
-		Size = UDim2.new(0, PercentWidth, 0, 15),
+		Position = UDim2.new(1, -Pad, 0, Pad + 1),
+		Size = UDim2.new(0, PercentW, 0, 20),
 		TextXAlignment = "Right",
 		TextYAlignment = "Top",
+		TextTruncate = "AtEnd",
 		BackgroundTransparency = 1,
 		Text = "0%",
-		TextSize = 12,
-		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
+		TextSize = 14,
+		TextTransparency = 0.25,
+		FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
 		ZIndex = 52,
 		ThemeTag = {
-			TextColor3 = "NotificationTitle",
-			TextTransparency = "NotificationTitleTransparency",
+			TextColor3 = "ProgressBarText",
 		},
 	})
 
-	-- Determinate bar. ProgressBar / ProgressBarTrack are the theme's own
-	-- bar pair, so the fill matches every progress bar inside the window
-	-- instead of inventing a colour for the boot screen only.
+	-- Bar, exactly as src/elements/ProgressBar.lua builds it.
 	local Fill = Creator.NewRoundFrame(99, "Squircle", {
 		Name = "Fill",
 		Size = UDim2.new(0, 0, 1, 0),
 		ZIndex = 52,
 		ThemeTag = {
 			ImageColor3 = "ProgressBar",
-			ImageTransparency = "NotificationTitleTransparency",
 		},
 	})
 
 	local Track = Creator.NewRoundFrame(99, "Squircle", {
 		Name = "Track",
 		Size = UDim2.new(1, 0, 1, 0),
+		ClipsDescendants = true,
+		ImageTransparency = 0.9,
 		ZIndex = 51,
 		ThemeTag = {
 			ImageColor3 = "ProgressBarTrack",
@@ -207,7 +237,7 @@ function LoadingModule.New(Config)
 
 	local Bar = New("Frame", {
 		Name = "Bar",
-		Position = UDim2.new(0, Pad, 1, -Pad + 3),
+		Position = UDim2.new(0, Pad, 0, BarY),
 		Size = UDim2.new(1, -Pad * 2, 0, LoadingModule.BarHeight),
 		BackgroundTransparency = 1,
 		ZIndex = 51,
@@ -215,10 +245,10 @@ function LoadingModule.New(Config)
 		Track,
 	})
 
-	-- The face rides in a CanvasGroup so it can be cross-faded as one piece
-	-- the moment the glass finishes settling. A plain frame is the fallback
-	-- if the executor's Roblox build is too old to have CanvasGroup; the pill
-	-- still works, the text just appears instead of dissolving in.
+	-- The face rides in a CanvasGroup so it can be cross-faded as one piece.
+	-- A plain frame is the fallback if the Roblox build predates CanvasGroup;
+	-- the element still works, the text just appears instead of dissolving in.
+	local FaceChildren = { Icon, Title, Content, Percent, Bar }
 	local Face
 	local Faced = pcall(function()
 		Face = New("CanvasGroup", {
@@ -227,72 +257,41 @@ function LoadingModule.New(Config)
 			BackgroundTransparency = 1,
 			GroupTransparency = 1,
 			ZIndex = 51,
-		}, {
-			Icon,
-			Percent,
-			Title,
-			Content,
-			Bar,
-		})
+		}, FaceChildren)
 	end)
-	if not Faced then
+	if not Faced or not Face then
 		Face = New("Frame", {
 			Name = "Face",
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
 			ZIndex = 51,
-		}, {
-			Icon,
-			Percent,
-			Title,
-			Content,
-			Bar,
-		})
+		}, FaceChildren)
 	end
 
-	-- Backdrop first, glass over it, border last: the same stack the toast
-	-- uses, so the theme reads it as the same surface at a different size.
-	local Backdrop = Creator.NewRoundFrame(LoadingModule.UICorner, "Squircle", {
-		Name = "Backdrop",
+	-- The notification surface: outer squircle on Notification, inner squircle
+	-- on Notification2. Two layers, corner 18, nothing else.
+	local Inner = Creator.NewRoundFrame(Corner, "Squircle", {
+		Name = "Inner",
 		Size = UDim2.new(1, 0, 1, 0),
-		ImageTransparency = 0.05,
 		ZIndex = 50,
-		ThemeTag = {
-			ImageColor3 = "Notification",
-		},
-	})
-
-	local Glass = Creator.NewRoundFrame(LoadingModule.UICorner, "SquircleGlass", {
-		Name = "Glass",
-		Size = UDim2.new(1, 0, 1, 0),
-		ZIndex = 51,
 		ThemeTag = {
 			ImageColor3 = "Notification2",
 			ImageTransparency = "Notification2Transparency",
 		},
 	})
 
-	local Border = Creator.NewRoundFrame(LoadingModule.UICorner, "SquircleOutline", {
-		Name = "Border",
-		Size = UDim2.new(1, 0, 1, 0),
-		ZIndex = 53,
-		ThemeTag = {
-			ImageColor3 = "NotificationBorder",
-			ImageTransparency = "NotificationBorderTransparency",
-		},
-	})
-
-	local Main = New("Frame", {
+	local Main = Creator.NewRoundFrame(Corner, "Squircle", {
 		Name = "Main",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 0),
 		Size = UDim2.new(0, Width, 0, Height),
-		BackgroundTransparency = 1,
+		ImageTransparency = 0.05,
 		ZIndex = 50,
+		ThemeTag = {
+			ImageColor3 = "Notification",
+		},
 	}, {
-		Backdrop,
-		Glass,
-		Border,
+		Inner,
 		Face,
 	})
 
@@ -309,10 +308,8 @@ function LoadingModule.New(Config)
 	Loading.UIElements = {
 		Main = Main,
 		Container = MainContainer,
+		Inner = Inner,
 		Face = Face,
-		Backdrop = Backdrop,
-		Glass = Glass,
-		Border = Border,
 		Title = Title,
 		Content = Content,
 		Percent = Percent,
@@ -329,16 +326,12 @@ function LoadingModule.New(Config)
 	-- still lands on screen; measure the holder and clear it, so the element
 	-- always enters from off the top of the player's screen at any inset.
 	local function BirthOffset()
-		local HolderY = 0
+		local HolderY = TopOffset()
 		pcall(function()
 			HolderY = MainContainer.AbsolutePosition.Y
 		end)
 		return -(HolderY + LoadingModule.BeadHeight + LoadingModule.BeadGap)
 	end
-
-	-- The face is invisible until the glass has settled: the eye follows the
-	-- shape down, not a half-built label riding a growing frame.
-	Face.Visible = false
 
 	function Loading:SetContent(Text)
 		if Loading.Closed then
@@ -371,7 +364,7 @@ function LoadingModule.New(Config)
 		Percent.Text = string.format("%d%%", math.floor(Ratio * 100 + 0.5))
 		-- Quint out on the fill only: the number jumps with the data, the bar
 		-- chases it, so a fast loader still reads as motion rather than a snap.
-		Tween(Fill, 0.25, { Size = UDim2.new(Ratio, 0, 1, 0) }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		Tween(Fill, LoadingModule.BarTime, { Size = UDim2.new(Ratio, 0, 1, 0) }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 		return Ratio
 	end
 
@@ -387,18 +380,20 @@ function LoadingModule.New(Config)
 		end
 		table.clear(Loading.Connections)
 
-		-- Leave the way it came: collapse to the bead and run back up past the
-		-- top edge, so the exit is the arrival played backwards rather than a
-		-- frame disappearing off the screen.
+		-- Leave the way it came: thin out and run back up past the top edge,
+		-- so the exit is the arrival played backwards rather than a frame
+		-- disappearing off the screen.
 		pcall(function()
 			Tween(Face, 0.14, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
 		end)
 		Face.Visible = false
-		Tween(Main, 0.24, { Size = UDim2.new(0, LoadingModule.BeadWidth, 0, LoadingModule.BeadHeight) }, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
-		Tween(Main, 0.28, {
+		Tween(Main, 0.26, {
+			Size = UDim2.new(0, Width * LoadingModule.BeadWidthRatio, 0, LoadingModule.BeadHeight),
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+		Tween(Main, 0.30, {
 			Position = UDim2.new(0.5, 0, 0, BirthOffset()),
 		}, Enum.EasingStyle.Back, Enum.EasingDirection.In):Play()
-		task.delay(0.30, function()
+		task.delay(0.32, function()
 			MainContainer:Destroy()
 		end)
 	end
@@ -414,16 +409,17 @@ function LoadingModule.New(Config)
 		MainContainer:Destroy()
 	end
 
-	-- Arrival. The bead is born above the top edge at a small capsule size and
-	-- two runs leave it at once:
+	-- Arrival. The line is born above the top edge at full width and two runs
+	-- leave it at once:
 	--
 	--   Position - travels down, Back/Out, so it passes its resting spot and
 	--              comes back up into it instead of stopping dead;
-	--   Size     - unfolds to the resting pill, Quint/Out, so the wide part of
-	--              the travel happens early and the last stretch is slow.
+	--   Size     - thickens to the resting element, Quint/Out, so the wide
+	--              part of the travel happens early and the last stretch is
+	--              slow.
 	--
 	-- The two runs are deliberately not the same duration: the shape finishes
-	-- unfolding slightly before the body finishes falling, which is what makes
+	-- forming slightly before the body finishes falling, which is what makes
 	-- it read as liquid being pulled into place by the fall.
 	task.spawn(function()
 		task.wait()
@@ -431,7 +427,8 @@ function LoadingModule.New(Config)
 			return
 		end
 
-		Main.Size = UDim2.new(0, LoadingModule.BeadWidth, 0, LoadingModule.BeadHeight)
+		local BeadW = Width * LoadingModule.BeadWidthRatio
+		Main.Size = UDim2.new(0, BeadW, 0, LoadingModule.BeadHeight)
 		Main.Position = UDim2.new(0.5, 0, 0, BirthOffset())
 
 		Tween(Main, LoadingModule.FallTime, { Position = UDim2.new(0.5, 0, 0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
@@ -442,14 +439,15 @@ function LoadingModule.New(Config)
 			return
 		end
 
-		-- Squash and settle. The pill overshoots wide and flat, springs back
-		-- through its own size, and relaxes. The amplitude shrinks each step
-		-- so the last two frames are the glass finding rest, not wobbling.
+		-- Squash and settle. The surface overshoots wide and flat, springs
+		-- back through its own size, and relaxes. The amplitude shrinks each
+		-- step so the last two frames are the surface finding rest, not
+		-- wobbling.
 		local Step = LoadingModule.SettleTime / 4
 		for _, Frame in ipairs({
-			{ UDim2.new(0, Width + 10, 0, Height - 5), Step },
-			{ UDim2.new(0, Width - 4, 0, Height + 2), Step },
-			{ UDim2.new(0, Width + 2, 0, Height - 1), Step * 0.8 },
+			{ UDim2.new(0, Width + 8, 0, Height - 4), Step },
+			{ UDim2.new(0, Width - 3, 0, Height + 2), Step },
+			{ UDim2.new(0, Width + 1, 0, Height - 1), Step * 0.8 },
 			{ UDim2.new(0, Width, 0, Height), Step * 0.7 },
 		}) do
 			if Loading.Closed then
