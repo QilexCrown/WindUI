@@ -25590,14 +25590,18 @@ local Tween = Creator.Tween
 	  * a one-pixel UIStroke would be the obvious rim, but the surface is a
 	    sliced squircle art, so a rectangle stroke would trace the bounding
 	    box instead of the pill. The rim is the glass layer at the top edge
-	    instead - the same highlight the rest of the library uses;
+	    instead - the same highlight the rest of the library uses, tinted with
+	    the theme's Text, never with a white of our own;
 	  * the title is the theme's Text at 18 SemiBold, the content is the same
 	    colour at 15 Medium and 0.42, the value is 14 Medium at 0.28;
-	  * the bar is white by default - the ProgressBar element's geometry, 6 px
-	    tall at radius 99, a track on Text at 0.9 - because a fill that inherits
-	    Accent disappears the moment a theme puts Accent near the surface;
+	  * the bar is the ProgressBar element's geometry, 6 px tall at radius 99,
+	    filled and tracked on the theme's Text; a fill that inherits Accent
+	    disappears the moment a theme puts Accent near the surface;
 	  * the icon is the hub's own mark, tinted with the theme's Icon only when
 	    the caller passes a lucide name instead of an asset id.
+
+	There is no literal colour in this file. Every pixel of the element is a
+	theme tag, so it lands on whatever pack is selected and repaints with it.
 
 	Because every one of those is a theme tag, the element repaints with the
 	active theme the moment it is set: switch to Warden Soul Light and the pill
@@ -25649,8 +25653,16 @@ local LoadingModule = {
 
 	-- The dot the element is born as, and the droplet it lengthens into
 	-- before it spreads. Both in pixels.
-	DotSize = 18,
-	DotDrop = 32,
+	--
+	-- The dot is exactly two corner radii across. That is not a coincidence
+	-- and it is not a style choice: it is the reason the corner never moves.
+	-- A squircle whose corner radius is half its short side is a circle, so
+	-- the element can be born round, stay on one single corner radius for the
+	-- whole animation, and land on the 18 px pill - without a single radius
+	-- being animated and without the shape art ever being swapped. Every
+	-- frame of the morph is the same material at a different size.
+	DotSize = 36,
+	DotDrop = 44,
 	DotTime = 0.14, -- seconds to lengthen, before the spread spring takes over
 
 	-- The spread. The width spring sits at zeta 0.78 - an overshoot of about
@@ -25684,7 +25696,6 @@ local LoadingModule = {
 	HoverLift = 3, -- pixels the whole surface rises
 	HoverSheen = 0.14, -- how much brighter the glass highlight goes
 	SquashAmount = 3, -- pixels the height loses at peak stretch
-	RadiusBulge = 5, -- extra corner radius while the surface is deformed
 	ReachDeviation = 30, -- width error, in pixels, that counts as a full squash
 	ReachStiffness = 240,
 	ReachDamping = 17.4, -- zeta 0.56: two or three visible swings, then rest
@@ -25851,14 +25862,15 @@ function LoadingModule.New(Config)
 	})
 
 	-- Bar, exactly as src/elements/ProgressBar.lua builds it, but the fill is
-	-- white rather than the theme's accent: an accent-coloured fill vanishes
-	-- the moment a theme's accent sits near the surface it is drawn on.
+	-- the theme's text colour rather than its accent: an accent-coloured fill
+	-- vanishes the moment a theme's accent sits near the surface it is drawn
+	-- on, and the text colour is the one key a pack always keeps legible.
 	local Fill = Creator.NewRoundFrame(99, "Squircle", {
 		Name = "Fill",
 		Size = UDim2.new(0, 0, 1, 0),
 		ZIndex = 52,
 		ThemeTag = {
-			ImageColor3 = "White",
+			ImageColor3 = "Text",
 		},
 	})
 
@@ -25922,15 +25934,70 @@ function LoadingModule.New(Config)
 		},
 	})
 
+	-- The glass: the same sliced highlight the library's own glassy controls
+	-- draw, tinted from the theme's Text rather than a white of our own, so a
+	-- theme with warm text gets a warm highlight and a theme with cool text
+	-- gets a cool one. No literal colour is written anywhere in this file.
 	local Glass, GlassShape = Creator.NewRoundFrame(Corner, "SquircleGlass", {
 		Name = "Glass",
 		Size = UDim2.new(1, 0, 1, 0),
-		ImageColor3 = Color3.new(1, 1, 1),
 		ImageTransparency = 1,
 		ZIndex = 51,
+		ThemeTag = {
+			ImageColor3 = "Text",
+		},
 	})
 
-	local Main, MainShape = Creator.NewRoundFrame(LoadingModule.DotSize / 2, "Circle", {
+	-- The reflection. A soft band of light that travels across the surface as
+	-- it spreads - the thing that makes glass read as glass instead of as a
+	-- flat tinted shape - and fades out once the pill has landed, so what is
+	-- left at rest is the Glass layer above and nothing else.
+	--
+	-- It lives inside a clip that is inset by one corner radius on every
+	-- side. The clip is rectangular, and a rectangle that reaches the edge of
+	-- a rounded shape cuts a visible notch across the corner arc; insetting by
+	-- the radius keeps every corner of the clip inside the shape, so the band
+	-- can never be cut by it.
+	local Sheen = New("Frame", {
+		Name = "Sheen",
+		Position = UDim2.new(-1, 0, -0.25, 0),
+		Size = UDim2.new(0, 90, 1.5, 0),
+		Rotation = -20,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ZIndex = 50,
+		ThemeTag = {
+			-- Outline, not Text: Text is the one key a pack is most likely to
+			-- give a gradient to, and a gradient would replace this band's own
+			-- UIGradient with a LibraryGradient and flatten it. Outline is a
+			-- flat colour in every pack, so the band keeps its shape.
+			BackgroundColor3 = "Outline",
+		},
+	}, {
+		New("UIGradient", {
+			Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 1),
+				NumberSequenceKeypoint.new(0.5, 0),
+				NumberSequenceKeypoint.new(1, 1),
+			}),
+		}),
+	})
+
+	local SheenClip = New("Frame", {
+		Name = "SheenClip",
+		Position = UDim2.new(0, Corner, 0, Corner),
+		Size = UDim2.new(1, -Corner * 2, 1, -Corner * 2),
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		ZIndex = 50,
+	}, {
+		Sheen,
+	})
+
+	-- One corner radius, from birth to rest. Main is born at DotSize - which
+	-- is twice this radius, so the squircle art draws it as a true circle -
+	-- and every frame after that only ever changes its size.
+	local Main, MainShape = Creator.NewRoundFrame(Corner, "Squircle", {
 		Name = "Main",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 0),
@@ -25944,6 +26011,7 @@ function LoadingModule.New(Config)
 		},
 	}, {
 		Inner,
+		SheenClip,
 		Glass,
 		Face,
 	})
@@ -26037,7 +26105,6 @@ function LoadingModule.New(Config)
 		local Squash = math.clamp(math.abs(W - TargetW) / LoadingModule.ReachDeviation, 0, 1)
 		local H = Spring.Value
 		local BoxH = Height - LoadingModule.SquashAmount * Squash
-		local Radius = Corner + LoadingModule.RadiusBulge * Squash
 
 		-- AnchorPoint is (0.5, 0), so the x offset is measured from the
 		-- centre: the right edge reaching R and the left edge reaching L
@@ -26045,11 +26112,12 @@ function LoadingModule.New(Config)
 		local OffsetX = (Reach.R - Reach.L) * 0.5
 		local OffsetY = (Height - BoxH) * 0.5 + LoadingModule.HoverLift * H
 
+		-- Size only. The corner radius is never touched here: a surface whose
+		-- corners sharpen while it is being pushed is a box, not a body of
+		-- liquid. The pill keeps its 18 px corner at every frame of the
+		-- stretch, and the height gives up the pixels instead.
 		Main.Size = UDim2.new(0, W, 0, BoxH)
 		Main.Position = UDim2.new(0.5, OffsetX, 0, -OffsetY)
-		MainShape:SetRadius(Radius)
-		InnerShape:SetRadius(Radius)
-		GlassShape:SetRadius(Radius)
 		Glass.ImageTransparency = LoadingModule.GlassTransparency - LoadingModule.HoverSheen * H
 	end
 
@@ -26209,13 +26277,10 @@ function LoadingModule.New(Config)
 		-- still leaning toward the pointer has to come back to centre first or
 		-- the dot would form off to one side.
 		Tween(Main, 0.24, { Position = UDim2.new(0.5, 0, 0, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+		-- No art change and no radius change on the way out either: the same
+		-- squircle art at the same 18 px corner, shrunk to two radii across,
+		-- reads as the circle it was born as.
 		Tween(Main, 0.24, { Size = UDim2.new(0, Dot, 0, Dot) }, Enum.EasingStyle.Back, Enum.EasingDirection.In):Play()
-		MainShape:SetType("Circle")
-		InnerShape:SetType("Circle")
-		GlassShape:SetType("CircleGlass")
-		MainShape:SetRadius(Dot / 2)
-		InnerShape:SetRadius(Dot / 2)
-		GlassShape:SetRadius(Dot / 2)
 		task.delay(0.16, function()
 			Tween(Main, 0.14, { ImageTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
 			Tween(Inner, 0.14, { ImageTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
@@ -26239,43 +26304,27 @@ function LoadingModule.New(Config)
 
 	-- Arrival: the element is formed, not moved.
 	--
-	--   dot     - born as a circle of DotSize at the very top edge. It is a
-	--             real circle: the Circle art, with the corner slice set to
-	--             half the dot, not a rounded square pretending;
+	--   dot     - born as a 36 px squircle at the very top edge. 36 is twice
+	--             the corner radius, and a squircle whose corner radius is
+	--             half its short side is a circle, so this is a true round
+	--             dot drawn on the same 18 px corner the pill will rest on;
 	--   droplet - the dot lengthens downward to DotDrop, because a bead of
 	--             liquid stretches before it spreads;
 	--   spread  - two damped springs carry the width and the height out to
-	--             the notification's geometry, and the corner radius is read
-	--             off the width spring, walking from half the short side to
-	--             the surface's 18 px as it goes. At no frame is this a
-	--             rectangle being resized: it is a blob whose corners are
-	--             still rounding off while it spreads;
+	--             the notification's geometry. Size is the only thing that
+	--             moves: the corner radius is 18 px on the first frame and
+	--             18 px on the last, and the shape art is never swapped. The
+	--             previous version walked the radius from half the short side
+	--             down to 18 and flipped the art between Circle and
+	--             SquircleH as it went, which read on screen as the corners
+	--             changing shape mid-animation;
 	--   swing   - the width spring overshoots about two percent and the
 	--             height about seven, so the surface goes wide and a little
 	--             taller, then a hair narrow and shorter, then rest - the
 	--             wide-narrow-wide settle the reference has;
-	--   sheen   - the SquircleGlass layer rises with the spread, so the
-	--             highlight arrives with the shape rather than after it.
-	--
-	-- The shape art is chosen here rather than left to DynamicShape's own
-	-- AbsoluteSize handler: that handler only runs while the current art is a
-	-- Squircle, so the moment the element is a Circle it can never leave it.
-	-- The rule below is the same one the module uses, evaluated fresh.
-	local SquircleRatio = 310 / 1024 -- DynamicShape's Squircle radius over 1024
-
-	local function ShapeFor(W, H, R)
-		local Ratio = R / math.min(W, H)
-		if Ratio >= SquircleRatio then
-			if W > H then
-				return "SquircleH"
-			elseif W < H then
-				return "SquircleV"
-			end
-			return "Circle"
-		end
-		return "Squircle"
-	end
-
+	--   sheen   - the SquircleGlass layer rises with the spread and the
+	--             reflection band travels across the face, so the highlight
+	--             arrives with the shape rather than after it.
 	local function Spread()
 		local Dot = LoadingModule.DotSize
 		local Drop = LoadingModule.DotDrop
@@ -26293,32 +26342,18 @@ function LoadingModule.New(Config)
 			HV = HV + (Delta * LoadingModule.HeightStiffness - HV * LoadingModule.HeightDamping) * Step
 			HP = HP + HV * Step
 
-			local Morph = math.clamp(WP, 0, 1)
 			local W = Dot + (Width - Dot) * WP
 			local H = Drop + (Height - Drop) * HP
-			local R = (1 - Morph) * math.min(W, H) / 2 + Morph * Corner
 
+			-- Size is the whole animation. Radius and art stay put.
 			Main.Size = UDim2.new(0, W, 0, H)
-			MainShape:SetRadius(R)
 
-			-- All three layers are the same box, so they take the same radius
-			-- and the same art: Inner is what the eye actually sees, and a
-			-- surface that rounds off underneath while its face stays square
-			-- is not one material.
-			local Type = ShapeFor(W, H, R)
-			if Type ~= MainShape:GetType() then
-				MainShape:SetType(Type)
-			end
-			if Type ~= InnerShape:GetType() then
-				InnerShape:SetType(Type)
-			end
-			InnerShape:SetRadius(R)
-
-			local GlassType = Type .. "Glass"
-			if GlassType ~= GlassShape:GetType() then
-				GlassShape:SetType(GlassType)
-			end
-			GlassShape:SetRadius(R)
+			-- The reflection rides the same spring the shape does, so the two
+			-- can never drift apart: it crosses the face exactly once, and it
+			-- fades out as the pill lands rather than parking on the surface.
+			local Travel = math.clamp(WP, -0.2, 1.2)
+			Sheen.Position = UDim2.new(-1 + Travel * 1.6, 0, -0.25, 0)
+			Sheen.BackgroundTransparency = 0.45 + 0.55 * math.clamp(WP, 0, 1)
 
 			Glass.ImageTransparency = 1 - (1 - LoadingModule.GlassTransparency) * math.clamp(WP * 1.2, 0, 1)
 
@@ -26332,16 +26367,11 @@ function LoadingModule.New(Config)
 		end
 
 		-- Land exactly on the notification's geometry instead of on a spring
-		-- value stranded a thousandth short of it - and back on the art the
-		-- size handler can maintain again, so the hover still morphs it.
+		-- value stranded a thousandth short of it. No art or radius call: the
+		-- element has been on this radius since its first frame.
 		Main.Size = UDim2.new(0, Width, 0, Height)
-		MainShape:SetType("Squircle")
-		MainShape:SetRadius(Corner)
-		InnerShape:SetType("Squircle")
-		InnerShape:SetRadius(Corner)
-		GlassShape:SetType("SquircleGlass")
-		GlassShape:SetRadius(Corner)
 		Glass.ImageTransparency = LoadingModule.GlassTransparency
+		Sheen.BackgroundTransparency = 1
 	end
 
 	task.spawn(function()
