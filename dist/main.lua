@@ -25545,6 +25545,15 @@ local Tween = Creator.Tween
 	a hair before the body lands. Then four short squash steps carry the
 	surface past its own edges and back before the text cross-fades in.
 
+	The hover is a spring, not a tween. Apple's glass is not eased into a new
+	shape and parked there - it is released, and a damped spring carries it
+	out and back. So the pointer drives a single 0..1 value through
+	Heartbeat, and that value swells the width, takes two pixels of height,
+	lifts the surface, and brings the specular sheen of the SquircleGlass
+	layer up under the face. All of it is pixels and one transparency: there
+	is no colour anywhere in the response, so it reads the same in every
+	theme the element is mounted under.
+
 	Nothing here reads or writes the notification module. A live toast and the
 	boot element can share the screen and no state is shared between them.
 ]]
@@ -25577,6 +25586,15 @@ local LoadingModule = {
 	SettleTime = 0.34,
 	FadeTime = 0.20,
 	BarTime = 0.20,
+
+	-- Hover response. The pointer does not fade a property in and out; it
+	-- feeds a spring, and these are what that spring drives at full throw.
+	HoverWidth = 12, -- pixels added to the pill, centred
+	HoverHeight = 2, -- pixels added to the height, centred
+	HoverLift = 3, -- pixels the whole surface rises
+	HoverSheen = 0.14, -- how much brighter the glass highlight goes
+	SpringStiffness = 190,
+	SpringDamping = 22, -- under 2*sqrt(stiffness): one soft overshoot, no wobble
 
 	Holder = nil,
 	LoadingIndex = 0,
@@ -25628,6 +25646,9 @@ function LoadingModule.New(Config)
 		IconThemed = Config.IconThemed,
 		Progress = nil,
 		Closed = false,
+		Ready = false, -- arrival finished; the hover spring may steer the surface
+		Hovered = false, -- the pointer, tracked even before Ready so a hover that
+		-- starts mid-arrival is picked up rather than dropped
 		Connections = {},
 		UIElements = {},
 	}
@@ -25857,6 +25878,95 @@ function LoadingModule.New(Config)
 
 	Loading.Container = MainContainer
 
+	-- Hover.
+	--
+	-- A critically-damped-ish spring, integrated by hand because TweenService
+	-- cannot express one. Stiffness 190 and damping 22 put the response just
+	-- past critical (2*sqrt(190) is about 27.6), which is the single soft
+	-- overshoot Apple's controls have and the reason it reads as a material
+	-- reacting rather than a rectangle resizing. The value it produces drives
+	-- four things at once so the surface moves as one piece: width, height,
+	-- lift, and the sheen of the glass layer.
+	local Spring = {
+		Value = 0,
+		Velocity = 0,
+		Target = 0,
+		Active = false,
+	}
+
+	-- The hit area is the resting pill exactly. It is a button only because a
+	-- Frame does not report mouse entry; it draws nothing and swallows a click
+	-- that was already landing on the element anyway.
+	local HoverArea = New("TextButton", {
+		Name = "Hover",
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundTransparency = 1,
+		AutoButtonColor = false,
+		Text = "",
+		ZIndex = 53,
+		Parent = MainContainer,
+	})
+
+	local function ApplyHover()
+		local H = Spring.Value
+		local GrowW = LoadingModule.HoverWidth * H
+		local GrowH = LoadingModule.HoverHeight * H
+		Main.Size = UDim2.new(0, Width + GrowW, 0, Height + GrowH)
+		-- Half the height growth keeps the swell centred on the resting
+		-- midline; the lift is on top of it, so the bottom edge rises less
+		-- than the top and the element reads as coming toward the pointer.
+		Main.Position = UDim2.new(0.5, 0, 0, -(GrowH / 2 + LoadingModule.HoverLift * H))
+		Glass.ImageTransparency = LoadingModule.GlassTransparency - LoadingModule.HoverSheen * H
+	end
+
+	local function SetHovered(On)
+		Loading.Hovered = On
+		Spring.Target = On and 1 or 0
+		Spring.Active = true
+	end
+
+	table.insert(
+		Loading.Connections,
+		HoverArea.MouseEnter:Connect(function()
+			SetHovered(true)
+		end)
+	)
+	table.insert(
+		Loading.Connections,
+		HoverArea.MouseLeave:Connect(function()
+			SetHovered(false)
+		end)
+	)
+
+	local RunService = game:GetService("RunService")
+	table.insert(
+		Loading.Connections,
+		RunService.Heartbeat:Connect(function(Dt)
+			if not Spring.Active or not Loading.Ready or Loading.Closed then
+				return
+			end
+
+			-- A hitch hands Heartbeat a long frame, and an unclamped step would
+			-- throw the spring past the target and ring it. One frame is capped
+			-- at a thirtieth: the response slows under load instead of breaking.
+			local Step = math.min(Dt, 1 / 30)
+			local Delta = Spring.Target - Spring.Value
+			Spring.Velocity = Spring.Velocity
+				+ (Delta * LoadingModule.SpringStiffness - Spring.Velocity * LoadingModule.SpringDamping) * Step
+			Spring.Value = Spring.Value + Spring.Velocity * Step
+
+			-- Land exactly on the target, so an unhovered element is the
+			-- notification's geometry and not a spring stranded at 0.0004.
+			if math.abs(Delta) < 0.0015 and math.abs(Spring.Velocity) < 0.02 then
+				Spring.Value = Spring.Target
+				Spring.Velocity = 0
+				Spring.Active = false
+			end
+
+			ApplyHover()
+		end)
+	)
+
 	-- The bead is born above the viewport, not merely above its resting spot.
 	-- The holder already sits below the topbar, so a fixed negative offset
 	-- still lands on screen; measure the holder and clear it, so the element
@@ -26014,6 +26124,16 @@ function LoadingModule.New(Config)
 		pcall(function()
 			Tween(Face, LoadingModule.FadeTime, { GroupTransparency = 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
 		end)
+
+		-- Hand the surface to the hover spring only now. The arrival owns
+		-- Main's size and position until the shape has finished forming, and
+		-- a pointer that was already sitting on the element during the drop
+		-- is carried straight into the hover instead of needing a re-entry.
+		Loading.Ready = true
+		if Loading.Hovered then
+			Spring.Target = 1
+			Spring.Active = true
+		end
 	end)
 
 	return Loading
