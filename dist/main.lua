@@ -25582,11 +25582,12 @@ local Tween = Creator.Tween
 	top of the screen - but every colour on it is read from the theme that is
 	selected, not from a palette of its own:
 
-	  * the outer squircle is the theme's Accent, at the notification's own
-	    0.05 transparency; the face over it is the theme's Dialog. A theme that
-	    sets only Accent / Dialog / Outline / Text / Icon - the five keys every
-	    theme pack in this library defines - lands on the element without a
-	    single extra entry;
+	  * the sheet is the theme's Background, not a colour of its own: the card
+	    is the same material the app is drawn on, so it reads as a pane of
+	    glass lying on the page rather than a tinted box floating over it. The
+	    Dialog layer over it is a light lift, so the material has a front and
+	    a back; a theme that sets only Background / Dialog / Outline / Text /
+	    Icon lands on the element without a single extra entry;
 	  * a one-pixel UIStroke would be the obvious rim, but the surface is a
 	    sliced squircle art, so a rectangle stroke would trace the bounding
 	    box instead of the pill. The rim is the glass layer at the top edge
@@ -25665,22 +25666,25 @@ local LoadingModule = {
 	DotDrop = 44,
 	DotTime = 0.14, -- seconds to lengthen, before the spread spring takes over
 
-	-- The spread. The width spring sits at zeta 0.78 - an overshoot of about
-	-- two percent - and the height spring is softer, at zeta 0.65, because
-	-- the reference's vertical swing is proportionally larger than its
-	-- horizontal one. Both settle in roughly 0.4 s.
+	-- The spread. The width spring sits at zeta 0.61 and the height at 0.53:
+	-- enough overshoot that the surface is visibly elastic, not enough to read
+	-- as a glitch. Both settle in about 0.45 s.
 	SpreadStiffness = 170,
-	SpreadDamping = 20.4,
+	SpreadDamping = 16,
 	HeightStiffness = 150,
-	HeightDamping = 16,
+	HeightDamping = 13,
+
+	-- The sheet of glass itself: the theme's Background at this transparency.
+	-- 0 is solid, 1 is gone.
+	SurfaceTransparency = 0.02,
 
 	-- The glass sheen settles to this transparency once the shape has formed.
 	-- 1 is invisible, 0 is opaque white.
-	GlassTransparency = 0.86,
+	GlassTransparency = 0.78,
 
-	-- The face: the theme's Dialog over the theme's Accent. At 0 the face is
-	-- solid Dialog and the accent never shows; at 1 the face is gone.
-	FaceTransparency = 0.35,
+	-- The face: the theme's Dialog over the theme's Background. At 0 the face
+	-- is solid Dialog and the background never shows; at 1 the face is gone.
+	FaceTransparency = 0.72,
 
 	-- Fade and bar timing, in seconds.
 	FadeTime = 0.20,
@@ -25920,10 +25924,10 @@ function LoadingModule.New(Config)
 		}, FaceChildren)
 	end
 
-	-- The surface: the theme's Accent underneath, the theme's Dialog over it,
-	-- the theme's Outline as a one-pixel rim, then the glass sheen. Every one
-	-- of those five keys exists in every theme pack, so the element lands on
-	-- the selected theme without the pack having to learn a new tag.
+	-- The surface, and it is the pack's own Background: the card is the same
+	-- sheet of glass the app sits on, not a tinted box floating over it. The
+	-- Dialog over it is a 28 % lift so the material has a front and a back
+	-- instead of reading as one flat plate.
 	local Inner, InnerShape = Creator.NewRoundFrame(Corner, "Squircle", {
 		Name = "Inner",
 		Size = UDim2.new(1, 0, 1, 0),
@@ -26004,10 +26008,10 @@ function LoadingModule.New(Config)
 		-- Born as the dot, not built at full size and then shrunk: a single
 		-- frame of the finished pill before the morph starts is a flash.
 		Size = UDim2.new(0, LoadingModule.DotSize, 0, LoadingModule.DotSize),
-		ImageTransparency = 0.05,
+		ImageTransparency = LoadingModule.SurfaceTransparency,
 		ZIndex = 50,
 		ThemeTag = {
-			ImageColor3 = "Accent",
+			ImageColor3 = "Background",
 		},
 	}, {
 		Inner,
@@ -26119,6 +26123,13 @@ function LoadingModule.New(Config)
 		Main.Size = UDim2.new(0, W, 0, BoxH)
 		Main.Position = UDim2.new(0.5, OffsetX, 0, -OffsetY)
 		Glass.ImageTransparency = LoadingModule.GlassTransparency - LoadingModule.HoverSheen * H
+
+		-- The reflection follows the pointer. Glass under a thumb catches the
+		-- light on the side it is being pressed from, so the band drifts the
+		-- way the surface is leaning and only ever at a fraction of the
+		-- strength the arrival sweep reaches.
+		Sheen.BackgroundTransparency = 1 - 0.14 * H
+		Sheen.Position = UDim2.new(0.60 + 0.22 * Reach.Side * H, 0, -0.25, 0)
 	end
 
 	local function SetSide(X)
@@ -26325,9 +26336,7 @@ function LoadingModule.New(Config)
 	--   sheen   - the SquircleGlass layer rises with the spread and the
 	--             reflection band travels across the face, so the highlight
 	--             arrives with the shape rather than after it.
-	local function Spread()
-		local Dot = LoadingModule.DotSize
-		local Drop = LoadingModule.DotDrop
+	local function Spread(FromW, FromH)
 		local WP, WV = 0, 0
 		local HP, HV = 0, 0
 
@@ -26342,8 +26351,8 @@ function LoadingModule.New(Config)
 			HV = HV + (Delta * LoadingModule.HeightStiffness - HV * LoadingModule.HeightDamping) * Step
 			HP = HP + HV * Step
 
-			local W = Dot + (Width - Dot) * WP
-			local H = Drop + (Height - Drop) * HP
+			local W = FromW + (Width - FromW) * WP
+			local H = FromH + (Height - FromH) * HP
 
 			-- Size is the whole animation. Radius and art stay put.
 			Main.Size = UDim2.new(0, W, 0, H)
@@ -26380,15 +26389,21 @@ function LoadingModule.New(Config)
 			return
 		end
 
+		-- Surface tension. The bead pinches narrow and stretches long before
+		-- it is released - the same way a drop gathers itself before it runs.
+		-- This is the frame that sells the material as a liquid rather than
+		-- as a shape being scaled.
+		local PinchW = LoadingModule.DotSize - 4
+		local PinchH = LoadingModule.DotDrop + 2
 		Tween(Main, LoadingModule.DotTime, {
-			Size = UDim2.new(0, LoadingModule.DotSize, 0, LoadingModule.DotDrop),
+			Size = UDim2.new(0, PinchW, 0, PinchH),
 		}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
 		task.wait(LoadingModule.DotTime)
 		if Loading.Closed then
 			return
 		end
 
-		Spread()
+		Spread(PinchW, PinchH)
 		if Loading.Closed then
 			return
 		end
@@ -26396,6 +26411,22 @@ function LoadingModule.New(Config)
 		Face.Visible = true
 		pcall(function()
 			Tween(Face, LoadingModule.FadeTime, { GroupTransparency = 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+		end)
+
+		-- The catch. The instant the surface lands, the glass takes the light
+		-- and lets it go again - a specular does that when a pane stops
+		-- moving, and it is the difference between glass and a dark rectangle
+		-- with a gradient on it.
+		local Catch = math.max(LoadingModule.GlassTransparency - 0.30, 0.15)
+		pcall(function()
+			Tween(Glass, 0.14, { ImageTransparency = Catch }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+		end)
+		task.wait(0.14)
+		if Loading.Closed then
+			return
+		end
+		pcall(function()
+			Tween(Glass, 0.26, { ImageTransparency = LoadingModule.GlassTransparency }, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut):Play()
 		end)
 
 		-- Hand the surface to the hover spring only now. The arrival owns
