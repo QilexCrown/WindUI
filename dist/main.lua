@@ -25564,9 +25564,17 @@ local LoadingModule = {
 	BeadHeight = 10,
 	BeadGap = 8, -- clear space above the viewport edge at birth
 
+	-- How far past its resting height the column stretches while it falls,
+	-- then relaxes back. 1.0 would be a scale animation; 1.12 is a drop.
+	Stretch = 1.12,
+
+	-- The glass sheen settles to this transparency once the shape has formed.
+	-- 1 is invisible, 0 is opaque white.
+	GlassTransparency = 0.72,
+
 	-- Arrival timing, in seconds.
 	FallTime = 0.60,
-	SettleTime = 0.28,
+	SettleTime = 0.34,
 	FadeTime = 0.20,
 	BarTime = 0.20,
 
@@ -25784,7 +25792,10 @@ function LoadingModule.New(Config)
 	end
 
 	-- The notification surface: outer squircle on Notification, inner squircle
-	-- on Notification2. Two layers, corner 18, nothing else.
+	-- on Notification2, then one glass layer over both. The glass is the same
+	-- SquircleGlass the slider thumb and every other glassy WindUI control
+	-- uses - it is what gives the surface its sheen, and it is the only layer
+	-- here drawn from elsewhere in the library.
 	local Inner = Creator.NewRoundFrame(Corner, "Squircle", {
 		Name = "Inner",
 		Size = UDim2.new(1, 0, 1, 0),
@@ -25793,6 +25804,14 @@ function LoadingModule.New(Config)
 			ImageColor3 = "Notification2",
 			ImageTransparency = "Notification2Transparency",
 		},
+	})
+
+	local Glass = Creator.NewRoundFrame(Corner, "SquircleGlass", {
+		Name = "Glass",
+		Size = UDim2.new(1, 0, 1, 0),
+		ImageColor3 = Color3.new(1, 1, 1),
+		ImageTransparency = 1,
+		ZIndex = 51,
 	})
 
 	local Main = Creator.NewRoundFrame(Corner, "Squircle", {
@@ -25807,6 +25826,7 @@ function LoadingModule.New(Config)
 		},
 	}, {
 		Inner,
+		Glass,
 		Face,
 	})
 
@@ -25824,6 +25844,7 @@ function LoadingModule.New(Config)
 		Main = Main,
 		Container = MainContainer,
 		Inner = Inner,
+		Glass = Glass,
 		Face = Face,
 		Title = Title,
 		Content = Content,
@@ -25924,18 +25945,22 @@ function LoadingModule.New(Config)
 		MainContainer:Destroy()
 	end
 
-	-- Arrival. The line is born above the top edge at full width and two runs
-	-- leave it at once:
+	-- Arrival, as a drop of liquid rather than a scale-in.
 	--
-	--   Position - travels down, Back/Out, so it passes its resting spot and
-	--              comes back up into it instead of stopping dead;
-	--   Size     - thickens to the resting element, Quint/Out, so the wide
-	--              part of the travel happens early and the last stretch is
-	--              slow.
-	--
-	-- The two runs are deliberately not the same duration: the shape finishes
-	-- forming slightly before the body finishes falling, which is what makes
-	-- it read as liquid being pulled into place by the fall.
+	--   fall    - born above the top edge as a thin line at 92% width, and
+	--             carried down on Back/Out so it passes its resting spot and
+	--             springs back up into it instead of stopping dead;
+	--   stretch - the same run also pulls the height past its resting value
+	--             (Stretch, 1.12x), because a column of liquid being pulled
+	--             down is longer than the shape it is going to become;
+	--   relax   - the stretched column settles back to its own height on
+	--             Sine/Out before anything else happens, which is the moment
+	--             the eye reads the drop landing;
+	--   squash  - four shrinking overshoots carry the surface past its own
+	--             edges and back, the last two only a pixel, so it looks like
+	--             surface tension finding rest instead of a bounce;
+	--   sheen   - the SquircleGlass layer fades in under the face, so the
+	--             highlight arrives with the shape, not after it.
 	task.spawn(function()
 		task.wait()
 		if Loading.Closed then
@@ -25947,23 +25972,32 @@ function LoadingModule.New(Config)
 		Main.Position = UDim2.new(0.5, 0, 0, BirthOffset())
 
 		Tween(Main, LoadingModule.FallTime, { Position = UDim2.new(0.5, 0, 0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
-		Tween(Main, LoadingModule.FallTime * 0.94, { Size = UDim2.new(0, Width, 0, Height) }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		Tween(Main, LoadingModule.FallTime, {
+			Size = UDim2.new(0, Width, 0, Height * LoadingModule.Stretch),
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 
 		task.wait(LoadingModule.FallTime)
 		if Loading.Closed then
 			return
 		end
 
-		-- Squash and settle. The surface overshoots wide and flat, springs
-		-- back through its own size, and relaxes. The amplitude shrinks each
-		-- step so the last two frames are the surface finding rest, not
-		-- wobbling.
-		local Step = LoadingModule.SettleTime / 4
+		local Relax = LoadingModule.SettleTime * 0.45
+		Tween(Main, Relax, { Size = UDim2.new(0, Width, 0, Height) }, Enum.EasingStyle.Sine, Enum.EasingDirection.Out):Play()
+		pcall(function()
+			Tween(Glass, Relax * 1.6, { ImageTransparency = LoadingModule.GlassTransparency }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+		end)
+		task.wait(Relax)
+		if Loading.Closed then
+			return
+		end
+
+		-- Squash and settle. The amplitude shrinks each step so the last two
+		-- frames are the surface finding rest, not wobbling.
+		local Step = (LoadingModule.SettleTime - Relax) / 3
 		for _, Frame in ipairs({
-			{ UDim2.new(0, Width + 8, 0, Height - 4), Step },
+			{ UDim2.new(0, Width + 7, 0, Height - 4), Step },
 			{ UDim2.new(0, Width - 3, 0, Height + 2), Step },
-			{ UDim2.new(0, Width + 1, 0, Height - 1), Step * 0.8 },
-			{ UDim2.new(0, Width, 0, Height), Step * 0.7 },
+			{ UDim2.new(0, Width, 0, Height), Step },
 		}) do
 			if Loading.Closed then
 				return
