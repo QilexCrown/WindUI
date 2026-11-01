@@ -23,12 +23,19 @@ local Tween = Creator.Tween
 	active theme the moment it is set: the boot element in a hub is the same
 	surface as the toasts the hub fires next to it, in the hub's own palette.
 
-	The arrival: the element is born above the top edge of the viewport as a
-	thin line, full width, and comes down while it thickens. The fall is
-	Back/Out so it passes its resting spot and springs back up into it; the
-	height run is Quint/Out at 94% of the fall, so the shape finishes forming
-	a hair before the body lands. Then four short squash steps carry the
-	surface past its own edges and back before the text cross-fades in.
+	The arrival: the element is not slid into place, it is formed.
+
+	It is born as a dot - a real circle, because the corner radius is set to
+	half the dot and DynamicShape then picks its Circle art - pinned to the
+	top edge, where the pill is going to live. The dot lengthens into a short
+	droplet, and then a single damped spring carries it out into the full
+	width. Width, height and corner radius are all read off that one spring
+	value, so at no point is the element a rectangle being resized: it is a
+	blob whose corners are still rounding off while it spreads, and it passes
+	through the library's Circle, SquircleV and SquircleH art on the way. The
+	spring is underdamped on purpose - it overshoots by about two percent and
+	then settles in shrinking swings, which is the wide-narrow-wide read of
+	the reference.
 
 	The hover is a spring, not a tween. Apple's glass is not eased into a new
 	shape and parked there - it is released, and a damped spring carries it
@@ -53,22 +60,26 @@ local LoadingModule = {
 	BarHeight = 6, -- the ProgressBar element's bar
 	MarginTop = 14,
 
-	-- The line the element is born as, before it thickens.
-	BeadWidthRatio = 0.92,
-	BeadHeight = 10,
-	BeadGap = 8, -- clear space above the viewport edge at birth
+	-- The dot the element is born as, and the droplet it lengthens into
+	-- before it spreads. Both in pixels.
+	DotSize = 18,
+	DotDrop = 32,
+	DotTime = 0.14, -- seconds to lengthen, before the spread spring takes over
 
-	-- How far past its resting height the column stretches while it falls,
-	-- then relaxes back. 1.0 would be a scale animation; 1.12 is a drop.
-	Stretch = 1.12,
+	-- The spread. The width spring sits at zeta 0.78 - an overshoot of about
+	-- two percent - and the height spring is softer, at zeta 0.65, because
+	-- the reference's vertical swing is proportionally larger than its
+	-- horizontal one. Both settle in roughly 0.4 s.
+	SpreadStiffness = 170,
+	SpreadDamping = 20.4,
+	HeightStiffness = 150,
+	HeightDamping = 16,
 
 	-- The glass sheen settles to this transparency once the shape has formed.
 	-- 1 is invisible, 0 is opaque white.
 	GlassTransparency = 0.72,
 
-	-- Arrival timing, in seconds.
-	FallTime = 0.60,
-	SettleTime = 0.34,
+	-- Fade and bar timing, in seconds.
 	FadeTime = 0.20,
 	BarTime = 0.20,
 
@@ -302,7 +313,7 @@ function LoadingModule.New(Config)
 	-- SquircleGlass the slider thumb and every other glassy WindUI control
 	-- uses - it is what gives the surface its sheen, and it is the only layer
 	-- here drawn from elsewhere in the library.
-	local Inner = Creator.NewRoundFrame(Corner, "Squircle", {
+	local Inner, InnerShape = Creator.NewRoundFrame(Corner, "Squircle", {
 		Name = "Inner",
 		Size = UDim2.new(1, 0, 1, 0),
 		ZIndex = 50,
@@ -312,7 +323,7 @@ function LoadingModule.New(Config)
 		},
 	})
 
-	local Glass = Creator.NewRoundFrame(Corner, "SquircleGlass", {
+	local Glass, GlassShape = Creator.NewRoundFrame(Corner, "SquircleGlass", {
 		Name = "Glass",
 		Size = UDim2.new(1, 0, 1, 0),
 		ImageColor3 = Color3.new(1, 1, 1),
@@ -320,11 +331,13 @@ function LoadingModule.New(Config)
 		ZIndex = 51,
 	})
 
-	local Main = Creator.NewRoundFrame(Corner, "Squircle", {
+	local Main, MainShape = Creator.NewRoundFrame(LoadingModule.DotSize / 2, "Circle", {
 		Name = "Main",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 0),
-		Size = UDim2.new(0, Width, 0, Height),
+		-- Born as the dot, not built at full size and then shrunk: a single
+		-- frame of the finished pill before the morph starts is a flash.
+		Size = UDim2.new(0, LoadingModule.DotSize, 0, LoadingModule.DotSize),
 		ImageTransparency = 0.05,
 		ZIndex = 50,
 		ThemeTag = {
@@ -452,18 +465,6 @@ function LoadingModule.New(Config)
 		end)
 	)
 
-	-- The bead is born above the viewport, not merely above its resting spot.
-	-- The holder already sits below the topbar, so a fixed negative offset
-	-- still lands on screen; measure the holder and clear it, so the element
-	-- always enters from off the top of the player's screen at any inset.
-	local function BirthOffset()
-		local HolderY = TopOffset()
-		pcall(function()
-			HolderY = MainContainer.AbsolutePosition.Y
-		end)
-		return -(HolderY + LoadingModule.BeadHeight + LoadingModule.BeadGap)
-	end
-
 	function Loading:SetContent(Text)
 		if Loading.Closed then
 			return Loading.Content
@@ -511,20 +512,22 @@ function LoadingModule.New(Config)
 		end
 		table.clear(Loading.Connections)
 
-		-- Leave the way it came: thin out and run back up past the top edge,
-		-- so the exit is the arrival played backwards rather than a frame
-		-- disappearing off the screen.
+		-- Leave the way it came: the surface pulls back down into the dot it
+		-- was born as, then the dot dims out, rather than the frame blinking
+		-- off the screen.
 		pcall(function()
-			Tween(Face, 0.14, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
+			Tween(Face, 0.10, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
 		end)
 		Face.Visible = false
-		Tween(Main, 0.26, {
-			Size = UDim2.new(0, Width * LoadingModule.BeadWidthRatio, 0, LoadingModule.BeadHeight),
-		}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
-		Tween(Main, 0.30, {
-			Position = UDim2.new(0.5, 0, 0, BirthOffset()),
-		}, Enum.EasingStyle.Back, Enum.EasingDirection.In):Play()
-		task.delay(0.32, function()
+
+		local Dot = LoadingModule.DotSize
+		Tween(Main, 0.24, { Size = UDim2.new(0, Dot, 0, Dot) }, Enum.EasingStyle.Back, Enum.EasingDirection.In):Play()
+		task.delay(0.16, function()
+			Tween(Main, 0.14, { ImageTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
+			Tween(Inner, 0.14, { ImageTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
+			Tween(Glass, 0.14, { ImageTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
+		end)
+		task.delay(0.34, function()
 			MainContainer:Destroy()
 		end)
 	end
@@ -540,67 +543,128 @@ function LoadingModule.New(Config)
 		MainContainer:Destroy()
 	end
 
-	-- Arrival, as a drop of liquid rather than a scale-in.
+	-- Arrival: the element is formed, not moved.
 	--
-	--   fall    - born above the top edge as a thin line at 92% width, and
-	--             carried down on Back/Out so it passes its resting spot and
-	--             springs back up into it instead of stopping dead;
-	--   stretch - the same run also pulls the height past its resting value
-	--             (Stretch, 1.12x), because a column of liquid being pulled
-	--             down is longer than the shape it is going to become;
-	--   relax   - the stretched column settles back to its own height on
-	--             Sine/Out before anything else happens, which is the moment
-	--             the eye reads the drop landing;
-	--   squash  - four shrinking overshoots carry the surface past its own
-	--             edges and back, the last two only a pixel, so it looks like
-	--             surface tension finding rest instead of a bounce;
-	--   sheen   - the SquircleGlass layer fades in under the face, so the
-	--             highlight arrives with the shape, not after it.
+	--   dot     - born as a circle of DotSize at the very top edge. It is a
+	--             real circle: the Circle art, with the corner slice set to
+	--             half the dot, not a rounded square pretending;
+	--   droplet - the dot lengthens downward to DotDrop, because a bead of
+	--             liquid stretches before it spreads;
+	--   spread  - two damped springs carry the width and the height out to
+	--             the notification's geometry, and the corner radius is read
+	--             off the width spring, walking from half the short side to
+	--             the surface's 18 px as it goes. At no frame is this a
+	--             rectangle being resized: it is a blob whose corners are
+	--             still rounding off while it spreads;
+	--   swing   - the width spring overshoots about two percent and the
+	--             height about seven, so the surface goes wide and a little
+	--             taller, then a hair narrow and shorter, then rest - the
+	--             wide-narrow-wide settle the reference has;
+	--   sheen   - the SquircleGlass layer rises with the spread, so the
+	--             highlight arrives with the shape rather than after it.
+	--
+	-- The shape art is chosen here rather than left to DynamicShape's own
+	-- AbsoluteSize handler: that handler only runs while the current art is a
+	-- Squircle, so the moment the element is a Circle it can never leave it.
+	-- The rule below is the same one the module uses, evaluated fresh.
+	local SquircleRatio = 310 / 1024 -- DynamicShape's Squircle radius over 1024
+
+	local function ShapeFor(W, H, R)
+		local Ratio = R / math.min(W, H)
+		if Ratio >= SquircleRatio then
+			if W > H then
+				return "SquircleH"
+			elseif W < H then
+				return "SquircleV"
+			end
+			return "Circle"
+		end
+		return "Squircle"
+	end
+
+	local function Spread()
+		local Dot = LoadingModule.DotSize
+		local Drop = LoadingModule.DotDrop
+		local WP, WV = 0, 0
+		local HP, HV = 0, 0
+
+		while not Loading.Closed do
+			local Step = math.min(RunService.Heartbeat:Wait(), 1 / 30)
+
+			local Delta = 1 - WP
+			WV = WV + (Delta * LoadingModule.SpreadStiffness - WV * LoadingModule.SpreadDamping) * Step
+			WP = WP + WV * Step
+
+			Delta = 1 - HP
+			HV = HV + (Delta * LoadingModule.HeightStiffness - HV * LoadingModule.HeightDamping) * Step
+			HP = HP + HV * Step
+
+			local Morph = math.clamp(WP, 0, 1)
+			local W = Dot + (Width - Dot) * WP
+			local H = Drop + (Height - Drop) * HP
+			local R = (1 - Morph) * math.min(W, H) / 2 + Morph * Corner
+
+			Main.Size = UDim2.new(0, W, 0, H)
+			MainShape:SetRadius(R)
+
+			-- All three layers are the same box, so they take the same radius
+			-- and the same art: Inner is what the eye actually sees, and a
+			-- surface that rounds off underneath while its face stays square
+			-- is not one material.
+			local Type = ShapeFor(W, H, R)
+			if Type ~= MainShape:GetType() then
+				MainShape:SetType(Type)
+			end
+			if Type ~= InnerShape:GetType() then
+				InnerShape:SetType(Type)
+			end
+			InnerShape:SetRadius(R)
+
+			local GlassType = Type .. "Glass"
+			if GlassType ~= GlassShape:GetType() then
+				GlassShape:SetType(GlassType)
+			end
+			GlassShape:SetRadius(R)
+
+			Glass.ImageTransparency = 1 - (1 - LoadingModule.GlassTransparency) * math.clamp(WP * 1.2, 0, 1)
+
+			if math.abs(1 - WP) < 0.002 and math.abs(WV) < 0.05 and math.abs(1 - HP) < 0.002 and math.abs(HV) < 0.05 then
+				break
+			end
+		end
+
+		if Loading.Closed then
+			return
+		end
+
+		-- Land exactly on the notification's geometry instead of on a spring
+		-- value stranded a thousandth short of it - and back on the art the
+		-- size handler can maintain again, so the hover still morphs it.
+		Main.Size = UDim2.new(0, Width, 0, Height)
+		MainShape:SetType("Squircle")
+		MainShape:SetRadius(Corner)
+		InnerShape:SetType("Squircle")
+		InnerShape:SetRadius(Corner)
+		GlassShape:SetType("SquircleGlass")
+		GlassShape:SetRadius(Corner)
+		Glass.ImageTransparency = LoadingModule.GlassTransparency
+	end
+
 	task.spawn(function()
 		task.wait()
 		if Loading.Closed then
 			return
 		end
 
-		local BeadW = Width * LoadingModule.BeadWidthRatio
-		Main.Size = UDim2.new(0, BeadW, 0, LoadingModule.BeadHeight)
-		Main.Position = UDim2.new(0.5, 0, 0, BirthOffset())
-
-		Tween(Main, LoadingModule.FallTime, { Position = UDim2.new(0.5, 0, 0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
-		Tween(Main, LoadingModule.FallTime, {
-			Size = UDim2.new(0, Width, 0, Height * LoadingModule.Stretch),
-		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
-
-		task.wait(LoadingModule.FallTime)
+		Tween(Main, LoadingModule.DotTime, {
+			Size = UDim2.new(0, LoadingModule.DotSize, 0, LoadingModule.DotDrop),
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+		task.wait(LoadingModule.DotTime)
 		if Loading.Closed then
 			return
 		end
 
-		local Relax = LoadingModule.SettleTime * 0.45
-		Tween(Main, Relax, { Size = UDim2.new(0, Width, 0, Height) }, Enum.EasingStyle.Sine, Enum.EasingDirection.Out):Play()
-		pcall(function()
-			Tween(Glass, Relax * 1.6, { ImageTransparency = LoadingModule.GlassTransparency }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
-		end)
-		task.wait(Relax)
-		if Loading.Closed then
-			return
-		end
-
-		-- Squash and settle. The amplitude shrinks each step so the last two
-		-- frames are the surface finding rest, not wobbling.
-		local Step = (LoadingModule.SettleTime - Relax) / 3
-		for _, Frame in ipairs({
-			{ UDim2.new(0, Width + 7, 0, Height - 4), Step },
-			{ UDim2.new(0, Width - 3, 0, Height + 2), Step },
-			{ UDim2.new(0, Width, 0, Height), Step },
-		}) do
-			if Loading.Closed then
-				return
-			end
-			Tween(Main, Frame[2], { Size = Frame[1] }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut):Play()
-			task.wait(Frame[2])
-		end
-
+		Spread()
 		if Loading.Closed then
 			return
 		end
@@ -611,9 +675,9 @@ function LoadingModule.New(Config)
 		end)
 
 		-- Hand the surface to the hover spring only now. The arrival owns
-		-- Main's size and position until the shape has finished forming, and
-		-- a pointer that was already sitting on the element during the drop
-		-- is carried straight into the hover instead of needing a re-entry.
+		-- Main's size until the shape has finished forming, and a pointer
+		-- that was already sitting on the element is carried straight into
+		-- the hover instead of needing a re-entry.
 		Loading.Ready = true
 		if Loading.Hovered then
 			Spring.Target = 1
