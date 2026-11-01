@@ -19,7 +19,9 @@ return function(WindUI, Creator)
 			PanelBackgroundTransparency = 0.95,
 
 			SliderIcon = Color3.fromHex("#908F95"),
-			Primary = Color3.fromHex("#0091FF"),
+			-- White, not the old #0091FF: progress fill, slider and checkbox
+			-- fall back here, and the boot element's bar is drawn from it.
+			Primary = Color3.fromHex("#FFFFFF"),
 
 			--WindowTopbarButtonIcon = Color3.fromHex("#ffffff"),
 			LabelBackground = Color3.fromHex("#000000"),
@@ -61,6 +63,10 @@ return function(WindUI, Creator)
 
 			ElementBackground = Color3.fromHex("#ffffff"),
 			ElementBackgroundTransparency = 0,
+
+			-- The bar is white by default. On the light surface a white fill is
+			-- invisible, so this theme draws it in its own ink instead.
+			ProgressBar = "Text",
 		},
 
 		Rose = {

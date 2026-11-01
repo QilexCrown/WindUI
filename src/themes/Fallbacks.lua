@@ -79,7 +79,7 @@ return function(Creator)
 		SliderIconFrom = "SliderIcon",
 		SliderIconTo = "SliderIcon",
 
-		ProgressBar = "Primary",
+		ProgressBar = "White",
 		ProgressBarTrack = "Text",
 		ProgressBarTrackTransparency = 0.9,
 		ProgressBarText = "Text",

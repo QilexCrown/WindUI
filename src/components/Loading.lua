@@ -37,14 +37,18 @@ local Tween = Creator.Tween
 	then settles in shrinking swings, which is the wide-narrow-wide read of
 	the reference.
 
-	The hover is a spring, not a tween. Apple's glass is not eased into a new
-	shape and parked there - it is released, and a damped spring carries it
-	out and back. So the pointer drives a single 0..1 value through
-	Heartbeat, and that value swells the width, takes two pixels of height,
-	lifts the surface, and brings the specular sheen of the SquircleGlass
-	layer up under the face. All of it is pixels and one transparency: there
-	is no colour anywhere in the response, so it reads the same in every
-	theme the element is mounted under.
+	The hover is the same motion language, at a smaller scale. The pointer does
+	not resize the element and it is not eased into a new shape and parked
+	there - it is released, and damped springs carry it out and ring it back.
+	The reach is split between the two edges from where the pointer came in,
+	so the pill stretches out of the side that was touched and the far edge
+	follows late; wherever the width is away from its target the height gives
+	up a few pixels and the corners take them on, which is why it reads as a
+	surface holding its own volume rather than a box being scaled. Zeta 0.56
+	leaves two or three visible swings, the wide-narrow-wide settle the
+	reference has. All of it is pixels and two transparencies: there is no
+	colour anywhere in the response, so it reads the same in every theme the
+	element is mounted under.
 
 	Nothing here reads or writes the notification module. A live toast and the
 	boot element can share the screen and no state is shared between them.
@@ -83,12 +87,21 @@ local LoadingModule = {
 	FadeTime = 0.20,
 	BarTime = 0.20,
 
-	-- Hover response. The pointer does not fade a property in and out; it
-	-- feeds a spring, and these are what that spring drives at full throw.
-	HoverWidth = 12, -- pixels added to the pill, centred
-	HoverHeight = 2, -- pixels added to the height, centred
+	-- Hover. The pointer does not resize the element - it releases it, and a
+	-- damped spring carries the surface out and rings it back. The reach is
+	-- split between the two edges by where the pointer entered, so the pill
+	-- stretches out of the side that was touched and the far edge barely
+	-- moves, which is how a body of liquid moves: the near wall travels and
+	-- the rest follows late.
+	HoverReach = 36, -- total pixels added to the width at full throw
 	HoverLift = 3, -- pixels the whole surface rises
 	HoverSheen = 0.14, -- how much brighter the glass highlight goes
+	SquashAmount = 3, -- pixels the height loses at peak stretch
+	RadiusBulge = 5, -- extra corner radius while the surface is deformed
+	ReachDeviation = 30, -- width error, in pixels, that counts as a full squash
+	ReachStiffness = 240,
+	ReachDamping = 17.4, -- zeta 0.56: two or three visible swings, then rest
+	HoverDeadband = 0.06, -- how far off centre the pointer must be to pick a side
 	SpringStiffness = 190,
 	SpringDamping = 22, -- under 2*sqrt(stiffness): one soft overshoot, no wobble
 
@@ -378,13 +391,32 @@ function LoadingModule.New(Config)
 
 	-- Hover.
 	--
-	-- A critically-damped-ish spring, integrated by hand because TweenService
-	-- cannot express one. Stiffness 190 and damping 22 put the response just
-	-- past critical (2*sqrt(190) is about 27.6), which is the single soft
-	-- overshoot Apple's controls have and the reason it reads as a material
-	-- reacting rather than a rectangle resizing. The value it produces drives
-	-- four things at once so the surface moves as one piece: width, height,
-	-- lift, and the sheen of the glass layer.
+	-- TweenService cannot express this, so the springs are integrated by hand.
+	-- There are three of them:
+	--
+	--   reach - one value per edge, in pixels, springing from 0 to the share
+	--           of HoverReach that edge was given. The share comes from the
+	--           pointer's position across the element, so the edge it came in
+	--           over travels most of the distance and the far edge travels a
+	--           little. Zeta 0.56 leaves two or three visible swings, which
+	--           is the wide-narrow-wide settle the reference has;
+	--   value - the lift and the sheen, on the tighter spring the element
+	--           already used, so the surface comes toward the pointer while
+	--           it is still spreading;
+	--   squash- not a spring: it is read straight off the reach. Wherever the
+	--           width is away from its target - overshooting outward or
+	--           ringing back through it - the height gives up a few pixels
+	--           and the corners take them on. Volume in, volume out. It is
+	--           the difference between a box being resized and a surface
+	--           holding its own amount of material.
+	local Reach = {
+		L = 0,
+		LV = 0,
+		R = 0,
+		RV = 0,
+		Side = 1, -- +1 pointer on the right half, -1 on the left
+	}
+
 	local Spring = {
 		Value = 0,
 		Velocity = 0,
@@ -405,34 +437,75 @@ function LoadingModule.New(Config)
 		Parent = MainContainer,
 	})
 
+	local function Share()
+		local T = Reach.Side
+		return (0.5 + 0.5 * T), (0.5 - 0.5 * T)
+	end
+
 	local function ApplyHover()
+		local W = Width + Reach.L + Reach.R
+		local TargetW = Width + (Loading.Hovered and LoadingModule.HoverReach or 0)
+
+		-- Away from target, in either direction, is deformation. Clamped so a
+		-- hard swing squashes fully but never inverts the element.
+		local Squash = math.clamp(math.abs(W - TargetW) / LoadingModule.ReachDeviation, 0, 1)
 		local H = Spring.Value
-		local GrowW = LoadingModule.HoverWidth * H
-		local GrowH = LoadingModule.HoverHeight * H
-		Main.Size = UDim2.new(0, Width + GrowW, 0, Height + GrowH)
-		-- Half the height growth keeps the swell centred on the resting
-		-- midline; the lift is on top of it, so the bottom edge rises less
-		-- than the top and the element reads as coming toward the pointer.
-		Main.Position = UDim2.new(0.5, 0, 0, -(GrowH / 2 + LoadingModule.HoverLift * H))
+		local BoxH = Height - LoadingModule.SquashAmount * Squash
+		local Radius = Corner + LoadingModule.RadiusBulge * Squash
+
+		-- AnchorPoint is (0.5, 0), so the x offset is measured from the
+		-- centre: the right edge reaching R and the left edge reaching L
+		-- moves the centre by half their difference.
+		local OffsetX = (Reach.R - Reach.L) * 0.5
+		local OffsetY = (Height - BoxH) * 0.5 + LoadingModule.HoverLift * H
+
+		Main.Size = UDim2.new(0, W, 0, BoxH)
+		Main.Position = UDim2.new(0.5, OffsetX, 0, -OffsetY)
+		MainShape:SetRadius(Radius)
+		InnerShape:SetRadius(Radius)
+		GlassShape:SetRadius(Radius)
 		Glass.ImageTransparency = LoadingModule.GlassTransparency - LoadingModule.HoverSheen * H
 	end
 
-	local function SetHovered(On)
+	local function SetSide(X)
+		local Centre = Width * 0.5
+		pcall(function()
+			Centre = MainContainer.AbsoluteSize.X * 0.5
+		end)
+		local T = (X - Centre) / math.max(Centre, 1)
+		if math.abs(T) < LoadingModule.HoverDeadband then
+			return
+		end
+		Reach.Side = T > 0 and 1 or -1
+	end
+
+	local function SetHovered(On, X)
 		Loading.Hovered = On
+		if On and X then
+			SetSide(X)
+		end
 		Spring.Target = On and 1 or 0
 		Spring.Active = true
 	end
 
 	table.insert(
 		Loading.Connections,
-		HoverArea.MouseEnter:Connect(function()
-			SetHovered(true)
+		HoverArea.MouseEnter:Connect(function(X)
+			SetHovered(true, X)
 		end)
 	)
 	table.insert(
 		Loading.Connections,
 		HoverArea.MouseLeave:Connect(function()
 			SetHovered(false)
+		end)
+	)
+	table.insert(
+		Loading.Connections,
+		HoverArea.MouseMoved:Connect(function(X)
+			if Loading.Hovered then
+				SetSide(X)
+			end
 		end)
 	)
 
@@ -445,19 +518,44 @@ function LoadingModule.New(Config)
 			end
 
 			-- A hitch hands Heartbeat a long frame, and an unclamped step would
-			-- throw the spring past the target and ring it. One frame is capped
+			-- throw a spring past its target and ring it. One frame is capped
 			-- at a thirtieth: the response slows under load instead of breaking.
 			local Step = math.min(Dt, 1 / 30)
+
 			local Delta = Spring.Target - Spring.Value
 			Spring.Velocity = Spring.Velocity
 				+ (Delta * LoadingModule.SpringStiffness - Spring.Velocity * LoadingModule.SpringDamping) * Step
 			Spring.Value = Spring.Value + Spring.Velocity * Step
 
-			-- Land exactly on the target, so an unhovered element is the
-			-- notification's geometry and not a spring stranded at 0.0004.
-			if math.abs(Delta) < 0.0015 and math.abs(Spring.Velocity) < 0.02 then
+			local ShareR, ShareL = Share()
+			local ReachTotal = LoadingModule.HoverReach
+			local TargetR = Loading.Hovered and ReachTotal * ShareR or 0
+			local TargetL = Loading.Hovered and ReachTotal * ShareL or 0
+
+			local K, D = LoadingModule.ReachStiffness, LoadingModule.ReachDamping
+
+			Delta = TargetR - Reach.R
+			Reach.RV = Reach.RV + (Delta * K - Reach.RV * D) * Step
+			Reach.R = Reach.R + Reach.RV * Step
+
+			Delta = TargetL - Reach.L
+			Reach.LV = Reach.LV + (Delta * K - Reach.LV * D) * Step
+			Reach.L = Reach.L + Reach.LV * Step
+
+			-- Land exactly on the resting geometry, so an unhovered element is
+			-- the notification's box and not a spring stranded at 0.0004.
+			local Settled = math.abs(Spring.Target - Spring.Value) < 0.0015
+				and math.abs(Spring.Velocity) < 0.02
+				and math.abs(TargetR - Reach.R) < 0.01
+				and math.abs(Reach.RV) < 0.05
+				and math.abs(TargetL - Reach.L) < 0.01
+				and math.abs(Reach.LV) < 0.05
+
+			if Settled then
 				Spring.Value = Spring.Target
 				Spring.Velocity = 0
+				Reach.R, Reach.RV = TargetR, 0
+				Reach.L, Reach.LV = TargetL, 0
 				Spring.Active = false
 			end
 
@@ -521,7 +619,17 @@ function LoadingModule.New(Config)
 		Face.Visible = false
 
 		local Dot = LoadingModule.DotSize
+		-- The collapse is measured from the resting box, so a surface that was
+		-- still leaning toward the pointer has to come back to centre first or
+		-- the dot would form off to one side.
+		Tween(Main, 0.24, { Position = UDim2.new(0.5, 0, 0, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
 		Tween(Main, 0.24, { Size = UDim2.new(0, Dot, 0, Dot) }, Enum.EasingStyle.Back, Enum.EasingDirection.In):Play()
+		MainShape:SetType("Circle")
+		InnerShape:SetType("Circle")
+		GlassShape:SetType("CircleGlass")
+		MainShape:SetRadius(Dot / 2)
+		InnerShape:SetRadius(Dot / 2)
+		GlassShape:SetRadius(Dot / 2)
 		task.delay(0.16, function()
 			Tween(Main, 0.14, { ImageTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
 			Tween(Inner, 0.14, { ImageTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
