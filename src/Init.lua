@@ -4,6 +4,7 @@ local WindUI = {
 	Creator = require("./modules/Creator"),
 	LocalizationModule = require("./modules/Localization"),
 	NotificationModule = require("./components/Notification"),
+	LoadingModule = require("./components/Loading"),
 	Themes = nil,
 	Transparent = false,
 
@@ -13,6 +14,9 @@ local WindUI = {
 
 	ConfigManager = nil,
 	Version = "0.0.0",
+	-- Survives the bundler as a plain string: the hub loader uses it to tell
+	-- this build apart from a cached upstream release.
+	BuildTag = "enderhub-fork",
 
 	Services = require("./utils/services/Init"),
 
@@ -169,12 +173,22 @@ end
 math.clamp(WindUI.TransparencyValue, 0, 1)
 
 local Holder = WindUI.NotificationModule.Init(WindUI.NotificationGui)
+local LoadingHolder = WindUI.LoadingModule.Init(WindUI.NotificationGui)
 
 function WindUI:Notify(Config)
 	Config.Holder = Holder.Frame
 	Config.Window = WindUI.Window
 	--Config.WindUI = WindUI
 	return WindUI.NotificationModule.New(Config)
+end
+
+-- The boot card: the notification element, at the top centre of the screen,
+-- with a determinate bar and a percentage instead of a duration drain.
+function WindUI:Loading(Config)
+	Config = Config or {}
+	Config.Holder = Config.Holder or LoadingHolder.Frame
+	Config.Window = Config.Window or WindUI.Window
+	return WindUI.LoadingModule.New(Config)
 end
 
 function WindUI:SetNotificationLower(Val)
