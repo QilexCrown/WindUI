@@ -25770,6 +25770,19 @@ function Modern.new(Config, Filename, func)
 	local StatusConfig = type(Layout.Status) == "table" and Layout.Status or {}
 	local StockThumb = type(KeySystemConfig.Thumbnail) == "table" and KeySystemConfig.Thumbnail or {}
 
+	-- Splash is opt-in: pass Layout.Splash = true (or a table) to show it.
+	-- Left alone, the card opens straight away.
+	local SplashConfig = type(Layout.Splash) == "table" and Layout.Splash or {}
+	local SplashEnabled = (Layout.Splash == true or type(Layout.Splash) == "table") and SplashConfig.Show ~= false
+	local SplashDuration = tonumber(SplashConfig.Duration) or 5
+
+	-- Error animation: decaying shake plus a red ring flash on the field.
+	local ErrorConfig = type(Layout.ErrorAnimation) == "table" and Layout.ErrorAnimation or {}
+	local ErrorShake = Layout.Shake ~= false and ErrorConfig.Shake ~= false
+	local ErrorFlash = ErrorConfig.Flash ~= false
+	local ErrorAmplitude = tonumber(ErrorConfig.Amplitude) or 10
+	local ErrorDuration = tonumber(ErrorConfig.Duration) or 0.45
+
 	-- Default footer cluster: Get key / Copy key / Exit. Passing Layout.Buttons
 	-- replaces this list outright.
 	local ButtonEntries = Layout.Buttons
@@ -25790,10 +25803,10 @@ function Modern.new(Config, Filename, func)
 	local accentColor, accentTag = resolveAccent(Layout.Accent or "Button")
 	local onAccent = readableOn(accentColor)
 
-	local Radius = Layout.Radius or 26
-	local Padding = Layout.Padding or 22
-	local Gap = Layout.Gap or 16
-	local BodyWidth = Layout.BodyWidth or 420
+	local Radius = Layout.Radius or 24
+	local Padding = Layout.Padding or 24
+	local Gap = Layout.Gap or 12
+	local BodyWidth = Layout.BodyWidth or 620
 
 	local ThumbPosition = ThumbConfig.Position or "None"
 	local ThumbImage = first(ThumbConfig.Image, ThumbPosition ~= "None" and StockThumb.Image or nil)
@@ -25840,15 +25853,17 @@ function Modern.new(Config, Filename, func)
 	local enteredKey = ""
 	local busy = false
 	local closed = false
+	local revealed = false
 	local statusToken = 0
 
 	local submit, close, shake, setStatus, setBusy, copyToClipboard, openURL
-	local card, holder, holderScale
+	local card, holder, holderScale, splashGroup
 	local body, thumbnail, textBox, inputShell, statusIcon, statusLabel, statusBlock
 	local headerTitle, headerTag
 	local submitButton, submitTextLabel
 	local footerCluster, footerRow, loadingPill
 	local statusRowHeight, pillRowHeight, pillVisible
+	local syncCardSize
 	local inputCursorBase = 0
 
 	------------------------------------------------------------------
@@ -25920,6 +25935,100 @@ function Modern.new(Config, Filename, func)
 		Parent = holder,
 	})
 	controller.Frame = card
+
+	------------------------------------------------------------------
+	-- Splash: the window icon, the window title, nothing else
+	------------------------------------------------------------------
+
+	if SplashEnabled then
+		splashGroup = New("CanvasGroup", {
+			Name = "Splash",
+			Size = UDim2.new(1, 0, 1, 0),
+			BackgroundTransparency = 1,
+			GroupTransparency = 1,
+			Parent = mount,
+			ZIndex = 50,
+		})
+
+		local column = New("Frame", {
+			Name = "SplashColumn",
+			Size = UDim2.new(0, 0, 0, 0),
+			AutomaticSize = "XY",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			BackgroundTransparency = 1,
+			Parent = splashGroup,
+		}, {
+			New("UIListLayout", {
+				FillDirection = "Vertical",
+				Padding = UDim.new(0, SplashConfig.Gap or 18),
+				HorizontalAlignment = "Center",
+				SortOrder = "LayoutOrder",
+			}),
+		})
+
+		local splashIcon = first(SplashConfig.Icon, Config.Icon)
+		local splashIconSize = SplashConfig.IconSize or 110
+		local splashColor = SplashConfig.IconColor
+
+		if splashIcon then
+			local image, rectSize, rectOffset = iconData(splashIcon)
+			local splashImage
+			if image then
+				splashImage = New("ImageLabel", {
+					Name = "SplashIcon",
+					Size = UDim2.new(0, splashIconSize, 0, splashIconSize),
+					BackgroundTransparency = 1,
+					Image = image,
+					ImageRectSize = rectSize,
+					ImageRectOffset = rectOffset,
+					ImageColor3 = splashColor,
+					ThemeTag = splashColor == nil and { ImageColor3 = "Icon" } or nil,
+					LayoutOrder = 1,
+					Parent = column,
+				})
+			elseif typeof(splashIcon) == "string" and splashIcon ~= "" then
+				-- Raw rbxassetid / http(s) url instead of an icon name.
+				splashImage = New("ImageLabel", {
+					Name = "SplashIcon",
+					Size = UDim2.new(0, splashIconSize, 0, splashIconSize),
+					BackgroundTransparency = 1,
+					Image = splashIcon,
+					ImageColor3 = splashColor,
+					ThemeTag = splashColor == nil and { ImageColor3 = "Icon" } or nil,
+					LayoutOrder = 1,
+					Parent = column,
+				})
+			end
+
+			if splashImage and SplashConfig.Breathe ~= false then
+				local scale = New("UIScale", { Scale = 1, Parent = splashImage })
+				task.spawn(function()
+					while splashImage.Parent and not revealed do
+						Tween(scale, 1.1, { Scale = 1.04 }):Play()
+						task.wait(1.1)
+						Tween(scale, 1.1, { Scale = 1 }):Play()
+						task.wait(1.1)
+					end
+				end)
+			end
+		end
+
+		New("TextLabel", {
+			Name = "SplashTitle",
+			Size = UDim2.new(0, 0, 0, 0),
+			AutomaticSize = "XY",
+			BackgroundTransparency = 1,
+			Text = tostring(first(SplashConfig.Title, Config.Title, KeySystemConfig.Title, "WindUI")),
+			TextXAlignment = "Center",
+			FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
+			TextSize = SplashConfig.TitleSize or 24,
+			TextTransparency = SplashConfig.TitleTransparency or 0.1,
+			ThemeTag = { TextColor3 = "Text" },
+			LayoutOrder = 2,
+			Parent = column,
+		})
+	end
 
 	local surface = Creator.NewRoundFrame(Radius, "Squircle", {
 		Name = "Surface",
@@ -26541,7 +26650,7 @@ function Modern.new(Config, Filename, func)
 	local badgeText = asBadge(HeaderConfig.Badge)
 
 	local headerIcon = first(HeaderConfig.Icon, ICON.Key)
-	local chipSize = HeaderConfig.IconSize or 44
+	local chipSize = HeaderConfig.IconSize or 36
 	local chipWidth = 0
 	local iconBackground = HeaderConfig.IconBackground == true
 
@@ -26588,13 +26697,13 @@ function Modern.new(Config, Filename, func)
 	end
 
 	local linkEnabled = HeaderConfig.Link ~= false and KeySystemConfig.URL ~= nil and Layout.ShowURL ~= false
-	local linkWidth = linkEnabled and 38 or 0
-	local closeWidth = HeaderConfig.Close ~= false and 32 or 0
-	local headerReserve = linkWidth + closeWidth + #headerSlotEntries * 38 + 10
+	local linkWidth = linkEnabled and 34 or 0
+	local closeWidth = HeaderConfig.Close ~= false and 30 or 0
+	local headerReserve = linkWidth + closeWidth + #headerSlotEntries * 34 + 10
 
 	local headerRight = New("Frame", {
 		Name = "HeaderRight",
-		Size = UDim2.new(0, 0, 0, 32),
+		Size = UDim2.new(0, 0, 0, 30),
 		AutomaticSize = "X",
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, 0, 0, 0),
@@ -26692,7 +26801,7 @@ function Modern.new(Config, Filename, func)
 		Text = first(HeaderConfig.Title, KeySystemConfig.Title, Config.Title, "Access Required"),
 		TextXAlignment = "Left",
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
-		TextSize = HeaderConfig.TitleSize or 23,
+		TextSize = HeaderConfig.TitleSize or 20,
 		ThemeTag = { TextColor3 = "Text" },
 		LayoutOrder = 1,
 		Parent = titleRow,
@@ -26726,7 +26835,7 @@ function Modern.new(Config, Filename, func)
 			TextWrapped = true,
 			TextXAlignment = "Left",
 			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
-			TextSize = HeaderConfig.SubtitleSize or 13,
+			TextSize = HeaderConfig.SubtitleSize or 12,
 			TextTransparency = 0.42,
 			ThemeTag = { TextColor3 = "Text" },
 			LayoutOrder = 3,
@@ -26740,7 +26849,7 @@ function Modern.new(Config, Filename, func)
 			Icon = HeaderConfig.LinkIcon or "external-link",
 			IconSize = 16,
 			IconOnly = true,
-			Height = 32,
+			Height = 30,
 			Style = "Ghost",
 			Parent = headerRight,
 			Order = 998,
@@ -26756,7 +26865,7 @@ function Modern.new(Config, Filename, func)
 			Icon = ICON.Close,
 			IconSize = 15,
 			IconOnly = true,
-			Height = 32,
+			Height = 30,
 			Style = "Ghost",
 			Parent = headerRight,
 			Order = 999,
@@ -26819,7 +26928,7 @@ function Modern.new(Config, Filename, func)
 			TextXAlignment = "Left",
 			RichText = true,
 			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
-			TextSize = Layout.NoteSize or 14,
+			TextSize = Layout.NoteSize or 12,
 			TextTransparency = 0.4,
 			ThemeTag = { TextColor3 = "Text" },
 			Parent = noteParent,
@@ -26830,9 +26939,9 @@ function Modern.new(Config, Filename, func)
 	-- Input
 	------------------------------------------------------------------
 
-	local inputHeight = InputConfig.Height or 54
-	local inputRadius = InputConfig.Radius or 14
-	local submitWidth = InputConfig.SubmitWidth or 112
+	local inputHeight = InputConfig.Height or 46
+	local inputRadius = InputConfig.Radius or 12
+	local submitWidth = InputConfig.SubmitWidth or 110
 	local inlineSubmit = InputConfig.Submit ~= false
 	local clearEnabled = InputConfig.ClearButton ~= false
 
@@ -26878,7 +26987,7 @@ function Modern.new(Config, Filename, func)
 	}, {
 		New("UIListLayout", {
 			FillDirection = "Vertical",
-			Padding = UDim.new(0, InputConfig.Label and 7 or 0),
+			Padding = UDim.new(0, InputConfig.Label and 6 or 0),
 			SortOrder = "LayoutOrder",
 		}),
 	})
@@ -26891,12 +27000,12 @@ function Modern.new(Config, Filename, func)
 	if inputLabel ~= false and inputLabel ~= "" then
 		New("TextLabel", {
 			Name = "InputLabel",
-			Size = UDim2.new(1, 0, 0, 14),
+			Size = UDim2.new(1, 0, 0, 13),
 			BackgroundTransparency = 1,
 			Text = tostring(inputLabel),
 			TextXAlignment = "Left",
 			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
-			TextSize = InputConfig.LabelSize or 12,
+			TextSize = InputConfig.LabelSize or 11,
 			TextTransparency = 0.5,
 			ThemeTag = { TextColor3 = "Text" },
 			LayoutOrder = 1,
@@ -26935,6 +27044,17 @@ function Modern.new(Config, Filename, func)
 	}
 	accentPaint(focusProps, accentTag, accentColor)
 	local focusRing = Creator.NewRoundFrame(inputRadius, "SquircleOutline", focusProps)
+
+	-- Error ring: flashed red on a rejected key, sits above the field outline.
+	local errorRing = Creator.NewRoundFrame(inputRadius, "SquircleOutline", {
+		Name = "ErrorRing",
+		Size = UDim2.new(1, 4, 1, 4),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		ImageColor3 = ERROR_COLOR,
+		ImageTransparency = 1,
+		Parent = inputShell,
+	})
 
 	local inputImage, inputRectSize, inputRectOffset = iconData(inputIcon)
 	if inputImage then
@@ -27065,13 +27185,15 @@ function Modern.new(Config, Filename, func)
 			Text = "",
 			TextXAlignment = "Left",
 			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
-			TextSize = StatusConfig.TextSize or 13,
+			TextSize = StatusConfig.TextSize or 12,
 			TextTransparency = 1,
 			LayoutOrder = 2,
 			Parent = status,
 		})
 
 		statusBlock = status
+		-- Hidden entirely while idle: a zero-height row still eats one list gap.
+		status.Visible = false
 
 		if pillEnabled then
 			-- Busy pill: replaces the status line while a key is being checked.
@@ -27351,13 +27473,13 @@ function Modern.new(Config, Filename, func)
 			return nil
 		end
 
-		local defaultHeight = 38
+		local defaultHeight = 34
 		if slot == "Header" then
-			defaultHeight = 32
+			defaultHeight = 30
 		elseif slot == "Thumbnail" then
-			defaultHeight = 34
+			defaultHeight = 30
 		elseif slot == "Input" then
-			defaultHeight = 36
+			defaultHeight = 32
 		end
 
 		local button = createButton({
@@ -27452,7 +27574,7 @@ function Modern.new(Config, Filename, func)
 		Icon = InputConfig.SubmitIcon ~= false and (InputConfig.SubmitIcon or ICON.Arrow) or nil,
 		Style = InputConfig.SubmitStyle or "Solid",
 		FillColor = InputConfig.SubmitFill or InputConfig.SubmitGradient,
-		Height = InputConfig.SubmitHeight or (inlineSubmit and 40 or 38),
+		Height = InputConfig.SubmitHeight or (inlineSubmit and 36 or 32),
 		Width = inlineSubmit and submitWidth or nil,
 		Radius = InputConfig.SubmitRadius,
 		Parent = submitParent,
@@ -27551,7 +27673,11 @@ function Modern.new(Config, Filename, func)
 		local token = statusToken
 
 		if statusBlock then
+			statusBlock.Visible = true
 			Tween(statusBlock, 0.16, { Size = UDim2.new(1, 0, 0, statusRowHeight or 18) }):Play()
+		end
+		if syncCardSize then
+			task.delay(0.2, syncCardSize)
 		end
 
 		local color = kind == "error" and ERROR_COLOR or kind == "success" and SUCCESS_COLOR or resolveThemeColor("Text")
@@ -27582,20 +27708,49 @@ function Modern.new(Config, Filename, func)
 				end
 				if statusBlock and not (loadingPill and loadingPill.Visible) then
 					Tween(statusBlock, 0.2, { Size = UDim2.new(1, 0, 0, 0) }):Play()
+					task.delay(0.22, function()
+						if statusToken == token and statusBlock and not (loadingPill and loadingPill.Visible) then
+							statusBlock.Visible = false
+						end
+						if syncCardSize then
+							syncCardSize()
+						end
+					end)
 				end
 			end)
 		end)
 	end
 
 	shake = function()
-		if Layout.Shake == false or not inputShell then
+		if not inputShell then
 			return
 		end
+
+		-- Red ring flash on the field.
+		if ErrorFlash and errorRing then
+			errorRing.ImageTransparency = 0.05
+			Tween(errorRing, math.max(ErrorDuration, 0.2), { ImageTransparency = 1 }):Play()
+		end
+
+		if not ErrorShake or not holder then
+			return
+		end
+
+		-- The shell lives under a UIListLayout, so the whole card carries the
+		-- shake: a decaying sine keeps it in sync with the frame clock.
 		task.spawn(function()
-			for _, offset in next, { 9, -9, 7, -7, 4, -4, 0 } do
-				Tween(inputShell, 0.04, { Position = UDim2.new(0, offset, 0, 0) }):Play()
-				task.wait(0.04)
+			local started = os.clock()
+			while true do
+				local elapsed = os.clock() - started
+				if elapsed >= ErrorDuration or closed then
+					break
+				end
+				local decay = 1 - (elapsed / ErrorDuration)
+				local offset = math.sin(elapsed * 62) * ErrorAmplitude * decay
+				holder.Position = UDim2.new(0.5, math.round(offset), 0.5, 0)
+				task.wait(1 / 60)
 			end
+			Tween(holder, 0.12, { Position = UDim2.new(0.5, 0, 0.5, 0) }):Play()
 		end)
 	end
 
@@ -27620,9 +27775,18 @@ function Modern.new(Config, Filename, func)
 		end
 		if statusBlock then
 			if value and pillVisible then
+				statusBlock.Visible = true
 				Tween(statusBlock, 0.14, { Size = UDim2.new(1, 0, 0, pillRowHeight or 24) }):Play()
 			elseif not value and not (loadingPill and loadingPill.Visible) then
 				Tween(statusBlock, 0.18, { Size = UDim2.new(1, 0, 0, 0) }):Play()
+				task.delay(0.2, function()
+					if statusBlock and not (loadingPill and loadingPill.Visible) and statusToken == 0 then
+						statusBlock.Visible = false
+					end
+					if syncCardSize then
+						syncCardSize()
+					end
+				end)
 			end
 		end
 	end
@@ -27825,15 +27989,19 @@ function Modern.new(Config, Filename, func)
 		end
 	end
 
-	-- Keep the tag from pushing the title under the top-right buttons: the title
-	-- gets whatever the row has left and truncates instead of overlapping.
-	if headerTitle and headerTag then
+	-- Tag stays glued to the title. Only when the pair would overflow the row
+	-- does the title give way and truncate, so the tag never slides under the
+	-- top-right buttons.
+	if headerTitle and headerTag and titleRow then
 		local tagWidth = math.ceil(headerTag.AbsoluteSize.X / uiScale)
-		if tagWidth > 0 then
+		local titleWidth = math.ceil(headerTitle.AbsoluteSize.X / uiScale)
+		local rowWidth = math.floor(titleRow.AbsoluteSize.X / uiScale)
+		if tagWidth > 0 and rowWidth > 0 and titleWidth + tagWidth + 12 > rowWidth then
+			local available = math.max(rowWidth - tagWidth - 12, 40)
 			headerTitle.AutomaticSize = "Y"
 			headerTitle.TextWrapped = false
 			headerTitle.TextTruncate = Enum.TextTruncate.AtEnd
-			headerTitle.Size = UDim2.new(1, -(tagWidth + 8), 0, 0)
+			headerTitle.Size = UDim2.new(0, available, 0, 0)
 		end
 	end
 
@@ -27856,6 +28024,20 @@ function Modern.new(Config, Filename, func)
 		card.AutomaticSize = "None"
 		card.Size = UDim2.new(1, 0, 0, contentHeight)
 		holder.Size = UDim2.new(0, Width, 0, contentHeight)
+	end
+
+	-- Status and pill rows open and close after the card is measured, so the
+	-- shell has to grow and shrink with them or the footer clips.
+	syncCardSize = function()
+		if not content or not card or not holder or closed then
+			return
+		end
+		local height = math.round(content.AbsoluteSize.Y / uiScale)
+		if height <= 0 or math.abs(card.Size.Y.Offset - height) < 1 then
+			return
+		end
+		Tween(card, 0.18, { Size = UDim2.new(1, 0, 0, height) }):Play()
+		Tween(holder, 0.18, { Size = UDim2.new(0, Width, 0, height) }):Play()
 	end
 
 	-- Keep the card inside the viewport on small screens.
@@ -27884,17 +28066,63 @@ function Modern.new(Config, Filename, func)
 
 	holderScale.Scale = 0.96 * fitScale
 	mount.Visible = true
-	Tween(card, 0.28, { GroupTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
-	Tween(holderScale, 0.32, { Scale = fitScale }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 
-	if InputConfig.AutoFocus ~= false then
-		task.delay(0.3, function()
-			if textBox and not closed then
-				pcall(function()
-					textBox:CaptureFocus()
-				end)
+	local function reveal()
+		if revealed or closed then
+			return
+		end
+		revealed = true
+		if holder then
+			holder.Visible = true
+		end
+		Tween(card, 0.28, { GroupTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		Tween(holderScale, 0.32, { Scale = fitScale }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+		if InputConfig.AutoFocus ~= false then
+			task.delay(0.3, function()
+				if textBox and not closed then
+					pcall(function()
+						textBox:CaptureFocus()
+					end)
+				end
+			end)
+		end
+	end
+
+	controller.Reveal = reveal
+
+	if splashGroup then
+		-- Only the icon and the window title until the hold time runs out.
+		holder.Visible = false
+		Tween(splashGroup, 0.3, { GroupTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+		task.spawn(function()
+			local elapsed = 0
+			while elapsed < SplashDuration and not revealed and not closed do
+				task.wait(0.05)
+				elapsed = elapsed + 0.05
 			end
+			if closed or revealed then
+				return
+			end
+			Tween(splashGroup, 0.26, { GroupTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+			task.wait(0.28)
+			if splashGroup and splashGroup.Parent then
+				splashGroup:Destroy()
+			end
+			splashGroup = nil
+			reveal()
 		end)
+	else
+		reveal()
+	end
+
+	controller.SkipSplash = function()
+		if splashGroup and splashGroup.Parent then
+			splashGroup:Destroy()
+		end
+		splashGroup = nil
+		reveal()
 	end
 
 	controller.Submit = submit

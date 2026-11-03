@@ -12,6 +12,7 @@ is driven from one table.
 - **Theme-first.** Every colour resolves through `ThemeTag`, so the card follows the
   user's active theme. The default accent is the theme's `Button` key — grey on Dark,
   not blue. Only `Layout.Accent` overrides that.
+- **Instant open.** The card is the first thing mounted, with no intro animation. `Layout.Splash` adds the optional icon/title intro back in.
 - **Nothing is fixed.** Thumbnail, header icon, buttons, note, footer and each block's
   position are all config fields. A block can be nudged with `Offset` without breaking
   the flow.
@@ -44,10 +45,10 @@ WindUI:CreateWindow({
         URL = "https://discord.gg/example",
         Layout = {
             Accent = "Button",
-            Radius = 26,
-            Padding = 22,
-            Gap = 16,
-            BodyWidth = 420,
+            Radius = 24,
+            Padding = 24,
+            Gap = 12,
+            BodyWidth = 620,
             Header = {
                 Kicker = "Secure Access",
                 Title = "Access Required",
@@ -144,10 +145,10 @@ Built-in reasons: `invalid`, `already_used`, `expired`, `revoked`, `banned`,
 | --- | --- | --- | --- |
 | `Accent` | `string` \| `Color3` | `"Button"` | Theme key or a raw colour. Defaults to the theme's `Button` colour so the card matches whatever theme is loaded |
 | `Width` | `number` | auto | Card width. Auto = padding + thumbnail + gap + body + padding |
-| `BodyWidth` | `number` | `420` | Width of the text column |
-| `Radius` | `number` | `26` | Card corner radius |
-| `Padding` | `number` | `22` | Inner padding |
-| `Gap` | `number` | `16` | Vertical gap between blocks, and thumbnail-to-body gap |
+| `BodyWidth` | `number` | `620` | Width of the text column. Wide and short by default |
+| `Radius` | `number` | `24` | Card corner radius |
+| `Padding` | `number` | `24` | Inner padding |
+| `Gap` | `number` | `12` | Vertical gap between blocks, and thumbnail-to-body gap |
 | `Offsets` | `table` | — | Per-block nudges, see [Moving elements](#moving-elements) |
 | `Shadow` | `boolean` | `true` | `false` drops the drop shadow |
 | `ShadowTransparency` | `number` | `0.5` | |
@@ -155,8 +156,8 @@ Built-in reasons: `invalid`, `already_used`, `expired`, `revoked`, `banned`,
 | `GlowTransparency` | `number` | `0.76` | |
 | `ShowNote` | `boolean` | `true` | `false` hides the note |
 | `NoteStyle` | `string` | `"Plain"` | `"Plain"` or `"Box"` (boxed panel) |
-| `NoteSize` | `number` | `14` | |
-| `Buttons` | `table` | `Copy key`, `Exit` | Array of button entries, see below. Replaces the default cluster |
+| `NoteSize` | `number` | `12` | |
+| `Buttons` | `table` | `Get key`, `Copy key`, `Exit` | Array of button entries, see below. Replaces the default cluster |
 | `ShowURL` | `boolean` | `true` | `false` hides the auto link button |
 | `URLTitle` | `string` | `"Get Key"` | Label of the auto link button |
 | `URLIcon` | `string` \| `false` | `"key"` | |
@@ -166,10 +167,77 @@ Built-in reasons: `invalid`, `already_used`, `expired`, `revoked`, `banned`,
 | `URLAction` | `string` | `"OpenURL"` | `"OpenURL"` opens `KeySystem.URL`, `"CopyURL"` copies it |
 | `ShowServices` | `boolean` | `true` | `false` hides auto buttons for `KeySystem.API` services |
 | `ServicesSlot` | `string` | `"Footer"` | |
-| `Shake` | `boolean` | `true` | `false` disables the invalid-key shake |
+| `Shake` | `boolean` | `true` | `false` disables the invalid-key animation |
+| `Splash` | `true` \| `table` | off | Opt-in icon + title intro. Left out, the card opens immediately |
+| `ErrorAnimation` | `table` | on | Wrong-key shake and red ring flash |
 | `EnterToSubmit` | `boolean` | `true` | `false` ignores Enter in the input |
 | `Notify` | `boolean` | `true` | Toast fallback when `Status.Show == false` |
 | `Debug` | `boolean` | `false` | Publishes the controller to `getgenv().WindUIKeySystem` / `WindUIKeySystems` |
+
+## Splash
+
+Off by default: the card mounts as the first thing on screen, no intro, no hold.
+Pass `Layout.Splash = true` (or a table) when you want the icon-and-title intro —
+the session icon centred, the window title underneath, then the card.
+
+```lua
+Layout = {
+    Splash = {
+        -- all optional; defaults shown
+        Show = true,
+        Duration = 5,          -- seconds
+        Gap = 18,              -- icon-to-title gap
+        IconSize = 110,
+        TitleSize = 24,
+        Breathe = true,        -- slow icon pulse while waiting
+        -- Icon = "sparkles",  -- defaults to CreateWindow's Icon
+        -- Title = "Ender",   -- defaults to CreateWindow's Title
+        -- IconColor = Color3.new(1, 1, 1),
+    },
+}
+```
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `Show` | `boolean` | `true` | `Show = false` disables an already-enabled splash |
+| `Duration` | `number` | `5` | Hold time before the card is revealed |
+| `Gap` | `number` | `18` | Space between the icon and the title |
+| `IconSize` | `number` | `110` | Edge length of the icon |
+| `TitleSize` | `number` | `24` | |
+| `Icon` | `string` | window `Icon` | Lucide name, `rbxassetid://`, or URL |
+| `Title` | `string` | window `Title` | |
+| `IconColor` | `Color3` | theme `Icon` | |
+| `Breathe` | `boolean` | `true` | `false` freezes the pulse |
+
+The splash is a `CanvasGroup` named `Splash`; `controller.SkipSplash()` cuts the
+wait, and `controller.Reveal()` does it with the fade. Both are safe to call when the
+splash is off — `Reveal()` is what the card fires on mount.
+
+## Error animation
+
+A rejected key shakes the card and flashes a red ring on the input field. Both
+are independent and both are on by default.
+
+```lua
+Layout = {
+    ErrorAnimation = {
+        Shake = true,       -- decaying side-to-side on the whole card
+        Flash = true,       -- red ErrorRing on the field
+        Amplitude = 10,     -- peak offset in pixels
+        Duration = 0.45,    -- seconds
+    },
+}
+```
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `Shake` | `boolean` | `true` | `Layout.Shake = false` also disables it |
+| `Flash` | `boolean` | `true` | |
+| `Amplitude` | `number` | `10` | Peak horizontal offset |
+| `Duration` | `number` | `0.45` | Whole animation, ends back at rest |
+
+The shake rides the card, not the field: the field lives under a `UIListLayout`,
+so parent-level motion is the only offset that does not fight the layout.
 
 ## Moving elements
 
@@ -224,7 +292,7 @@ by default; the spinner only animates while it is visible.
 | `Transparency` | `number` | `0` | |
 | `Gradient` | `number` | `0.82` | Bottom scrim strength for the caption |
 | `TitleSize` | `number` | `20` | |
-| `SubtitleSize` | `number` | `13` | |
+| `SubtitleSize` | `number` | `12` | |
 
 ## `Layout.Header`
 
@@ -232,7 +300,7 @@ by default; the spinner only animates while it is visible.
 | --- | --- | --- | --- |
 | `Icon` | `string` \| `false` | `"key"` | Lucide name, any icon in WindUI's set |
 | `IconBackground` | `boolean` | `false` | `true` draws the accent chip behind the icon; `false` is a bare theme-coloured icon |
-| `IconSize` | `number` | `44` | Accent chip size (only used when `IconBackground = true`) |
+| `IconSize` | `number` | `36` | Accent chip size (only used when `IconBackground = true`) |
 | `IconRadius` | `number` | `13` | |
 | `ChipIconSize` | `number` | `22` | Icon size inside the chip; bare icon defaults to `26` |
 | `ShowIcon` | `boolean` | `true` | `false` removes the chip |
@@ -243,7 +311,7 @@ by default; the spinner only animates while it is visible.
 | `LinkIcon` | `string` | `"external-link"` | |
 | `Title` | `string` | `KeySystem.Title` | |
 | `Subtitle` | `string` \| `false` | `"License is required to use the script"` | `false` removes the line |
-| `TitleSize` | `number` | `23` | |
+| `TitleSize` | `number` | `20` | |
 | `SubtitleSize` | `number` | `13` | |
 | `Close` | `boolean` | `true` | `false` removes the corner close button |
 
@@ -253,9 +321,9 @@ by default; the spinner only animates while it is visible.
 | --- | --- | --- | --- |
 | `Placeholder` | `string` | `"Enter Key"` | |
 | `Label` | `string` \| `false` | `"License key"` | Small description line above the field |
-| `LabelSize` | `number` | `12` | |
-| `Height` | `number` | `54` | |
-| `Radius` | `number` | `14` | |
+| `LabelSize` | `number` | `11` | |
+| `Height` | `number` | `46` | |
+| `Radius` | `number` | `12` | |
 | `TextSize` | `number` | `16` | |
 | `Icon` | `string` \| `false` | `"key"` | Leading icon |
 | `IconSize` | `number` | `20` | |
@@ -265,8 +333,8 @@ by default; the spinner only animates while it is visible.
 | `SubmitIcon` | `string` \| `false` | `"arrow-right"` | |
 | `SubmitStyle` | `string` | `"Solid"` | |
 | `SubmitFill` | `Color3` \| `string` \| gradient | — | Custom submit colour. `WindUI:Gradient({...})` works; theme key or `Color3` also accepted |
-| `SubmitWidth` | `number` | `112` | |
-| `SubmitHeight` | `number` | `40` | |
+| `SubmitWidth` | `number` | `110` | |
+| `SubmitHeight` | `number` | `36` | |
 | `SubmitRadius` | `number` | — | |
 | `ClearButton` | `boolean` | `true` | The inline `x` |
 | `Clearance` | `number` | `15` | Padding around the icon cluster |
