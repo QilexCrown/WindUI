@@ -111,6 +111,63 @@ local function asBadge(value)
 	return nil
 end
 
+-- Reason codes a validator (or API) can hand back as the second return value.
+-- Layout.Status.Errors overrides or extends this table.
+local DEFAULT_ERRORS = {
+	invalid = "That key is not valid.",
+	already_used = "This key is already used.",
+	expired = "This key has expired.",
+	revoked = "This key has been revoked.",
+	banned = "This key has been banned.",
+	wrong_account = "This key belongs to a different account.",
+	limit = "Key limit reached, try again later.",
+}
+
+-- Contrast colour for a fill that can be a Color3, a theme key, or a WindUI:Gradient.
+local function fillTextColor(fill)
+	local kind = typeof(fill)
+	if kind == "table" then
+		local ok, average = pcall(function()
+			return Creator.GetAverageColor(fill)
+		end)
+		if ok and average then
+			return Creator.GetTextColorForHSB(average)
+		end
+	elseif kind == "Color3" then
+		return Creator.GetTextColorForHSB(fill)
+	elseif type(fill) == "string" then
+		local ok, value = pcall(function()
+			return Creator.GetThemeProperty(fill, Creator.Theme)
+		end)
+		if ok and typeof(value) == "Color3" then
+			return Creator.GetTextColorForHSB(value)
+		end
+	end
+	return nil
+end
+
+-- Applies a custom fill to a round frame. Returns the created UIGradient, if any.
+local function applyFill(fill, fillProps, children)
+	local kind = typeof(fill)
+	if kind == "table" then
+		fillProps.ImageColor3 = Color3.new(1, 1, 1)
+		fillProps.ImageTransparency = fillProps.ImageTransparency or 0
+		local gradient = New("UIGradient")
+		for key, value in next, fill do
+			gradient[key] = value
+		end
+		table.insert(children, gradient)
+	elseif kind == "Color3" then
+		fillProps.ImageColor3 = fill
+		fillProps.ImageTransparency = fillProps.ImageTransparency or 0
+	elseif type(fill) == "string" then
+		fillProps.ThemeTag = fillProps.ThemeTag or {}
+		fillProps.ThemeTag.ImageColor3 = fill
+		fillProps.ImageTransparency = fillProps.ImageTransparency or 0
+	end
+	return fill
+end
+
 -- Notes accept the markdown the stock dialog understood (**bold**, *italic*,
 -- `code`). Raw rich text (anything containing "<") is passed through untouched.
 local function richText(value)
@@ -135,6 +192,23 @@ function Modern.new(Config, Filename, func)
 	local FooterConfig = type(Layout.Footer) == "table" and Layout.Footer or {}
 	local StatusConfig = type(Layout.Status) == "table" and Layout.Status or {}
 	local StockThumb = type(KeySystemConfig.Thumbnail) == "table" and KeySystemConfig.Thumbnail or {}
+
+	-- Default footer cluster: Get key / Copy key / Exit. Passing Layout.Buttons
+	-- replaces this list outright.
+	local ButtonEntries = Layout.Buttons
+	if type(ButtonEntries) ~= "table" then
+		ButtonEntries = {
+			{ ID = "CopyKey", Title = "Copy key", Icon = "copy", Slot = "Footer", Style = "Secondary", Order = 20, Action = "CopyKey" },
+			{ ID = "Exit", Title = "Exit", Icon = "log-out", Slot = "Footer", Style = "Ghost", Order = 30, Action = "Exit" },
+		}
+	end
+
+	local StatusErrors = setmetatable({}, { __index = DEFAULT_ERRORS })
+	if type(StatusConfig.Errors) == "table" then
+		for reason, message in next, StatusConfig.Errors do
+			StatusErrors[reason] = message
+		end
+	end
 
 	local accentColor, accentTag = resolveAccent(Layout.Accent or "Button")
 	local onAccent = readableOn(accentColor)
@@ -193,9 +267,11 @@ function Modern.new(Config, Filename, func)
 
 	local submit, close, shake, setStatus, setBusy, copyToClipboard, openURL
 	local card, holder, holderScale
-	local body, thumbnail, textBox, inputShell, statusIcon, statusLabel
+	local body, thumbnail, textBox, inputShell, statusIcon, statusLabel, statusBlock
+	local headerTitle, headerTag
 	local submitButton, submitTextLabel
 	local footerCluster, footerRow, loadingPill
+	local statusRowHeight, pillRowHeight, pillVisible
 	local inputCursorBase = 0
 
 	------------------------------------------------------------------
@@ -378,6 +454,12 @@ function Modern.new(Config, Filename, func)
 			Parent = root,
 		}
 
+		-- FillColor accepts a Color3, a theme key, or a WindUI:Gradient table.
+		local customFill = options.FillColor
+		local fillChildren = {}
+		local customText = customFill ~= nil and fillTextColor(customFill) or nil
+		local filled = style == "Solid" or style == "White" or customFill ~= nil
+
 		if style == "Solid" then
 			fillProps.ImageTransparency = 0
 			accentPaint(fillProps, accentTag, accentColor)
@@ -394,7 +476,11 @@ function Modern.new(Config, Filename, func)
 			}
 		end
 
-		local fill = Creator.NewRoundFrame(options.Radius or math.floor(height / 2), "Squircle", fillProps)
+		if customFill ~= nil then
+			applyFill(customFill, fillProps, fillChildren)
+		end
+
+		local fill = Creator.NewRoundFrame(options.Radius or math.floor(height / 2), "Squircle", fillProps, fillChildren)
 		local fillBase = fill.ImageTransparency
 
 		Creator.NewRoundFrame(math.max((options.Radius or math.floor(height / 2)) - 1, 0), "SquircleGlass", {
@@ -423,8 +509,9 @@ function Modern.new(Config, Filename, func)
 				ImageRectOffset = rectOffset,
 				Size = UDim2.new(0, options.IconSize or 18, 0, options.IconSize or 18),
 				BackgroundTransparency = 1,
-				ImageColor3 = style == "Solid" and onAccent or style == "White" and Color3.new(0, 0, 0) or nil,
-				ThemeTag = (style ~= "Solid" and style ~= "White") and { ImageColor3 = "Icon" } or nil,
+				ImageColor3 = customText
+					or (style == "Solid" and onAccent or style == "White" and Color3.new(0, 0, 0) or nil),
+				ThemeTag = (not filled) and { ImageColor3 = "Icon" } or nil,
 			})
 		end
 
@@ -436,9 +523,10 @@ function Modern.new(Config, Filename, func)
 				FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
 				TextSize = options.TextSize or 15,
 				AutomaticSize = "XY",
-				TextColor3 = style == "Solid" and onAccent or style == "White" and Color3.new(0, 0, 0) or nil,
-				ThemeTag = (style ~= "Solid" and style ~= "White") and { TextColor3 = "Text" } or nil,
-				TextTransparency = (style == "Solid" or style == "White") and 0 or 0.05,
+				TextColor3 = customText
+					or (style == "Solid" and onAccent or style == "White" and Color3.new(0, 0, 0) or nil),
+				ThemeTag = (not filled) and { TextColor3 = "Text" } or nil,
+				TextTransparency = filled and 0 or 0.05,
 			})
 		end
 
@@ -553,6 +641,106 @@ function Modern.new(Config, Filename, func)
 		})
 
 		return pill
+	end
+
+	-- Header tag, drawn like WindUI:Tag but sized for the card:
+	-- Header.Tag = { Title = "v2.5", Color = WindUI:Gradient({...}) }
+	local function makeTag(TagConfig, parent)
+		local height = TagConfig.Height or 20
+		local padding = TagConfig.Padding or 8
+		local color = TagConfig.Color or Color3.fromHex("#315dff")
+
+		local tag = New("Frame", {
+			Name = "Tag",
+			Size = UDim2.new(0, 0, 0, height),
+			BackgroundTransparency = 1,
+			Parent = parent,
+		})
+
+		local children = {}
+		local fillProps = {
+			Name = "Fill",
+			Size = UDim2.new(1, 0, 1, 0),
+			Parent = tag,
+		}
+		if typeof(color) == "table" then
+			applyFill(color, fillProps, children)
+		else
+			applyFill(color, fillProps, children)
+		end
+
+		local glass = Creator.NewRoundFrame(math.max(height / 2, 6), "SquircleGlass", {
+			Size = UDim2.new(1, 1, 1, 1),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			ThemeTag = { ImageColor3 = "White" },
+			ImageTransparency = 0.75,
+		})
+		table.insert(children, glass)
+
+		local textColor = fillTextColor(color) or Color3.new(1, 1, 1)
+
+		local content = New("Frame", {
+			Name = "Content",
+			Size = UDim2.new(0, 0, 1, 0),
+			AutomaticSize = "X",
+			BackgroundTransparency = 1,
+		}, {
+			New("UIPadding", {
+				PaddingLeft = UDim.new(0, padding),
+				PaddingRight = UDim.new(0, padding),
+			}),
+			New("UIListLayout", {
+				FillDirection = "Horizontal",
+				Padding = UDim.new(0, 5),
+				SortOrder = "LayoutOrder",
+				VerticalAlignment = "Center",
+			}),
+		})
+
+		local iconImage
+		if TagConfig.Icon then
+			local image, rectSize, rectOffset = iconData(TagConfig.Icon)
+			if image then
+				iconImage = New("ImageLabel", {
+					Image = image,
+					ImageRectSize = rectSize,
+					ImageRectOffset = rectOffset,
+					Size = UDim2.new(0, TagConfig.IconSize or 12, 0, TagConfig.IconSize or 12),
+					BackgroundTransparency = 1,
+					ImageColor3 = textColor,
+					LayoutOrder = 1,
+					Parent = content,
+				})
+			end
+		end
+
+		New("TextLabel", {
+			Name = "Title",
+			Size = UDim2.new(0, 0, 0, height),
+			AutomaticSize = "X",
+			BackgroundTransparency = 1,
+			Text = tostring(TagConfig.Title or "Tag"),
+			FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
+			TextSize = TagConfig.TextSize or 10,
+			TextColor3 = textColor,
+			LayoutOrder = 2,
+			Parent = content,
+		})
+
+		Creator.NewRoundFrame(math.max(height / 2, 6), "Squircle", fillProps, children)
+		content.Parent = tag
+
+		-- The pill hugs its content: measured on the next frame, then fixed so the
+		-- scale-1 fill can never stretch the frame through AutomaticSize.
+		task.defer(function()
+			local width = math.ceil(content.AbsoluteSize.X)
+			if width > 0 and tag.Parent then
+				tag.Size = UDim2.new(0, width, 0, height)
+			end
+		end)
+
+		return tag
 	end
 
 	------------------------------------------------------------------
@@ -757,7 +945,7 @@ function Modern.new(Config, Filename, func)
 	------------------------------------------------------------------
 
 	local headerSlotEntries = {}
-	for _, entry in next, (Layout.Buttons or {}) do
+	for _, entry in next, ButtonEntries do
 		if entry.Slot == "Header" then
 			table.insert(headerSlotEntries, entry)
 		end
@@ -822,8 +1010,10 @@ function Modern.new(Config, Filename, func)
 		end
 	end
 
+	local linkEnabled = HeaderConfig.Link ~= false and KeySystemConfig.URL ~= nil and Layout.ShowURL ~= false
+	local linkWidth = linkEnabled and 38 or 0
 	local closeWidth = HeaderConfig.Close ~= false and 32 or 0
-	local headerReserve = closeWidth + #headerSlotEntries * 38 + 10
+	local headerReserve = linkWidth + closeWidth + #headerSlotEntries * 38 + 10
 
 	local headerRight = New("Frame", {
 		Name = "HeaderRight",
@@ -901,27 +1091,61 @@ function Modern.new(Config, Filename, func)
 		end
 	end
 
-	New("TextLabel", {
-		Name = "Title",
+	local titleRow = New("Frame", {
+		Name = "TitleRow",
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = "Y",
 		BackgroundTransparency = 1,
+		LayoutOrder = 2,
+		Parent = titleStack,
+	}, {
+		New("UIListLayout", {
+			FillDirection = "Horizontal",
+			Padding = UDim.new(0, 8),
+			SortOrder = "LayoutOrder",
+			VerticalAlignment = "Center",
+		}),
+	})
+
+	headerTitle = New("TextLabel", {
+		Name = "Title",
+		Size = UDim2.new(0, 0, 0, 0),
+		AutomaticSize = "XY",
+		BackgroundTransparency = 1,
 		Text = first(HeaderConfig.Title, KeySystemConfig.Title, Config.Title, "Access Required"),
-		TextWrapped = true,
 		TextXAlignment = "Left",
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
 		TextSize = HeaderConfig.TitleSize or 23,
 		ThemeTag = { TextColor3 = "Text" },
-		LayoutOrder = 2,
-		Parent = titleStack,
+		LayoutOrder = 1,
+		Parent = titleRow,
 	})
 
-	if HeaderConfig.Subtitle then
+	local tagConfig = type(HeaderConfig.Tag) == "table" and HeaderConfig.Tag or nil
+	if tagConfig then
+		headerTag = makeTag({
+			Title = tagConfig.Title,
+			Color = tagConfig.Color,
+			Icon = tagConfig.Icon,
+			IconSize = tagConfig.IconSize,
+			Height = tagConfig.Height or 20,
+			Padding = tagConfig.Padding or 8,
+			TextSize = tagConfig.TextSize or 10,
+		}, titleRow)
+		headerTag.LayoutOrder = 2
+	end
+
+	local subtitleText = HeaderConfig.Subtitle
+	if subtitleText == nil then
+		subtitleText = "License is required to use the script"
+	end
+
+	if subtitleText ~= false then
 		New("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = "Y",
 			BackgroundTransparency = 1,
-			Text = HeaderConfig.Subtitle,
+			Text = subtitleText,
 			TextWrapped = true,
 			TextXAlignment = "Left",
 			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
@@ -930,6 +1154,22 @@ function Modern.new(Config, Filename, func)
 			ThemeTag = { TextColor3 = "Text" },
 			LayoutOrder = 3,
 			Parent = titleStack,
+		})
+	end
+
+	if linkEnabled then
+		createButton({
+			Name = "CopyLink",
+			Icon = HeaderConfig.LinkIcon or "external-link",
+			IconSize = 16,
+			IconOnly = true,
+			Height = 32,
+			Style = "Ghost",
+			Parent = headerRight,
+			Order = 998,
+			Callback = function()
+				openURL(KeySystemConfig.URL)
+			end,
 		})
 	end
 
@@ -1021,7 +1261,7 @@ function Modern.new(Config, Filename, func)
 
 	local inputSlotEntries = {}
 	if inlineSubmit then
-		for _, entry in next, (Layout.Buttons or {}) do
+		for _, entry in next, ButtonEntries do
 			if entry.Slot == "Input" then
 				table.insert(inputSlotEntries, entry)
 			end
@@ -1058,7 +1298,34 @@ function Modern.new(Config, Filename, func)
 		BackgroundTransparency = 1,
 		LayoutOrder = 3,
 		Parent = body,
+	}, {
+		New("UIListLayout", {
+			FillDirection = "Vertical",
+			Padding = UDim.new(0, InputConfig.Label and 7 or 0),
+			SortOrder = "LayoutOrder",
+		}),
 	})
+
+	-- Small description line above the field.
+	local inputLabel = InputConfig.Label
+	if inputLabel == nil then
+		inputLabel = "License key"
+	end
+	if inputLabel ~= false and inputLabel ~= "" then
+		New("TextLabel", {
+			Name = "InputLabel",
+			Size = UDim2.new(1, 0, 0, 14),
+			BackgroundTransparency = 1,
+			Text = tostring(inputLabel),
+			TextXAlignment = "Left",
+			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
+			TextSize = InputConfig.LabelSize or 12,
+			TextTransparency = 0.5,
+			ThemeTag = { TextColor3 = "Text" },
+			LayoutOrder = 1,
+			Parent = inputBlock,
+		})
+	end
 
 	inputShell = Creator.NewRoundFrame(inputRadius, "Squircle", {
 		Name = "Input",
@@ -1067,6 +1334,7 @@ function Modern.new(Config, Filename, func)
 			ImageColor3 = "LabelBackground",
 			ImageTransparency = "LabelBackgroundTransparency",
 		},
+		LayoutOrder = 2,
 		Parent = inputBlock,
 	})
 	controller.Shell = inputShell
@@ -1185,11 +1453,16 @@ function Modern.new(Config, Filename, func)
 		local pillEnabled = loadingConfig.Show ~= false
 		local pillHeight = loadingConfig.Height or 24
 		local statusHeight = pillEnabled and pillHeight or 18
+		statusRowHeight = statusHeight
+		pillRowHeight = pillHeight
+		pillVisible = pillEnabled
 
+		-- Idle height is zero so the card does not carry dead space under the input.
 		local status = New("Frame", {
 			Name = "Status",
-			Size = UDim2.new(1, 0, 0, statusHeight),
+			Size = UDim2.new(1, 0, 0, 0),
 			BackgroundTransparency = 1,
+			ClipsDescendants = false,
 			LayoutOrder = 4,
 			Parent = body,
 		}, {
@@ -1220,6 +1493,8 @@ function Modern.new(Config, Filename, func)
 			LayoutOrder = 2,
 			Parent = status,
 		})
+
+		statusBlock = status
 
 		if pillEnabled then
 			-- Busy pill: replaces the status line while a key is being checked.
@@ -1318,7 +1593,7 @@ function Modern.new(Config, Filename, func)
 	------------------------------------------------------------------
 
 	local footerEntries = {}
-	for _, entry in next, (Layout.Buttons or {}) do
+	for _, entry in next, ButtonEntries do
 		local slot = entry.Slot or "Footer"
 		if slot == "Footer" then
 			table.insert(footerEntries, entry)
@@ -1521,6 +1796,7 @@ function Modern.new(Config, Filename, func)
 			Parent = target,
 			Order = entry.Order or order,
 			Disabled = entry.Disabled,
+			FillColor = entry.FillColor or entry.Gradient,
 			Callback = actionFor(entry),
 		})
 
@@ -1541,11 +1817,11 @@ function Modern.new(Config, Filename, func)
 	if hasURLEntry then
 		mountButton({
 			ID = "GetKey",
-			Title = Layout.URLTitle or "Join Discord",
-			Icon = Layout.URLIcon ~= false and (Layout.URLIcon or "external-link") or nil,
+			Title = Layout.URLTitle or "Get Key",
+			Icon = Layout.URLIcon ~= false and (Layout.URLIcon or "key") or nil,
 			Style = Layout.URLStyle or "Secondary",
 			Slot = Layout.URLSlot or "Footer",
-			Order = 10,
+			Order = Layout.URLOrder or 10,
 			Action = Layout.URLAction or "OpenURL",
 		}, "Footer")
 	end
@@ -1584,7 +1860,7 @@ function Modern.new(Config, Filename, func)
 		end
 	end
 
-	for index, entry in next, (Layout.Buttons or {}) do
+	for index, entry in next, ButtonEntries do
 		mountButton(entry, entry.Slot or "Footer", 100 + index)
 	end
 
@@ -1598,6 +1874,7 @@ function Modern.new(Config, Filename, func)
 		Title = InputConfig.SubmitText or "Submit",
 		Icon = InputConfig.SubmitIcon ~= false and (InputConfig.SubmitIcon or ICON.Arrow) or nil,
 		Style = InputConfig.SubmitStyle or "Solid",
+		FillColor = InputConfig.SubmitFill or InputConfig.SubmitGradient,
 		Height = InputConfig.SubmitHeight or (inlineSubmit and 40 or 38),
 		Width = inlineSubmit and submitWidth or nil,
 		Radius = InputConfig.SubmitRadius,
@@ -1696,6 +1973,10 @@ function Modern.new(Config, Filename, func)
 		statusToken = statusToken + 1
 		local token = statusToken
 
+		if statusBlock then
+			Tween(statusBlock, 0.16, { Size = UDim2.new(1, 0, 0, statusRowHeight or 18) }):Play()
+		end
+
 		local color = kind == "error" and ERROR_COLOR or kind == "success" and SUCCESS_COLOR or resolveThemeColor("Text")
 		local iconName = kind == "error" and ICON.Alert or kind == "success" and ICON.Check or nil
 
@@ -1718,6 +1999,14 @@ function Modern.new(Config, Filename, func)
 			end
 			Tween(statusLabel, 0.3, { TextTransparency = 1 }):Play()
 			Tween(statusIcon, 0.3, { ImageTransparency = 1 }):Play()
+			task.delay(0.32, function()
+				if statusToken ~= token then
+					return
+				end
+				if statusBlock and not (loadingPill and loadingPill.Visible) then
+					Tween(statusBlock, 0.2, { Size = UDim2.new(1, 0, 0, 0) }):Play()
+				end
+			end)
 		end)
 	end
 
@@ -1750,6 +2039,13 @@ function Modern.new(Config, Filename, func)
 			end
 			if statusIcon then
 				statusIcon.Visible = not value
+			end
+		end
+		if statusBlock then
+			if value and pillVisible then
+				Tween(statusBlock, 0.14, { Size = UDim2.new(1, 0, 0, pillRowHeight or 24) }):Play()
+			elseif not value and not (loadingPill and loadingPill.Visible) then
+				Tween(statusBlock, 0.18, { Size = UDim2.new(1, 0, 0, 0) }):Play()
 			end
 		end
 	end
@@ -1797,11 +2093,13 @@ function Modern.new(Config, Filename, func)
 
 		local isValid = false
 		local failureMessage
+		local failureReason
 
 		if KeySystemConfig.KeyValidator then
-			local success, result = pcall(KeySystemConfig.KeyValidator, key)
+			local success, result, reason = pcall(KeySystemConfig.KeyValidator, key)
 			if success then
 				isValid = result and true or false
+				failureReason = reason
 			else
 				failureMessage = "Key validator failed."
 			end
@@ -1821,6 +2119,14 @@ function Modern.new(Config, Filename, func)
 			elseif expected ~= nil then
 				isValid = tostring(expected) == key
 			end
+		end
+
+		-- Validators can return false, "expired" (or any reason code) and the
+		-- message is looked up in Layout.Status.Errors. A raw string still works.
+		if failureReason ~= nil and failureReason ~= false then
+			failureMessage = StatusErrors[failureReason] or tostring(failureReason)
+		elseif type(failureMessage) == "string" and StatusErrors[failureMessage] then
+			failureMessage = StatusErrors[failureMessage]
 		end
 
 		if not isValid then
@@ -1939,6 +2245,18 @@ function Modern.new(Config, Filename, func)
 		local textWidth = item.Label.AbsoluteSize.X / uiScale
 		if textWidth > 0 then
 			item.Pill.Size = UDim2.new(0, math.ceil(textWidth) + item.Padding * 2, 0, item.Height)
+		end
+	end
+
+	-- Keep the tag from pushing the title under the top-right buttons: the title
+	-- gets whatever the row has left and truncates instead of overlapping.
+	if headerTitle and headerTag then
+		local tagWidth = math.ceil(headerTag.AbsoluteSize.X / uiScale)
+		if tagWidth > 0 then
+			headerTitle.AutomaticSize = "Y"
+			headerTitle.TextWrapped = false
+			headerTitle.TextTruncate = Enum.TextTruncate.AtEnd
+			headerTitle.Size = UDim2.new(1, -(tagWidth + 8), 0, 0)
 		end
 	end
 

@@ -51,26 +51,36 @@ WindUI:CreateWindow({
             Header = {
                 Kicker = "Secure Access",
                 Title = "Access Required",
-                Subtitle = "Enter your license key to continue",
                 Icon = "key",
+                Tag = {
+                    Title = "v2.5",
+                    Color = WindUI:Gradient({
+                        ["0"] = { Color = Color3.fromHex("#6B8E23"), Transparency = 0 },
+                        ["100"] = { Color = Color3.fromHex("#2F4F4F"), Transparency = 0 },
+                    }, { Rotation = 45 }),
+                },
             },
-            Input = { Placeholder = "XXXX-XXXX-XXXX" },
+            Input = {
+                Placeholder = "XXXX-XXXX-XXXX",
+                Label = "License key",
+                SubmitFill = WindUI:Gradient({
+                    ["0"] = { Color = Color3.fromHex("#6B8E23"), Transparency = 0 },
+                    ["100"] = { Color = Color3.fromHex("#2F4F4F"), Transparency = 0 },
+                }, { Rotation = 45 }),
+            },
             Footer = { Align = "Left", Text = "example.com" },
             Status = {
-                Error = "That key is not valid.",
                 Success = "Key accepted - loading",
                 Duration = 20,
-            },
-            Buttons = {
-                {
-                    ID = "Discord",
-                    Icon = "external-link",
-                    IconOnly = true,
-                    Slot = "Header",
-                    Style = "Ghost",
-                    Action = "CopyText",
-                    Text = "https://discord.gg/example",
+                Errors = {
+                    already_used = "This key is already used.",
+                    expired = "This key has expired.",
+                    revoked = "This key has been revoked.",
                 },
+            },
+            -- Footer defaults to Get Key / Copy key / Exit; passing Buttons
+            -- replaces that cluster outright.
+            Buttons = {
                 {
                     ID = "Copy",
                     Title = "Copy key",
@@ -78,14 +88,6 @@ WindUI:CreateWindow({
                     Slot = "Footer",
                     Style = "Secondary",
                     Action = "CopyKey",
-                },
-                {
-                    ID = "Exit",
-                    Title = "Exit",
-                    Icon = "log-out",
-                    Slot = "Footer",
-                    Style = "Tertiary",
-                    Action = "Exit",
                 },
             },
         },
@@ -104,8 +106,37 @@ no new fields:
 | `Note` | Note under the header (`**bold**` works) |
 | `Key` / `KeyValidator` / `API` | Validation, unchanged |
 | `SaveKey` | Saved-key flow, unchanged |
-| `URL` | Adds the built-in "Get key" button |
+| `URL` | Adds the built-in "Get Key" button and the top-right link icon |
 | `Thumbnail.Image` / `Thumbnail.Title` / `Thumbnail.Width` | Fallback thumbnail |
+
+## Error reasons
+
+A validator can hand back a reason as the second value and the card maps it to a
+message. `Layout.Status.Errors` overrides or extends the built-in set:
+
+```lua
+KeyValidator = function(key)
+    local res = HttpGet("check?key=" .. key)
+    if res.ok then return true end
+    return false, res.reason    -- "already_used" | "expired" | "revoked" | ...
+end
+
+Layout = {
+    Status = {
+        Errors = {
+            already_used = "This key is already used.",
+            expired      = "This key has expired.",
+            revoked      = "This key has been revoked.",
+            banned       = "This key is banned.",
+            wrong_account = "This key belongs to a different account.",
+            limit        = "Key limit reached, try again later.",
+        },
+    },
+}
+```
+
+Built-in reasons: `invalid`, `already_used`, `expired`, `revoked`, `banned`,
+`wrong_account`, `limit`. Any other string returned as the reason is shown as-is.
 
 ## `Layout`
 
@@ -125,10 +156,11 @@ no new fields:
 | `ShowNote` | `boolean` | `true` | `false` hides the note |
 | `NoteStyle` | `string` | `"Plain"` | `"Plain"` or `"Box"` (boxed panel) |
 | `NoteSize` | `number` | `14` | |
-| `Buttons` | `table` | `{}` | Array of button entries, see below |
+| `Buttons` | `table` | `Copy key`, `Exit` | Array of button entries, see below. Replaces the default cluster |
 | `ShowURL` | `boolean` | `true` | `false` hides the auto link button |
-| `URLTitle` | `string` | `"Join Discord"` | Label of the auto link button |
-| `URLIcon` | `string` \| `false` | `"external-link"` | |
+| `URLTitle` | `string` | `"Get Key"` | Label of the auto link button |
+| `URLIcon` | `string` \| `false` | `"key"` | |
+| `URLOrder` | `number` | `10` | Sort order of the auto link button |
 | `URLStyle` | `string` | `"Secondary"` | |
 | `URLSlot` | `string` | `"Footer"` | |
 | `URLAction` | `string` | `"OpenURL"` | `"OpenURL"` opens `KeySystem.URL`, `"CopyURL"` copies it |
@@ -205,9 +237,12 @@ by default; the spinner only animates while it is visible.
 | `ChipIconSize` | `number` | `22` | Icon size inside the chip; bare icon defaults to `26` |
 | `ShowIcon` | `boolean` | `true` | `false` removes the chip |
 | `Kicker` | `string` | — | Small uppercase line above the title |
-| `Badge` | `boolean` \| `string` | — | Pill next to the kicker |
+| `Badge` | `boolean` \| `string` | — | Pill inside the kicker row |
+| `Tag` | `table` | — | `{ Title, Color, Icon, Height, TextSize }`. `Color` takes a `Color3`, theme key or `WindUI:Gradient`; renders inline beside the title |
+| `Link` | `boolean` | `true` | Top-right icon that opens `KeySystem.URL` |
+| `LinkIcon` | `string` | `"external-link"` | |
 | `Title` | `string` | `KeySystem.Title` | |
-| `Subtitle` | `string` | — | |
+| `Subtitle` | `string` \| `false` | `"License is required to use the script"` | `false` removes the line |
 | `TitleSize` | `number` | `23` | |
 | `SubtitleSize` | `number` | `13` | |
 | `Close` | `boolean` | `true` | `false` removes the corner close button |
@@ -217,6 +252,8 @@ by default; the spinner only animates while it is visible.
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `Placeholder` | `string` | `"Enter Key"` | |
+| `Label` | `string` \| `false` | `"License key"` | Small description line above the field |
+| `LabelSize` | `number` | `12` | |
 | `Height` | `number` | `54` | |
 | `Radius` | `number` | `14` | |
 | `TextSize` | `number` | `16` | |
@@ -227,6 +264,7 @@ by default; the spinner only animates while it is visible.
 | `SubmitBusyText` | `string` | `"Checking…"` | Shown while validating |
 | `SubmitIcon` | `string` \| `false` | `"arrow-right"` | |
 | `SubmitStyle` | `string` | `"Solid"` | |
+| `SubmitFill` | `Color3` \| `string` \| gradient | — | Custom submit colour. `WindUI:Gradient({...})` works; theme key or `Color3` also accepted |
 | `SubmitWidth` | `number` | `112` | |
 | `SubmitHeight` | `number` | `40` | |
 | `SubmitRadius` | `number` | — | |
@@ -254,6 +292,7 @@ by default; the spinner only animates while it is visible.
 | `Empty` | `string` | `"Enter a key to continue."` | |
 | `Success` | `string` | `"Key accepted. Loading…"` | |
 | `Duration` | `number` | `3.2` | Seconds before the line fades |
+| `Errors` | `table` | built-in | Reason code → message map, see [Error reasons](#error-reasons) |
 | `TextSize` | `number` | `13` | |
 
 ## `Layout.Buttons`
@@ -271,6 +310,7 @@ Each entry is one button. Order inside a slot is `Order`, then declaration order
 | `Slot` | `string` | `Header`, `Input`, `Body`, `Thumbnail`, `Footer`, `Hidden` |
 | `Order` | `number` | Sort inside the slot |
 | `Style` / `Variant` | `string` | `Solid`, `Soft`, `Ghost`, `White` (`Primary` → Solid, `Secondary` → Soft, `Tertiary` → Ghost) |
+| `FillColor` | `Color3` \| `string` \| gradient | Overrides the fill for any style; gradient tables work |
 | `Width` | `number` | |
 | `Height` | `number` | Slot defaults: header 32, input 36, thumbnail 34, footer 38 |
 | `Radius` | `number` | |
