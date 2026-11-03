@@ -9,6 +9,12 @@ is driven from one table.
 - **Reversible.** Delete the four-line dispatch at the top of `src/components/KeySystem.lua`
   (or just stop passing `Layout`) and the stock key system is back, untouched. Deleting
   `src/components/KeySystemModern.lua` as well leaves no trace.
+- **Theme-first.** Every colour resolves through `ThemeTag`, so the card follows the
+  user's active theme. The default accent is the theme's `Button` key — grey on Dark,
+  not blue. Only `Layout.Accent` overrides that.
+- **Nothing is fixed.** Thumbnail, header icon, buttons, note, footer and each block's
+  position are all config fields. A block can be nudged with `Offset` without breaking
+  the flow.
 
 ```lua
 function KeySystem.new(Config, Filename, func, keyValidator)
@@ -36,32 +42,20 @@ WindUI:CreateWindow({
         end,
         SaveKey = false,
         URL = "https://discord.gg/example",
-        Thumbnail = {
-            Image = "rbxthumb://type=Avatar&id=" .. game:GetService("Players").LocalPlayer.UserId .. "&w=420&h=420",
-            Title = "Premium Member",
-        },
         Layout = {
-            Accent = "Slider",
-            Radius = 28,
-            Padding = 24,
-            Gap = 18,
-            BodyWidth = 392,
+            Accent = "Button",
+            Radius = 26,
+            Padding = 22,
+            Gap = 16,
+            BodyWidth = 420,
             Header = {
                 Kicker = "Secure Access",
                 Title = "Access Required",
                 Subtitle = "Enter your license key to continue",
-                Badge = "Premium",
                 Icon = "key",
             },
-            Thumbnail = {
-                Position = "Left",
-                Size = 240,
-                Title = "Premium Member",
-                Subtitle = "Lifetime license",
-                Badge = "VIP",
-            },
             Input = { Placeholder = "XXXX-XXXX-XXXX" },
-            Footer = { Align = "Left", Text = "WindUI key system" },
+            Footer = { Align = "Left", Text = "example.com" },
             Status = {
                 Error = "That key is not valid.",
                 Success = "Key accepted - loading",
@@ -117,25 +111,27 @@ no new fields:
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `Accent` | `string` \| `Color3` | `"Button"` | Theme key or a raw colour. Drives chip, submit, badges, focus ring, glow |
+| `Accent` | `string` \| `Color3` | `"Button"` | Theme key or a raw colour. Defaults to the theme's `Button` colour so the card matches whatever theme is loaded |
 | `Width` | `number` | auto | Card width. Auto = padding + thumbnail + gap + body + padding |
-| `BodyWidth` | `number` | `386` | Width of the text column |
+| `BodyWidth` | `number` | `420` | Width of the text column |
 | `Radius` | `number` | `26` | Card corner radius |
 | `Padding` | `number` | `22` | Inner padding |
-| `Gap` | `number` | `16` | Thumbnail-to-body gap |
+| `Gap` | `number` | `16` | Vertical gap between blocks, and thumbnail-to-body gap |
+| `Offsets` | `table` | — | Per-block nudges, see [Moving elements](#moving-elements) |
 | `Shadow` | `boolean` | `true` | `false` drops the drop shadow |
 | `ShadowTransparency` | `number` | `0.5` | |
-| `Glow` | `boolean` | `true` | `false` drops the accent glow |
+| `Glow` | `boolean` | `false` | Opt-in accent glow behind the card and inside the top-left corner |
 | `GlowTransparency` | `number` | `0.76` | |
 | `ShowNote` | `boolean` | `true` | `false` hides the note |
 | `NoteStyle` | `string` | `"Plain"` | `"Plain"` or `"Box"` (boxed panel) |
 | `NoteSize` | `number` | `14` | |
 | `Buttons` | `table` | `{}` | Array of button entries, see below |
-| `ShowURL` | `boolean` | `true` | `false` hides the auto "Get key" button |
-| `URLTitle` | `string` | `"Get key"` | |
-| `URLIcon` | `string` \| `false` | `"key"` | |
+| `ShowURL` | `boolean` | `true` | `false` hides the auto link button |
+| `URLTitle` | `string` | `"Join Discord"` | Label of the auto link button |
+| `URLIcon` | `string` \| `false` | `"external-link"` | |
 | `URLStyle` | `string` | `"Secondary"` | |
 | `URLSlot` | `string` | `"Footer"` | |
+| `URLAction` | `string` | `"OpenURL"` | `"OpenURL"` opens `KeySystem.URL`, `"CopyURL"` copies it |
 | `ShowServices` | `boolean` | `true` | `false` hides auto buttons for `KeySystem.API` services |
 | `ServicesSlot` | `string` | `"Footer"` | |
 | `Shake` | `boolean` | `true` | `false` disables the invalid-key shake |
@@ -143,15 +139,51 @@ no new fields:
 | `Notify` | `boolean` | `true` | Toast fallback when `Status.Show == false` |
 | `Debug` | `boolean` | `false` | Publishes the controller to `getgenv().WindUIKeySystem` / `WindUIKeySystems` |
 
+## Moving elements
+
+Every block can be nudged without breaking the flow. The nudge is visual only —
+the block draws shifted, its neighbours keep their slots.
+
+```lua
+Layout = {
+    Header    = { Offset = { 0, -2 } },
+    Input     = { Offset = { 0, 14 } },   -- default is { 0, 8 }
+    Footer    = { Offset = { 0, 4 } },
+    Thumbnail = { Offset = { -8, 0 } },
+    Offsets   = {
+        Note   = { 0, 6 },
+        Status = { 0, -2 },
+    },
+}
+```
+
+`Offset` accepts `{ X, Y }` or `{ X = 0, Y = 6 }`. `Thumbnail.Offset` moves the
+panel inside the row; `Layout.Thumbnail.Position` still decides which side it
+lives on.
+
+## `Layout.LoadingPill`
+
+The busy pill replaces the status line while a key is being validated. It is on
+by default; the spinner only animates while it is visible.
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `Show` | `boolean` | `true` | `false` falls back to the inline "Checking…" submit label |
+| `Text` | `string` | `"Checking key…"` | |
+| `Height` | `number` | `24` | Also sets the status row height |
+| `TextSize` | `number` | `12` | |
+| `Style` | `string` | `"Soft"` | `Soft` (theme pill), `Solid` (accent pill), `Ghost` |
+| `Icon` | `string` | `"loader"` | Lucide name, spins at 30 fps |
+
 ## `Layout.Thumbnail`
 
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `Enabled` | `boolean` | `true` | `false` removes the panel entirely |
-| `Position` | `string` | `"Left"` | `"Left"`, `"Right"`, `"Top"`, `"None"` |
+| `Position` | `string` | `"None"` | `"None"`, `"Left"`, `"Right"`, `"Top"` |
 | `Size` | `number` | `236` | Panel width for `Left` / `Right` |
 | `Height` | `number` | `176` | Panel height for `Top` |
-| `Image` | `string` | stock | Asset id or `rbxthumb://` |
+| `Image` | `string` | stock | Asset id or `rbxthumb://` (no panel unless `Position` is set) |
 | `Title` | `string` | stock | |
 | `Subtitle` | `string` | — | |
 | `Badge` | `boolean` \| `string` | — | `true` renders `"Premium"`, a string renders itself |
@@ -167,9 +199,10 @@ no new fields:
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `Icon` | `string` \| `false` | `"key"` | Lucide name, any icon in WindUI's set |
-| `IconSize` | `number` | `44` | Accent chip size |
+| `IconBackground` | `boolean` | `false` | `true` draws the accent chip behind the icon; `false` is a bare theme-coloured icon |
+| `IconSize` | `number` | `44` | Accent chip size (only used when `IconBackground = true`) |
 | `IconRadius` | `number` | `13` | |
-| `ChipIconSize` | `number` | `22` | |
+| `ChipIconSize` | `number` | `22` | Icon size inside the chip; bare icon defaults to `26` |
 | `ShowIcon` | `boolean` | `true` | `false` removes the chip |
 | `Kicker` | `string` | — | Small uppercase line above the title |
 | `Badge` | `boolean` \| `string` | — | Pill next to the kicker |
@@ -242,9 +275,9 @@ Each entry is one button. Order inside a slot is `Order`, then declaration order
 | `Height` | `number` | Slot defaults: header 32, input 36, thumbnail 34, footer 38 |
 | `Radius` | `number` | |
 | `Disabled` | `boolean` | Dimmed, ignores clicks |
-| `Action` | `string` | `Submit`, `Exit`, `CopyURL`, `CopyKey`, `CopyText` |
+| `Action` | `string` | `Submit`, `Exit`, `OpenURL`, `CopyURL`, `CopyKey`, `CopyText` |
 | `Text` | `string` | Payload for `CopyText` |
-| `URL` | `string` | Payload for `CopyURL`, defaults to `KeySystem.URL` |
+| `URL` | `string` | Payload for `OpenURL` / `CopyURL`, defaults to `KeySystem.URL` |
 | `Callback` | `function(controller)` | Overrides `Action` |
 
 **Slots**

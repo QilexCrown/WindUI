@@ -111,6 +111,21 @@ local function asBadge(value)
 	return nil
 end
 
+-- Notes accept the markdown the stock dialog understood (**bold**, *italic*,
+-- `code`). Raw rich text (anything containing "<") is passed through untouched.
+local function richText(value)
+	local text = tostring(value)
+	if string.find(text, "<", 1, true) then
+		return text
+	end
+	text = string.gsub(text, "&", "&amp;")
+	text = string.gsub(text, "(%*%*)(.-)%1", "<b>%2</b>")
+	text = string.gsub(text, "(__)(.-)%1", "<b>%2</b>")
+	text = string.gsub(text, "(`)(.-)%1", "<font face=\"RobotoMono\">%2</font>")
+	text = string.gsub(text, "(%*)([^%s%*][^*]-)(%*)", "<i>%2</i>")
+	return text
+end
+
 function Modern.new(Config, Filename, func)
 	local KeySystemConfig = Config.KeySystem
 	local Layout = type(KeySystemConfig.Layout) == "table" and KeySystemConfig.Layout or {}
@@ -127,10 +142,10 @@ function Modern.new(Config, Filename, func)
 	local Radius = Layout.Radius or 26
 	local Padding = Layout.Padding or 22
 	local Gap = Layout.Gap or 16
-	local BodyWidth = Layout.BodyWidth or 386
+	local BodyWidth = Layout.BodyWidth or 420
 
-	local ThumbPosition = ThumbConfig.Position or "Left"
-	local ThumbImage = first(ThumbConfig.Image, StockThumb.Image)
+	local ThumbPosition = ThumbConfig.Position or "None"
+	local ThumbImage = first(ThumbConfig.Image, ThumbPosition ~= "None" and StockThumb.Image or nil)
 	local ThumbEnabled = ThumbConfig.Enabled ~= false and ThumbImage ~= nil and ThumbPosition ~= "None"
 	local ThumbSize = ThumbConfig.Size or StockThumb.Width or 236
 	local ThumbHeight = ThumbConfig.Height or 176
@@ -176,11 +191,11 @@ function Modern.new(Config, Filename, func)
 	local closed = false
 	local statusToken = 0
 
-	local submit, close, shake, setStatus, setBusy, copyToClipboard
+	local submit, close, shake, setStatus, setBusy, copyToClipboard, openURL
 	local card, holder, holderScale
 	local body, thumbnail, textBox, inputShell, statusIcon, statusLabel
 	local submitButton, submitTextLabel
-	local footerCluster, footerRow
+	local footerCluster, footerRow, loadingPill
 	local inputCursorBase = 0
 
 	------------------------------------------------------------------
@@ -227,7 +242,7 @@ function Modern.new(Config, Filename, func)
 		})
 	end
 
-	if Layout.Glow ~= false then
+	if Layout.Glow == true then
 		New("ImageLabel", {
 			Name = "Glow",
 			Image = "rbxassetid://8992230677",
@@ -265,19 +280,21 @@ function Modern.new(Config, Filename, func)
 	})
 
 	-- Soft accent spotlight behind the header chip; clipped to the card rect.
-	New("ImageLabel", {
-		Name = "AccentGlow",
-		Image = "rbxassetid://8992230677",
-		ScaleType = "Slice",
-		SliceCenter = Rect.new(99, 99, 99, 99),
-		Size = UDim2.new(0, 420, 0, 420),
-		Position = UDim2.new(0, Padding + 22 - 210, 0, Padding + 22 - 210),
-		BackgroundTransparency = 1,
-		ImageTransparency = 0.87,
-		ThemeTag = accentTag and { ImageColor3 = accentTag } or nil,
-		ImageColor3 = accentTag and nil or accentColor,
-		Parent = surface,
-	})
+	if Layout.Glow == true then
+		New("ImageLabel", {
+			Name = "AccentGlow",
+			Image = "rbxassetid://8992230677",
+			ScaleType = "Slice",
+			SliceCenter = Rect.new(99, 99, 99, 99),
+			Size = UDim2.new(0, 420, 0, 420),
+			Position = UDim2.new(0, Padding + 22 - 210, 0, Padding + 22 - 210),
+			BackgroundTransparency = 1,
+			ImageTransparency = 0.87,
+			ThemeTag = accentTag and { ImageColor3 = accentTag } or nil,
+			ImageColor3 = accentTag and nil or accentColor,
+			Parent = surface,
+		})
+	end
 
 	Creator.NewRoundFrame(Radius, "SquircleOutline", {
 		Name = "Stroke",
@@ -755,30 +772,53 @@ function Modern.new(Config, Filename, func)
 		Parent = body,
 	})
 
+	local kickerText = HeaderConfig.Kicker
+	local badgeText = asBadge(HeaderConfig.Badge)
+
 	local headerIcon = first(HeaderConfig.Icon, ICON.Key)
 	local chipSize = HeaderConfig.IconSize or 44
 	local chipWidth = 0
+	local iconBackground = HeaderConfig.IconBackground == true
 
 	if headerIcon and HeaderConfig.ShowIcon ~= false then
-		chipWidth = chipSize + 13
-		local chip = Creator.NewRoundFrame(HeaderConfig.IconRadius or 13, "Squircle", accentPaint({
-			Size = UDim2.new(0, chipSize, 0, chipSize),
-			Parent = header,
-		}, accentTag, accentColor))
+		if iconBackground then
+			chipWidth = chipSize + 13
+			local chip = Creator.NewRoundFrame(HeaderConfig.IconRadius or 13, "Squircle", accentPaint({
+				Size = UDim2.new(0, chipSize, 0, chipSize),
+				Parent = header,
+			}, accentTag, accentColor))
 
-		local chipImage, chipRectSize, chipRectOffset = iconData(headerIcon)
-		if chipImage then
-			New("ImageLabel", {
-				Image = chipImage,
-				ImageRectSize = chipRectSize,
-				ImageRectOffset = chipRectOffset,
-				Size = UDim2.new(0, HeaderConfig.ChipIconSize or 22, 0, HeaderConfig.ChipIconSize or 22),
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.new(0.5, 0, 0.5, 0),
-				BackgroundTransparency = 1,
-				ImageColor3 = onAccent,
-				Parent = chip,
-			})
+			local chipImage, chipRectSize, chipRectOffset = iconData(headerIcon)
+			if chipImage then
+				New("ImageLabel", {
+					Image = chipImage,
+					ImageRectSize = chipRectSize,
+					ImageRectOffset = chipRectOffset,
+					Size = UDim2.new(0, HeaderConfig.ChipIconSize or 22, 0, HeaderConfig.ChipIconSize or 22),
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.new(0.5, 0, 0.5, 0),
+					BackgroundTransparency = 1,
+					ImageColor3 = onAccent,
+					Parent = chip,
+				})
+			end
+		else
+			-- Bare icon: no chip, coloured from the theme's Icon key.
+			local bareSize = HeaderConfig.ChipIconSize or 26
+			local bareImage, bareRectSize, bareRectOffset = iconData(headerIcon)
+			if bareImage then
+				chipWidth = bareSize + 13
+				New("ImageLabel", {
+					Image = bareImage,
+					ImageRectSize = bareRectSize,
+					ImageRectOffset = bareRectOffset,
+					Size = UDim2.new(0, bareSize, 0, bareSize),
+					Position = UDim2.new(0, 0, 0, kickerText and 18 or 2),
+					BackgroundTransparency = 1,
+					ThemeTag = { ImageColor3 = "Icon" },
+					Parent = header,
+				})
+			end
 		end
 	end
 
@@ -817,9 +857,6 @@ function Modern.new(Config, Filename, func)
 			SortOrder = "LayoutOrder",
 		}),
 	})
-
-	local kickerText = HeaderConfig.Kicker
-	local badgeText = asBadge(HeaderConfig.Badge)
 
 	if kickerText or badgeText then
 		local metaRow = New("Frame", {
@@ -960,7 +997,7 @@ function Modern.new(Config, Filename, func)
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = "Y",
 			BackgroundTransparency = 1,
-			Text = noteText,
+			Text = richText(noteText),
 			TextWrapped = true,
 			TextXAlignment = "Left",
 			RichText = true,
@@ -1144,9 +1181,14 @@ function Modern.new(Config, Filename, func)
 	------------------------------------------------------------------
 
 	if StatusConfig.Show ~= false then
+		local loadingConfig = type(Layout.LoadingPill) == "table" and Layout.LoadingPill or {}
+		local pillEnabled = loadingConfig.Show ~= false
+		local pillHeight = loadingConfig.Height or 24
+		local statusHeight = pillEnabled and pillHeight or 18
+
 		local status = New("Frame", {
 			Name = "Status",
-			Size = UDim2.new(1, 0, 0, 18),
+			Size = UDim2.new(1, 0, 0, statusHeight),
 			BackgroundTransparency = 1,
 			LayoutOrder = 4,
 			Parent = body,
@@ -1178,6 +1220,97 @@ function Modern.new(Config, Filename, func)
 			LayoutOrder = 2,
 			Parent = status,
 		})
+
+		if pillEnabled then
+			-- Busy pill: replaces the status line while a key is being checked.
+			loadingPill = New("Frame", {
+				Name = "LoadingPill",
+				Size = UDim2.new(0, 0, 0, pillHeight),
+				AutomaticSize = "X",
+				AnchorPoint = Vector2.new(0, 0.5),
+				Position = UDim2.new(0, 0, 0.5, 0),
+				BackgroundTransparency = 1,
+				Visible = false,
+				Parent = status,
+			})
+
+			local pillStyle = loadingConfig.Style or "Soft"
+			local fill = {
+				Name = "Fill",
+				Size = UDim2.new(1, 0, 1, 0),
+				Parent = loadingPill,
+			}
+			if pillStyle == "Solid" then
+				accentPaint(fill, accentTag, accentColor)
+				fill.ImageTransparency = 0
+			elseif pillStyle == "Ghost" then
+				fill.ThemeTag = { ImageColor3 = "LabelBackground", ImageTransparency = "LabelBackgroundTransparency" }
+				fill.ImageTransparency = 0.4
+			else
+				fill.ThemeTag = { ImageColor3 = "LabelBackground", ImageTransparency = "LabelBackgroundTransparency" }
+			end
+			Creator.NewRoundFrame(999, "Squircle", fill)
+
+			local pillContent = New("Frame", {
+				Name = "Content",
+				Size = UDim2.new(1, 0, 1, 0),
+				BackgroundTransparency = 1,
+				Parent = loadingPill,
+			}, {
+				New("UIPadding", {
+					PaddingLeft = UDim.new(0, 10),
+					PaddingRight = UDim.new(0, 11),
+				}),
+				New("UIListLayout", {
+					FillDirection = "Horizontal",
+					Padding = UDim.new(0, 7),
+					SortOrder = "LayoutOrder",
+					VerticalAlignment = "Center",
+				}),
+			})
+
+			local spinnerProps = {
+				Name = "Spinner",
+				Size = UDim2.new(0, 13, 0, 13),
+				BackgroundTransparency = 1,
+				LayoutOrder = 1,
+				Parent = pillContent,
+			}
+			if pillStyle == "Solid" then
+				spinnerProps.ImageColor3 = onAccent
+			elseif accentTag then
+				spinnerProps.ThemeTag = { ImageColor3 = accentTag }
+			else
+				spinnerProps.ImageColor3 = accentColor
+			end
+			local spinner = New("ImageLabel", spinnerProps)
+			applyIcon(spinner, loadingConfig.Icon or "loader")
+
+			New("TextLabel", {
+				Name = "Label",
+				Size = UDim2.new(0, 0, 1, 0),
+				AutomaticSize = "X",
+				BackgroundTransparency = 1,
+				Text = loadingConfig.Text or "Checking key\u{2026}",
+				FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
+				TextSize = loadingConfig.TextSize or 12,
+				TextColor3 = pillStyle == "Solid" and onAccent or nil,
+				ThemeTag = pillStyle ~= "Solid" and { TextColor3 = "Text" } or nil,
+				LayoutOrder = 2,
+				Parent = pillContent,
+			})
+
+			task.spawn(function()
+				local angle = 0
+				while mount.Parent do
+					if loadingPill.Visible then
+						angle = (angle + 9) % 360
+						spinner.Rotation = angle
+					end
+					task.wait(1 / 30)
+				end
+			end)
+		end
 	end
 
 	------------------------------------------------------------------
@@ -1335,6 +1468,10 @@ function Modern.new(Config, Filename, func)
 			return function()
 				copyToClipboard(entry.URL or KeySystemConfig.URL, "Key link copied to clipboard.")
 			end
+		elseif action == "OpenURL" then
+			return function()
+				openURL(entry.URL or KeySystemConfig.URL)
+			end
 		elseif action == "CopyKey" then
 			return function()
 				copyToClipboard(enteredKey, "Key copied to clipboard.")
@@ -1404,12 +1541,12 @@ function Modern.new(Config, Filename, func)
 	if hasURLEntry then
 		mountButton({
 			ID = "GetKey",
-			Title = Layout.URLTitle or "Get key",
-			Icon = Layout.URLIcon ~= false and (Layout.URLIcon or ICON.Key) or nil,
+			Title = Layout.URLTitle or "Join Discord",
+			Icon = Layout.URLIcon ~= false and (Layout.URLIcon or "external-link") or nil,
 			Style = Layout.URLStyle or "Secondary",
 			Slot = Layout.URLSlot or "Footer",
 			Order = 10,
-			Action = "CopyURL",
+			Action = Layout.URLAction or "OpenURL",
 		}, "Footer")
 	end
 
@@ -1494,6 +1631,56 @@ function Modern.new(Config, Filename, func)
 		end
 	end
 
+	-- Opening a browser is executor-dependent: try the globals first, then the
+	-- GuiService call, and fall back to copying the link so the button never dies.
+	openURL = function(url)
+		if not url or url == "" then
+			return
+		end
+		local target = tostring(url)
+
+		local function global(name)
+			local envs = {}
+			if getgenv then
+				table.insert(envs, getgenv())
+			end
+			local ok, env = pcall(getfenv)
+			if ok and env then
+				table.insert(envs, env)
+			end
+			table.insert(envs, _G)
+			for _, scope in next, envs do
+				local value = rawget(scope, name)
+				if type(value) == "function" then
+					return value
+				end
+			end
+			return nil
+		end
+
+		local opener = global("openurl") or global("openUrl") or global("open_browser")
+		if opener then
+			local ok = pcall(opener, target)
+			if ok then
+				setStatus("success", "Opening your browser\u{2026}")
+				return
+			end
+		end
+
+		local browserOk = pcall(function()
+			game:GetService("GuiService"):OpenBrowserWindow(target)
+		end)
+		if browserOk then
+			setStatus("success", "Opening your browser\u{2026}")
+			return
+		end
+
+		pcall(function()
+			setclipboard(target)
+		end)
+		setStatus("success", "Link copied \u{2014} open it in your browser.")
+	end
+
 	setStatus = function(kind, message)
 		if not statusLabel then
 			if kind == "error" and Layout.Notify ~= false then
@@ -1556,6 +1743,15 @@ function Modern.new(Config, Filename, func)
 					and (InputConfig.SubmitBusyText or "Checking\u{2026}")
 				or (InputConfig.SubmitText or "Submit")
 		end
+		if loadingPill then
+			loadingPill.Visible = value
+			if statusLabel then
+				statusLabel.Visible = not value
+			end
+			if statusIcon then
+				statusIcon.Visible = not value
+			end
+		end
 	end
 
 	close = function()
@@ -1592,6 +1788,12 @@ function Modern.new(Config, Filename, func)
 		end
 
 		setBusy(true)
+
+		-- One frame so the loading pill actually paints before a synchronous
+		-- validator flips busy back off.
+		if loadingPill then
+			task.wait()
+		end
 
 		local isValid = false
 		local failureMessage
@@ -1642,6 +1844,17 @@ function Modern.new(Config, Filename, func)
 			end)
 		end
 
+		-- Swap the pill back to the status line so the success message shows.
+		if loadingPill then
+			loadingPill.Visible = false
+			if statusLabel then
+				statusLabel.Visible = true
+			end
+			if statusIcon then
+				statusIcon.Visible = true
+			end
+		end
+
 		setStatus("success", StatusConfig.Success or "Key accepted. Loading\u{2026}")
 		flash()
 
@@ -1655,6 +1868,61 @@ function Modern.new(Config, Filename, func)
 				func(true)
 			end
 		end)
+	end
+
+	------------------------------------------------------------------
+	-- Element offsets
+	-- Each block can be nudged with Offset = { X, Y } (or { X =, Y = }).
+	-- The nudge is visual only: flow keeps its original order and spacing,
+	-- so a moved element draws over its neighbours instead of pushing them.
+	------------------------------------------------------------------
+
+	local offsetMap = {
+		Header = (Layout.Header or {}).Offset or (Layout.Offsets or {}).Header,
+		Note = (Layout.Offsets or {}).Note,
+		InputBlock = (Layout.Input or {}).Offset or (Layout.Offsets or {}).Input or { 0, 8 },
+		Status = (Layout.Status or {}).Offset or (Layout.Offsets or {}).Status,
+		Footer = (Layout.Footer or {}).Offset or (Layout.Offsets or {}).Footer,
+	}
+
+	local function readOffset(value)
+		if type(value) ~= "table" then
+			return nil
+		end
+		local x = value.X or value[1] or 0
+		local y = value.Y or value[2] or 0
+		if x == 0 and y == 0 then
+			return nil
+		end
+		return x, y
+	end
+
+	if body then
+		for _, block in next, body:GetChildren() do
+			local x, y = readOffset(offsetMap[block.Name])
+			if x then
+				local slot = New("Frame", {
+					Name = block.Name .. "Slot",
+					Size = UDim2.new(1, 0, 0, 0),
+					AutomaticSize = "Y",
+					BackgroundTransparency = 1,
+					ClipsDescendants = false,
+					LayoutOrder = block.LayoutOrder,
+					Parent = body,
+				})
+				block.LayoutOrder = 0
+				block.Parent = slot
+				block.Position = UDim2.new(0, x, 0, y)
+			end
+		end
+	end
+
+	if thumbnail and thumbnail.Panel then
+		local x, y = readOffset((Layout.Thumbnail or {}).Offset)
+		if x then
+			local base = thumbnail.Panel.Position
+			thumbnail.Panel.Position = UDim2.new(base.X.Scale, base.X.Offset + x, base.Y.Scale, base.Y.Offset + y)
+		end
 	end
 
 	------------------------------------------------------------------
