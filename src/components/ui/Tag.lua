@@ -20,26 +20,14 @@ function Tag:New(TagConfig, Parent)
 	}
 
 	local TagIcon
-
-	-- A tag colour is a Color3, a theme key, or a stop table for UIGradient.
-	-- The `and/or` chain this replaces already pushed `false` into TextColor3
-	-- when the colour was a table, which aborts the whole window build; the
-	-- gradient branch below repaints it once the UIGradient exists.
-	local function contrastColor(color)
-		if typeof(color) == "Color3" then
-			return Creator.GetTextColorForHSB(color)
-		end
-		if typeof(color) == "string" then
-			return Creator.GetTextColorForHSB(Creator.GetThemeProperty(color, Creator.Theme))
-		end
-		return Color3.fromRGB(255, 255, 255)
-	end
-
 	if TagModule.Icon then
 		TagIcon = Creator.Image(TagModule.Icon, TagModule.Icon, 0, TagConfig.Window, "Tag", false)
 
 		TagIcon.Size = UDim2.new(0, TagModule.IconSize, 0, TagModule.IconSize)
-		TagIcon.ImageLabel.ImageColor3 = contrastColor(TagModule.Color)
+		TagIcon.ImageLabel.ImageColor3 = typeof(TagModule.Color) == "Color3"
+				and Creator.GetTextColorForHSB(TagModule.Color)
+			or typeof(TagModule.Color) == "string"
+				and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme)))
 	end
 
 	local TagTitle = New("TextLabel", {
@@ -48,7 +36,9 @@ function Tag:New(TagConfig, Parent)
 		TextSize = TagModule.TextSize,
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
 		Text = TagModule.Title,
-		TextColor3 = contrastColor(TagModule.Color),
+		TextColor3 = typeof(TagModule.Color) == "Color3" and Creator.GetTextColorForHSB(TagModule.Color) or typeof(
+			TagModule.Color
+		) == "string" and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme))),
 		LayoutOrder = 9999,
 	})
 
