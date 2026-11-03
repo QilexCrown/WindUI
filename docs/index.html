@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WindUI docs</title>
+<meta name="description" content="WindUI documentation — key system, themes and elements." />
+<style>
+:root {
+  --bg: #0b0b0d;
+  --panel: #131316;
+  --panel-2: #17171b;
+  --stroke: rgba(255,255,255,0.09);
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --accent: #d4d4d8;
+  --code: #0f0f12;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: radial-gradient(1200px 600px at 15% -10%, rgba(255,255,255,0.06), transparent 60%), var(--bg);
+  color: var(--text);
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: #e4e4e7; text-decoration: none; }
+a:hover { color: #fff; text-decoration: underline; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+header.top {
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(14px);
+  background: rgba(11,11,13,0.82);
+  border-bottom: 1px solid var(--stroke);
+}
+.top .wrap { display: flex; align-items: center; gap: 16px; height: 62px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: 0.02em; }
+.brand img { width: 26px; height: 26px; border-radius: 8px; }
+.brand span { font-size: 15px; }
+.pill {
+  margin-left: auto; font-size: 12px; color: var(--muted);
+  border: 1px solid var(--stroke); border-radius: 999px; padding: 4px 10px;
+}
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 48px; padding: 46px 0 90px; }
+nav.side { position: sticky; top: 88px; align-self: start; font-size: 13.5px; }
+nav.side .group { color: var(--muted); text-transform: uppercase; letter-spacing: 0.09em; font-size: 10.5px; margin: 0 0 10px; }
+nav.side a { display: block; padding: 5px 10px; margin-left: -10px; border-radius: 8px; color: var(--muted); }
+nav.side a:hover { background: rgba(255,255,255,0.05); color: var(--text); text-decoration: none; }
+nav.side a.lvl3 { padding-left: 22px; font-size: 12.5px; }
+main { min-width: 0; }
+h1 { font-size: 36px; line-height: 1.2; margin: 0 0 18px; letter-spacing: -0.02em; }
+h2 { font-size: 23px; margin: 46px 0 14px; letter-spacing: -0.01em; padding-top: 10px; border-top: 1px solid var(--stroke); }
+h3 { font-size: 16.5px; margin: 28px 0 10px; color: #fafafa; }
+h4 { font-size: 14px; margin: 20px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+p { margin: 0 0 14px; color: #d8d8dc; }
+ul, ol { margin: 0 0 16px; padding-left: 22px; color: #d8d8dc; }
+li { margin: 4px 0; }
+strong { color: #fff; font-weight: 600; }
+code {
+  font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+  font-size: 12.5px; background: rgba(255,255,255,0.07);
+  padding: 2px 6px; border-radius: 6px; color: #f0f0f2;
+}
+pre.code {
+  background: var(--code); border: 1px solid var(--stroke); border-radius: 14px;
+  padding: 16px 18px; overflow: auto; margin: 0 0 20px; position: relative;
+}
+pre.code code { background: none; padding: 0; font-size: 12.5px; line-height: 1.6; }
+pre.code::before {
+  content: attr(data-lang); position: absolute; top: 9px; right: 14px;
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #52525b;
+}
+table { width: 100%; border-collapse: collapse; margin: 0 0 22px; font-size: 13.5px; }
+th {
+  text-align: left; font-weight: 600; color: #fff; padding: 9px 12px;
+  background: var(--panel-2); border-bottom: 1px solid var(--stroke);
+}
+th:first-child { border-top-left-radius: 10px; }
+th:last-child { border-top-right-radius: 10px; }
+td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #d4d4d8; vertical-align: top; }
+tr:hover td { background: rgba(255,255,255,0.02); }
+hr { border: none; border-top: 1px solid var(--stroke); margin: 34px 0; }
+.hero { padding: 76px 0 40px; }
+.hero h1 { font-size: 46px; max-width: 700px; }
+.hero p { font-size: 17px; color: var(--muted); max-width: 620px; }
+.hero .cta { margin-top: 26px; display: flex; gap: 12px; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px;
+  border-radius: 12px; border: 1px solid var(--stroke); font-size: 14px; font-weight: 500;
+  background: var(--panel);
+}
+.btn:hover { border-color: rgba(255,255,255,0.24); text-decoration: none; background: var(--panel-2); }
+.btn.primary { background: #f4f4f5; color: #0b0b0d; border-color: #f4f4f5; }
+.btn.primary:hover { background: #fff; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin: 26px 0 0; }
+.card {
+  border: 1px solid var(--stroke); border-radius: 16px; padding: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.008));
+}
+.card h3 { margin: 0 0 6px; font-size: 16px; color: #fff; }
+.card p { margin: 0; font-size: 13.5px; color: var(--muted); }
+.card:hover { border-color: rgba(255,255,255,0.22); text-decoration: none; }
+footer { border-top: 1px solid var(--stroke); padding: 26px 0 40px; color: #6b6b73; font-size: 12.5px; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; gap: 26px; }
+  nav.side { position: static; display: none; }
+  .hero h1 { font-size: 34px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./index.html">
+      <img src="./logo.png" alt="" />
+      <span>WindUI</span>
+    </a>
+    <a class="pill" href="https://github.com/QilexCrown/WindUI">QilexCrown/WindUI</a>
+  </div>
+</header>
+<div class="wrap">
+<section class="hero">
+  <h1>WindUI documentation</h1>
+  <p>Interface library for Roblox scripts. The fork adds a fully configurable key screen, theme-driven colours and a loading pill — all opt-in.</p>
+  <div class="cta">
+    <a class="btn primary" href="./key-system-modern.html">Key system docs</a>
+    <a class="btn" href="https://github.com/QilexCrown/WindUI">Repository</a>
+    <a class="btn" href="https://raw.githubusercontent.com/QilexCrown/WindUI/main/dist/main.lua">main.lua</a>
+  </div>
+</section>
+<section>
+  <div class="cards">
+    <a class="card" href="./key-system-modern.html">
+      <h3>Key system</h3>
+      <p>Layout table, header tag, thumbnail, buttons, loading pill, error reasons.</p>
+    </a>
+    <a class="card" href="./key-system-modern.html#moving-elements">
+      <h3>Moving elements</h3>
+      <p>Per-block offsets that nudge without breaking the flow.</p>
+    </a>
+    <a class="card" href="./key-system-modern.html#error-reasons">
+      <h3>Error reasons</h3>
+      <p>Map validator reason codes to messages: used, expired, revoked.</p>
+    </a>
+    <a class="card" href="./key-system-modern.html#layout-status">
+      <h3>Status &amp; loading</h3>
+      <p>Inline status line, loading pill, custom success and error text.</p>
+    </a>
+  </div>
+</section>
+<section style="margin-top:56px">
+  <h2 style="border-top:none;padding-top:0">Install</h2>
+  <pre class="code" data-lang="lua"><code>local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/QilexCrown/WindUI/main/dist/main.lua"))()</code></pre>
+  <p>Stock key system stays untouched unless <code>KeySystem.Layout</code> is a table.</p>
+</section>
+</div>
+<footer><div class="wrap">WindUI fork — MIT licensed. Docs built from <code>docs/key-system-modern.md</code>.</div></footer>
+</body>
+</html>
