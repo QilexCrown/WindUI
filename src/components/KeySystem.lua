@@ -8,6 +8,10 @@ local CreateButton = require("./ui/Button").New
 local CreateInput = require("./ui/Input").New
 
 function KeySystem.new(Config, Filename, func, keyValidator)
+	if type(Config.KeySystem.Layout) == "table" then
+		return require("./KeySystemModern").new(Config, Filename, func, keyValidator)
+	end
+
 	local KeyDialogInit = require("./window/Dialog")
 	local KeyDialog = KeyDialogInit.Create(true, "Popup", Config.Window, Config.WindUI, Config.WindUI.ScreenGui.KeySystem)
 
