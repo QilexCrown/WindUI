@@ -16,6 +16,13 @@ local IconsURL = "https://raw.githubusercontent.com/Footagesus/Icons/main/Main-v
 
 local Icons = require("../Icons/Main-v2")
 
+-- Apple SF Symbols ship inside the repo, so "sf:playFill" works without a
+-- second download. Missing pack only costs the Apple names, never the window.
+local HasApple, AppleIcons = pcall(require, "../assets/sfsymbols")
+if HasApple and type(AppleIcons) == "table" then
+	pcall(Icons.AddIcons, "sfsymbols", AppleIcons)
+end
+
 Icons.SetIconsType("lucide")
 
 local WindUI
@@ -488,8 +495,38 @@ function Creator.SetLanguage(lang)
 	Creator.UpdateLang()
 end
 
+-- Icon names carry their pack: "lucide:play", "sfsymbols:playFill". Hand-typed
+-- shorthand is common, so the short prefixes resolve to the real pack name.
+local IconPackAliases = {
+	sf = "sfsymbols",
+	apple = "sfsymbols",
+	ios = "sfsymbols",
+	md = "material",
+}
+
+local function ResolveIconPack(Pack)
+	if type(Pack) ~= "string" then
+		return Pack
+	end
+
+	return IconPackAliases[string.lower(Pack)] or Pack
+end
+
+local function ResolveIconName(Icon)
+	if type(Icon) ~= "string" then
+		return Icon
+	end
+
+	local Pack, Name = string.match(Icon, "^(%w+):(.+)$")
+	if not Pack then
+		return Icon
+	end
+
+	return ResolveIconPack(Pack) .. ":" .. Name
+end
+
 function Creator.Icon(Icon, formatdefault)
-	local IconData = Icons.Icon2(Icon, nil, formatdefault ~= false)
+	local IconData = Icons.Icon2(ResolveIconName(Icon), nil, formatdefault ~= false)
 	if IconData == nil then
 		return {
 			"",
@@ -500,6 +537,11 @@ function Creator.Icon(Icon, formatdefault)
 		}
 	end
 	return IconData
+end
+
+-- Switches the pack used by bare icon names ("play" instead of "lucide:play").
+function Creator.SetIconPack(Pack)
+	return Icons.SetIconsType(ResolveIconPack(Pack))
 end
 
 function Creator.AddIcons(packName, iconsData)

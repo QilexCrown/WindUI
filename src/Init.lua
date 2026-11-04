@@ -367,21 +367,37 @@ function WindUI:Popup(PopupConfig)
 	return require("./components/popup/Init").new(PopupConfig, WindUI.ScreenGui.Popups)
 end
 
--- Music mini player: a floating now-playing capsule docked at the top of the
--- screen, outside the window. Collapsed it is a black pill; tapped it springs
--- into a glass card with transport, scrubber, volume and a source picker.
--- Config.DynamicIsland = false boots the expanded card and keeps it there.
--- Config.Providers picks which sources appear - "spotify", "files", "sound",
--- "demo", or a bridge table { Id, Name, Url }.
-function WindUI:MusicMiniPlayer(Config)
+-- Miniplayer: the dynamic island and the music player it springs into. Floating
+-- it docks top-centre over the game and can be dragged; pass Config.Parent (a
+-- tab, a section, any frame) and it docks inside the window instead.
+--
+--   local Music = WindUI:Miniplayer({
+--       Providers = { "files", "spotify", "demo" },
+--       Folder = "Ender Hub/songs",
+--   })
+--
+-- Config.Providers picks the sources: "files", "spotify", "sound", "demo", or a
+-- bridge table { Id, Name, Url }. Config.Expanded boots the card open,
+-- Config.Blur adds the acrylic wash behind the expanded card.
+function WindUI:Miniplayer(Config)
 	Config = Config or {}
 	Config.WindUI = WindUI
-	return require("./components/window/MusicMiniPlayer").New(Config)
+	return require("./components/window/Miniplayer").New(Config)
 end
 
--- Old name, same widget.
-function WindUI:MusicIsland(Config)
-	return WindUI:MusicMiniPlayer(Config)
+-- Icon packs: names carry their pack ("lucide:play", "sfsymbols:playFill",
+-- "sf:playFill"), and a bare name resolves against the current pack.
+function WindUI:SetIconPack(Pack)
+	return Creator.SetIconPack(Pack)
+end
+
+function WindUI:AddIcons(PackName, IconsData)
+	return Creator.AddIcons(PackName, IconsData)
+end
+
+function WindUI:GetIcon(Icon)
+	local Data = Creator.Icon(Icon)
+	return Data[1], Data[2]
 end
 
 WindUI.Themes = require("./themes/Init")(WindUI, Creator)
