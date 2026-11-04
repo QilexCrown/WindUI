@@ -1,4 +1,6 @@
-The Miniplayer is the dynamic island: a black pill that springs into a full music card. It reads real cover art, plays local files, Spotify or a bound sound, and it works floating over the game or docked inside a window.
+The Miniplayer is the standalone music card: 300 x 162, black at the top that lets the world through down the card, artwork on the left, the title and artist beside it, a four-bar wave top right, the scrubber with both times, then previous / play / next and the source disc. Drag it anywhere.
+
+It is not the dynamic island and it is not connected to it — that is a separate element (`WindUI:DynamicIsland`). This one is just the card.
 
 ## Floating
 
@@ -9,11 +11,11 @@ local Music = WindUI:Miniplayer({
 })
 ```
 
-Collapsed it is 212 x 40 — artwork on the left, a six-bar wave on the right. Tap it and the artwork grows into a 752 x 204 card: title, transport, scrubber, four chips and a source column. Tap the artwork again to close it.
+Grab the card anywhere that is not a control and drag it.
 
 ## Inside a window
 
-Pass `Parent` and the island docks in that frame instead of the screen:
+Pass `Parent` and the card docks in that frame instead of the screen:
 
 ```lua
 local Music = WindUI:Miniplayer({
@@ -27,7 +29,7 @@ It scales itself down to fit the parent, so a narrow tab still gets the whole ca
 
 ## Sources
 
-`Providers` is an ordered list. The first entry boots; the rest show up in the library tab.
+`Providers` is an ordered list. The first entry boots; the ellipsis disc at the bottom right opens the list and switches between them.
 
 | Value | What it plays |
 | --- | --- |
@@ -52,24 +54,17 @@ local Music = WindUI:Miniplayer({
 | Name | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `Parent` | `Instance` | `nil` | Docks inside this frame instead of floating |
-| `Top` | `number` | `12` | Floating only, distance from the top of the screen |
+| `X` | `number` | `18` | Floating only, distance from the left of the screen |
+| `Top` | `number` | `0` | Floating only, distance from the top of the screen |
 | `Providers` | `table` | `{ "files", "spotify", "demo" }` | Ordered source list |
 | `Folder` | `string` | `"Ender Hub/songs"` | Where the files provider looks |
 | `Source` | `number \| string` | `1` | Which source boots |
-| `Expanded` | `boolean` | `false` | Boot with the card open |
 | `Scale` | `number` | `1` | Multiplier on the fitted scale |
 | `PollRate` | `number` | `0.25` | Seconds between provider polls |
-| `OnExpand` | `function` | `nil` | `function(Miniplayer)` |
-| `OnCollapse` | `function` | `nil` | `function(Miniplayer)` |
-| `OnLike` | `function` | `nil` | `function(Liked, State)` |
 
 ## Methods
 
 ```lua
-Music:Expand()
-Music:Collapse()
-Music:Toggle()
-
 Music:Play()
 Music:Pause()
 Music:TogglePlay()
@@ -79,10 +74,7 @@ Music:Seek(42)
 Music:SetVolume(35)
 Music:ToggleMute()
 
-Music:SetTab("library")     -- "player" or "library"
 Music:SetSource("spotify")  -- index or provider id
-Music:ToggleShuffle()
-Music:ToggleLike()
 
 Music:Show()
 Music:Hide()
@@ -92,10 +84,6 @@ local State = Music:GetState()
 -- Title, Artist, Album, Cover, Position, Duration, Playing, Volume,
 -- CanSeek, CanSkip, Link, Hint
 ```
-
-## The wave
-
-The six bars follow `State.Playing`: full amplitude while a track runs, a low idle breath when it is paused. Nothing to wire up — the element reads the provider state it already polls.
 
 ## Cover art
 

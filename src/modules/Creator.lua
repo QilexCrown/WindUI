@@ -527,16 +527,22 @@ end
 
 function Creator.Icon(Icon, formatdefault)
 	local IconData = Icons.Icon2(ResolveIconName(Icon), nil, formatdefault ~= false)
+
+	local Empty = { ImageRectPosition = Vector2.new(0, 0), ImageRectSize = Vector2.new(0, 0) }
 	if IconData == nil then
-		return {
-			"",
-			{
-				ImageRectPosition = Vector2.new(0, 0),
-				ImageRectSize = Vector2.new(0, 0),
-			},
-		}
+		return "", Empty
 	end
-	return IconData
+
+	-- Icon2 returns either { Image, Rect } or a single record with .Image.
+	-- Normalise so callers can always take two values.
+	local First, Second = IconData[1], IconData[2]
+	if type(First) == "string" then
+		return First, Second or Empty
+	end
+	if type(IconData) == "table" and type(IconData.Image) == "string" then
+		return IconData.Image, IconData
+	end
+	return "", Empty
 end
 
 -- Switches the pack used by bare icon names ("play" instead of "lucide:play").

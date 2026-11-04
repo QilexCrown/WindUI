@@ -367,9 +367,28 @@ function WindUI:Popup(PopupConfig)
 	return require("./components/popup/Init").new(PopupConfig, WindUI.ScreenGui.Popups)
 end
 
--- Miniplayer: the dynamic island and the music player it springs into. Floating
--- it docks top-centre over the game and can be dragged; pass Config.Parent (a
--- tab, a section, any frame) and it docks inside the window instead.
+-- DynamicIsland: the capsule at the top of the screen that springs into the
+-- music card when you click it. Floating it docks top-centre over the game and
+-- can be dragged; pass Config.Parent (a tab, a section, any frame) and it docks
+-- inside the window instead.
+--
+--   local Island = WindUI:DynamicIsland({
+--       Providers = { "files", "spotify", "demo" },
+--       Folder = "Ender Hub/songs",
+--   })
+--
+-- Config.Providers picks the sources: "files", "spotify", "sound", "demo", or a
+-- bridge table { Id, Name, Url }. Config.Expanded boots the card open.
+function WindUI:DynamicIsland(Config)
+	Config = Config or {}
+	Config.WindUI = WindUI
+	return require("./components/window/DynamicIsland").New(Config)
+end
+
+-- Miniplayer: the separate music card. Nothing to do with the dynamic island -
+-- it is its own widget, dragged anywhere. Floating it docks over the game;
+-- pass Config.Parent (a tab, a section, any frame) and it docks inside the
+-- window instead.
 --
 --   local Music = WindUI:Miniplayer({
 --       Providers = { "files", "spotify", "demo" },
@@ -377,8 +396,7 @@ end
 --   })
 --
 -- Config.Providers picks the sources: "files", "spotify", "sound", "demo", or a
--- bridge table { Id, Name, Url }. Config.Expanded boots the card open,
--- Config.Blur adds the acrylic wash behind the expanded card.
+-- bridge table { Id, Name, Url }.
 function WindUI:Miniplayer(Config)
 	Config = Config or {}
 	Config.WindUI = WindUI

@@ -104,12 +104,21 @@ const PAGES = [
 		md: md("notification"),
 	},
 	{
+		slug: "dynamic-island",
+		group: "UI",
+		title: "Dynamic Island",
+		nav: "Dynamic Island",
+		lead: "The capsule at the top of the screen that springs into the music card - real cover art, local songs, Spotify, or a bridge.",
+		card: "212 x 40 pill that opens into a 540 x 204 player. Floating or docked in a window.",
+		md: md("dynamic-island"),
+	},
+	{
 		slug: "miniplayer",
 		group: "UI",
 		title: "Miniplayer",
 		nav: "Miniplayer",
-		lead: "The dynamic island and the music player it springs into - real cover art, local songs, Spotify, or a bridge.",
-		card: "212 x 40 pill that morphs into a 752 x 204 player. Floating or docked in a window.",
+		lead: "The standalone music card - 300 x 162, real cover art, local songs, Spotify, or a bridge. Drag it anywhere.",
+		card: "300 x 162 card, separate from the island. Floating or docked in a window.",
 		md: md("miniplayer"),
 	},
 	{
