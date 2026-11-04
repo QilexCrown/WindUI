@@ -1,4 +1,4 @@
--- Miniplayer - the music card, a floating widget you can drag anywhere.
+-- Miniplayer - the compact now-playing card, floating and draggable.
 --
 --   local Player = WindUI:Miniplayer({
 --       Providers = { "files", "spotify", "demo" },
@@ -8,11 +8,11 @@
 --   -- docked inside a window instead of floating over the game:
 --   local Player = WindUI:Miniplayer({ Parent = Tab.Frame })
 --
--- Measured off the card the client runs: 300 x 162, radius 28, black at the
--- top that lets the world through down the card. 56 px artwork at (16, 16),
--- the title and artist beside it, a four-bar wave top right, the scrubber with
--- both times, then previous / play / next and the source disc. It has nothing
--- to do with the dynamic island - that is a separate element.
+-- Ported from the Novoline "Now playing" card: 260 x 173, the header line and
+-- the note glyph on the right, 56 px artwork at (18, 46), the title and artist
+-- beside it, then three round controls on the bottom edge - 34 px previous and
+-- next, 40 px play with the light face. Nothing here is wired to the dynamic
+-- island; the two are separate elements that share provider plumbing only.
 
 local cloneref = (cloneref or clonereference or function(instance)
 	return instance
@@ -33,22 +33,22 @@ Miniplayer.__index = Miniplayer
 -- metrics, in card pixels
 ---------------------------------------------------------------------------
 
-local W, H = 300, 162
-local Radius = 28
+local W, H = 260, 173
+local Radius = 24
 
 local CoverSize = 56
-local CoverAt = Vector2.new(16, 16)
+local CoverAt = Vector2.new(18, 46)
 local CoverRadius = 12
 
-local BarW, BarH, BarGap = 3, 12, 3
-local WaveRight = 18
-local WaveTop = 29
+local ControlsY = H - 18 - 20
 
 local Palette = {
 	Shell = Color3.fromRGB(0, 0, 0),
 	Text = Color3.fromRGB(255, 255, 255),
 	Muted = Color3.fromRGB(154, 156, 164),
-	Hairline = Color3.fromRGB(255, 255, 255),
+	Tile = Color3.fromRGB(40, 40, 44),
+	Face = Color3.fromRGB(242, 242, 244),
+	Ink = Color3.fromRGB(18, 18, 20),
 }
 
 local EaseOut = Enum.EasingDirection.Out
@@ -91,6 +91,16 @@ local function Button(Properties)
 	return New("TextButton", Properties)
 end
 
+-- "Artist - Song" and "Artist â€“ Song" both split the way the reference does.
+local function SplitName(Name)
+	Name = tostring(Name or ""):gsub("%.%w+$", "")
+	local Artist, Song = Name:match("^(.-)%s+%-%s+(.+)$")
+	if Artist and Artist ~= "" then
+		return Song, Artist
+	end
+	return Name, ""
+end
+
 ---------------------------------------------------------------------------
 -- construction
 ---------------------------------------------------------------------------
@@ -103,12 +113,10 @@ function Miniplayer.New(Config)
 		WindUI = Config.WindUI,
 		Parent = Config.Parent,
 		Alive = true,
-		HoverScale = 1,
 		FitScale = 1,
 		CoverId = nil,
 		Volume = 60,
 		Muted = false,
-		SheetOpen = false,
 		Signals = {},
 	}, Miniplayer)
 
@@ -137,10 +145,10 @@ function Miniplayer.New(Config)
 		Rotation = 90,
 		Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(0.32, 0.06),
-			NumberSequenceKeypoint.new(0.55, 0.2),
-			NumberSequenceKeypoint.new(0.78, 0.54),
-			NumberSequenceKeypoint.new(1, 0.56),
+			NumberSequenceKeypoint.new(0.34, 0.05),
+			NumberSequenceKeypoint.new(0.58, 0.18),
+			NumberSequenceKeypoint.new(0.8, 0.52),
+			NumberSequenceKeypoint.new(1, 0.55),
 		}),
 		Parent = Shell,
 	})
@@ -159,13 +167,34 @@ function Miniplayer.New(Config)
 	self.Shell = Shell
 	self.ShellScale = ShellScale
 
+	--------------------------------------------------------------- header
+
+	local Heading = Text({
+		Name = "Heading",
+		Size = UDim2.fromOffset(200, 18),
+		Position = UDim2.fromOffset(18, 16),
+		Text = "Now playing",
+		TextSize = 14,
+		FontFace = Font.new(Creator.Font, Enum.FontWeight.Bold),
+		ZIndex = 8,
+		Parent = Shell,
+	})
+	self.Heading = Heading
+
+	local NoteGlyph = Glyph("lucide:music", 16, Palette.Muted)
+	NoteGlyph.Name = "Note"
+	NoteGlyph.AnchorPoint = Vector2.new(1, 0)
+	NoteGlyph.Position = UDim2.fromOffset(W - 18, 17)
+	NoteGlyph.ZIndex = 8
+	NoteGlyph.Parent = Shell
+
 	--------------------------------------------------------------- artwork
 
 	local Cover = New("ImageLabel", {
 		Name = "Cover",
 		Size = UDim2.fromOffset(CoverSize, CoverSize),
 		Position = UDim2.fromOffset(CoverAt.X, CoverAt.Y),
-		BackgroundColor3 = Color3.fromRGB(22, 22, 26),
+		BackgroundColor3 = Palette.Tile,
 		BackgroundTransparency = 0,
 		Image = "",
 		ScaleType = Enum.ScaleType.Crop,
@@ -174,25 +203,23 @@ function Miniplayer.New(Config)
 	})
 	Corner(Cover, CoverRadius)
 
-	local CoverGlyph = Glyph("sfsymbols:musicNote", 22, Palette.Muted)
+	local CoverGlyph = Glyph("lucide:music", 22, Palette.Muted)
 	CoverGlyph.Name = "Placeholder"
-	CoverGlyph.Size = UDim2.fromScale(0.4, 0.4)
-	CoverGlyph.Position = UDim2.fromScale(0.5, 0.5)
-	CoverGlyph.AnchorPoint = Vector2.new(0.5, 0.5)
+	CoverGlyph.Position = UDim2.fromOffset(17, 17)
 	CoverGlyph.ZIndex = 6
 	CoverGlyph.Parent = Cover
 
 	self.Cover = Cover
 	self.CoverGlyph = CoverGlyph
 
-	--------------------------------------------------------------- header
+	--------------------------------------------------------------- titles
 
 	local Title = Text({
 		Name = "Title",
-		Size = UDim2.fromOffset(180, 24),
-		Position = UDim2.fromOffset(85, 22),
+		Size = UDim2.fromOffset(156, 18),
+		Position = UDim2.fromOffset(86, 54),
 		Text = "Nothing playing",
-		TextSize = 19,
+		TextSize = 14,
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.Bold),
 		ZIndex = 8,
 		Parent = Shell,
@@ -201,135 +228,35 @@ function Miniplayer.New(Config)
 
 	local Artist = Text({
 		Name = "Artist",
-		Size = UDim2.fromOffset(180, 18),
-		Position = UDim2.fromOffset(85, 46),
-		Text = "",
-		TextSize = 13,
+		Size = UDim2.fromOffset(156, 16),
+		Position = UDim2.fromOffset(86, 73),
+		Text = "Pick a song from your library",
+		TextSize = 12,
 		TextColor3 = Palette.Muted,
 		ZIndex = 8,
 		Parent = Shell,
 	})
 	self.ArtistLabel = Artist
 
-	local Wave = New("Frame", {
-		Name = "Wave",
-		Size = UDim2.fromOffset(BarW * 4 + BarGap * 3, BarH),
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -WaveRight, 0, WaveTop),
-		BackgroundTransparency = 1,
-		ZIndex = 8,
-		Parent = Shell,
-	})
-	self.Wave = Wave
-
-	for Index = 1, 4 do
-		local Bar = New("Frame", {
-			Name = "Bar" .. Index,
-			Size = UDim2.fromOffset(BarW, BarH),
-			Position = UDim2.fromOffset((Index - 1) * (BarW + BarGap), 0),
-			BackgroundColor3 = Palette.Text,
-			BorderSizePixel = 0,
-			ZIndex = 8,
-			Parent = Wave,
-		})
-		Corner(Bar, 1.5)
-	end
-
-	--------------------------------------------------------------- scrubber
-
-	local Elapsed = Text({
-		Name = "Elapsed",
-		Size = UDim2.fromOffset(44, 14),
-		Position = UDim2.fromOffset(15, 86),
-		Text = "0:00",
-		TextSize = 12,
-		TextColor3 = Palette.Muted,
-		ZIndex = 8,
-		Parent = Shell,
-	})
-	self.Elapsed = Elapsed
-
-	local Remaining = Text({
-		Name = "Remaining",
-		Size = UDim2.fromOffset(44, 14),
-		Position = UDim2.fromOffset(241, 86),
-		Text = "-0:00",
-		TextSize = 12,
-		TextColor3 = Palette.Muted,
-		TextXAlignment = Enum.TextXAlignment.Right,
-		ZIndex = 8,
-		Parent = Shell,
-	})
-	self.Remaining = Remaining
-
-	local Track = New("Frame", {
-		Name = "Track",
-		Size = UDim2.fromOffset(186, 3),
-		Position = UDim2.fromOffset(56, 92),
-		BackgroundColor3 = Palette.Text,
-		BackgroundTransparency = 0.82,
-		BorderSizePixel = 0,
-		ZIndex = 8,
-		Parent = Shell,
-	})
-	Corner(Track, 2)
-	self.Track = Track
-
-	local Fill = New("Frame", {
-		Name = "Fill",
-		Size = UDim2.new(0, 0, 1, 0),
-		BackgroundColor3 = Palette.Text,
-		BackgroundTransparency = 0.1,
-		BorderSizePixel = 0,
-		ZIndex = 9,
-		Parent = Track,
-	})
-	Corner(Fill, 2)
-	self.Fill = Fill
-
-	local Scrub = Button({
-		Name = "Scrub",
-		Size = UDim2.new(1, 0, 0, 22),
-		Position = UDim2.fromOffset(0, -10),
-		ZIndex = 11,
-		Parent = Track,
-	})
-
-	local function SeekAt(Input)
-		local Width = Track.AbsoluteSize.X
-		if Width <= 0 then
-			return
-		end
-		local Ratio = math.clamp((Input.Position.X - Track.AbsolutePosition.X) / Width, 0, 1)
-		local Duration = self.MusicState and self.MusicState.Duration or 0
-		if Duration > 0 then
-			self:Seek(Ratio * Duration)
-		end
-	end
-
-	Scrub.MouseButton1Down:Connect(SeekAt)
-	Scrub.InputChanged:Connect(function(Input)
-		if Input.UserInputType == Enum.UserInputType.MouseMovement and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-			SeekAt(Input)
-		end
-	end)
-
 	--------------------------------------------------------------- transport
 
-	local function Control(Name, CenterX, Icon, GlyphSize, OnPress)
+	local function Control(Name, CenterX, Size, Icon, GlyphSize, OnPress, Light)
 		local Hit = Button({
 			Name = Name,
-			Size = UDim2.fromOffset(GlyphSize * 1.9, 26),
+			Size = UDim2.fromOffset(Size, Size),
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromOffset(CenterX, 130),
+			Position = UDim2.fromOffset(CenterX, ControlsY),
+			BackgroundColor3 = Light and Palette.Face or Palette.Text,
+			BackgroundTransparency = Light and 0 or 0.9,
 			ZIndex = 10,
 			Parent = Shell,
 		})
+		Corner(Hit, Size / 2)
 
-		local Image = Glyph(Icon, GlyphSize, Palette.Text)
+		local Image = Glyph(Icon, GlyphSize, Light and Palette.Ink or Palette.Text)
 		Image.AnchorPoint = Vector2.new(0.5, 0.5)
 		Image.Position = UDim2.fromScale(0.5, 0.5)
-		Image.ZIndex = 9
+		Image.ZIndex = 11
 		Image.Parent = Hit
 
 		Hit.MouseButton1Click:Connect(OnPress)
@@ -340,78 +267,22 @@ function Miniplayer.New(Config)
 			Tween(Image, 0.16, { ImageTransparency = 0 }, Enum.EasingStyle.Quad, EaseOut):Play()
 		end)
 
-		return Image
+		return Hit, Image
 	end
 
-	Control("Previous", 93, "sfsymbols:backwardFill", 20, function()
+	local Previous, PreviousIcon = Control("Previous", 64, 34, "sfsymbols:backwardFill", 14, function()
 		self:Previous()
 	end)
-	self.PlayIcon = Control("Play", 149, "sfsymbols:playFill", 20, function()
+	local Play, PlayIcon = Control("Play", 110, 40, "sfsymbols:playFill", 16, function()
 		self:TogglePlay()
-	end)
-	Control("Next", 205, "sfsymbols:forwardFill", 20, function()
+	end, true)
+	local NextButton, NextIcon = Control("Next", 162, 34, "sfsymbols:forwardFill", 14, function()
 		self:Next()
 	end)
 
-	local Disc = Button({
-		Name = "Sources",
-		Size = UDim2.fromOffset(18, 18),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(274, 130),
-		BackgroundColor3 = Palette.Text,
-		BackgroundTransparency = 0.35,
-		ZIndex = 10,
-		Parent = Shell,
-	})
-	Corner(Disc, 9)
-
-	local DiscGlyph = Glyph("sfsymbols:ellipsis", 11, Color3.fromRGB(0, 0, 0))
-	DiscGlyph.AnchorPoint = Vector2.new(0.5, 0.5)
-	DiscGlyph.Position = UDim2.fromScale(0.5, 0.5)
-	DiscGlyph.ZIndex = 11
-	DiscGlyph.Parent = Disc
-
-	--------------------------------------------------------------- sources
-
-	local Sheet = New("Frame", {
-		Name = "SourceSheet",
-		Size = UDim2.fromOffset(276, 34),
-		Position = UDim2.fromOffset(12, 74),
-		BackgroundColor3 = Palette.Shell,
-		BackgroundTransparency = 0.06,
-		Visible = false,
-		ClipsDescendants = true,
-		ZIndex = 14,
-		Parent = Shell,
-	})
-	Corner(Sheet, 18)
-	New("UIStroke", {
-		Color = Palette.Hairline,
-		Transparency = 0.88,
-		Thickness = 1,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		Parent = Sheet,
-	})
-	self.SourceSheet = Sheet
-
-	local Rows = New("Frame", {
-		Name = "Rows",
-		Size = UDim2.new(1, -8, 1, -8),
-		Position = UDim2.fromOffset(4, 4),
-		BackgroundTransparency = 1,
-		ZIndex = 15,
-		Parent = Sheet,
-	}, {
-		New("UIListLayout", {
-			Padding = UDim.new(0, 2),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-		}),
-	})
-	self.SourceRows = Rows
-
-	Disc.MouseButton1Click:Connect(function()
-		self:ToggleSources()
-	end)
+	self.Previous, self.PreviousIcon = Previous, PreviousIcon
+	self.Play, self.PlayIcon = Play, PlayIcon
+	self.NextButton, self.NextIcon = NextButton, NextIcon
 
 	--------------------------------------------------------------- wiring
 
@@ -428,77 +299,12 @@ end
 -- sources
 ---------------------------------------------------------------------------
 
-function Miniplayer:RenderSources()
-	self.RowDetails = self.RowDetails or {}
+-- Kept so callers written against the older card keep working; the Novoline
+-- mini player has no source list, the island owns that.
+function Miniplayer:RenderSources() end
 
-	for Index, Provider in ipairs(self.Sources) do
-		local Detail_ = self.RowDetails[Index]
-
-		if not Detail_ then
-			local Row = Button({
-				Name = "Source" .. Index,
-				Size = UDim2.fromOffset(268, 26),
-				BackgroundColor3 = Palette.Text,
-				BackgroundTransparency = 0.94,
-				LayoutOrder = Index,
-				ZIndex = 15,
-				Parent = self.SourceRows,
-			})
-			Corner(Row, 13)
-
-			Text({
-				Name = "Label",
-				Size = UDim2.fromOffset(150, 14),
-				Position = UDim2.fromOffset(12, 6),
-				Text = Provider.Name,
-				TextSize = 12,
-				ZIndex = 16,
-				Parent = Row,
-			})
-
-			Detail_ = Text({
-				Name = "Detail",
-				Size = UDim2.fromOffset(80, 14),
-				Position = UDim2.fromOffset(176, 6),
-				Text = Provider.Status or "Ready",
-				TextSize = 11,
-				TextColor3 = Palette.Muted,
-				TextXAlignment = Enum.TextXAlignment.Right,
-				ZIndex = 16,
-				Parent = Row,
-			})
-
-			self.RowDetails[Index] = Detail_
-			self.Rows = self.Rows or {}
-			self.Rows[Index] = Row
-
-			Row.MouseButton1Click:Connect(function()
-				self:SelectSource(Index)
-				self:ToggleSources(false)
-			end)
-		end
-
-		Detail_.Text = Index == self.SourceIndex and "Active" or (Provider.Status or "Ready")
-		Detail_.TextColor3 = Index == self.SourceIndex and Palette.Text or Palette.Muted
-		Tween(self.Rows[Index], 0.18, { BackgroundTransparency = Index == self.SourceIndex and 0.86 or 0.94 }):Play()
-	end
-
-	self.SourceSheet.Size = UDim2.fromOffset(276, #self.Sources * 28 + 8)
-end
-
-function Miniplayer:ToggleSources(Force)
-	local Show = Force
-	if Show == nil then
-		Show = not self.SourceSheet.Visible
-	end
-
-	if Show then
-		self.SourceSheet.Visible = true
-		self.SourceSheet.BackgroundTransparency = 1
-		Tween(self.SourceSheet, 0.18, { BackgroundTransparency = 0.06 }, Enum.EasingStyle.Quad, EaseOut):Play()
-	else
-		self.SourceSheet.Visible = false
-	end
+function Miniplayer:ToggleSources()
+	return false
 end
 
 ---------------------------------------------------------------------------
@@ -551,8 +357,8 @@ function Miniplayer:_WireDrag()
 		end
 	end)
 
-	table.insert(self.Signals or {}, MoveSignal)
-	table.insert(self.Signals or {}, EndSignal)
+	table.insert(self.Signals, MoveSignal)
+	table.insert(self.Signals, EndSignal)
 end
 
 ---------------------------------------------------------------------------
@@ -560,9 +366,19 @@ end
 ---------------------------------------------------------------------------
 
 function Miniplayer:RenderState(State)
-	local Title = State.Title ~= "" and State.Title or State.Hint or "Nothing playing"
-	self.TitleLabel.Text = Title
-	self.ArtistLabel.Text = State.Artist ~= "" and State.Artist or (State.Album or "")
+	local Raw = State.Title ~= "" and State.Title or State.Hint or ""
+	local Song, Artist = SplitName(Raw)
+	local Playing = State.Playing == true
+	local HasTrack = Raw ~= ""
+
+	if HasTrack then
+		self.TitleLabel.Text = Song
+		local Subtitle = State.Artist ~= "" and State.Artist or Artist
+		self.ArtistLabel.Text = Subtitle ~= "" and Subtitle or (Playing and "Playing" or "Paused")
+	else
+		self.TitleLabel.Text = "Nothing playing"
+		self.ArtistLabel.Text = "Pick a song from your library"
+	end
 
 	local Cover = State.Cover or ""
 	if Cover ~= self.CoverId then
@@ -578,17 +394,9 @@ function Miniplayer:RenderState(State)
 		end
 	end
 
-	if State.Duration and State.Duration > 0 then
-		local Ratio = math.clamp((State.Position or 0) / State.Duration, 0, 1)
-		Tween(self.Fill, 0.2, { Size = UDim2.new(Ratio, 0, 1, 0) }, Enum.EasingStyle.Linear):Play()
-		self.Elapsed.Text = Surface.FormatTime(State.Position or 0)
-		self.Remaining.Text = "-" .. Surface.FormatTime(math.max(State.Duration - (State.Position or 0), 0))
-	else
-		self.Elapsed.Text = "0:00"
-		self.Remaining.Text = "-0:00"
-	end
-
-	self.PlayIcon.Image = Creator.Icon(State.Playing == true and "sfsymbols:pauseFill" or "sfsymbols:playFill")
+	self.Previous.Visible = HasTrack
+	self.NextButton.Visible = HasTrack
+	self.PlayIcon.Image = Creator.Icon(Playing and "sfsymbols:pauseFill" or "sfsymbols:playFill")
 end
 
 function Miniplayer:RenderError(Message)

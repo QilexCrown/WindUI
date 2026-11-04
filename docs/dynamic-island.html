@@ -267,7 +267,7 @@ footer.site a { color: var(--muted); }
     Providers = { "files", "spotify", "demo" },
     Folder = "Ender Hub/songs",
 })</code></pre>
-<p>Collapsed it is 212 x 40 with 28 px artwork at (6, 6). Opened it is 540 x 204: the now-playing card is 320 x 114 at (24, 50) with 84 px artwork, the Shuffle and Library chips are 160 x 54 on the right, and the scrubber with both times and the three transport discs sits under them.</p>
+<p>Collapsed it is 212 x 40 with 28 px artwork at (6, 6) and six 2 px bars on the right edge. Opened it is 476 x 204: the now-playing card is 288 x 96 at (14, 36) with 72 px artwork, the Shuffle and Library chips are two 152 x 44 rows on the right, and the 448 x 50 scrubber with both times and the three transport discs sits under them. The bars keep animating while the pill is collapsed.</p>
 <p>Drag the pill to move it, drag the header to move the open card.</p>
 <h2 id="inside-a-window">Inside a window<a class="anchor" href="#inside-a-window" aria-hidden="true">#</a></h2>
 <p>Pass <code>Parent</code> and the island docks in that frame instead of the screen:</p>
@@ -278,7 +278,7 @@ footer.site a { color: var(--muted); }
 })</code></pre>
 <p>It scales itself down to fit the parent, so a narrow tab still gets the whole card.</p>
 <h2 id="sources">Sources<a class="anchor" href="#sources" aria-hidden="true">#</a></h2>
-<p><code>Providers</code> is an ordered list. The first entry boots; the Library chip cycles through the rest.</p>
+<p><code>Providers</code> is an ordered list. The first entry boots; the Library chip opens the Sources pane, which grows the card to 752 wide and lists every provider. Shuffle toggles the active provider's shuffle. With the pane open both chips shrink to 30 x 30 icon buttons in a column beside it.</p>
 <div class="table-wrap"><table><thead><tr><th>Value</th><th>What it plays</th></tr></thead><tbody><tr><td><code>"files"</code></td><td>Audio files in <code>Folder</code>, with sidecar cover art (<code>song.mp3</code> + <code>song.jpg</code>)</td></tr><tr><td><code>"spotify"</code></td><td>The Spotify Web API through PKCE — needs <code>Spotify = { ClientId = "..." }</code></td></tr><tr><td><code>"demo"</code></td><td>A built-in preview track, no files or account needed</td></tr><tr><td><code>"sound"</code></td><td>A <code>Sound</code> instance you already own, via <code>Sound = sound</code></td></tr><tr><td><code>{ Id, Name, Url }</code></td><td>A bridge to your own backend</td></tr></tbody></table></div>
 <pre class="code" data-lang="lua"><code>local Island = WindUI:DynamicIsland({
     Providers = {
@@ -288,7 +288,7 @@ footer.site a { color: var(--muted); }
     Folder = "Ender Hub/songs",
 })</code></pre>
 <h2 id="parameters">Parameters<a class="anchor" href="#parameters" aria-hidden="true">#</a></h2>
-<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Parent</code></td><td><code>Instance</code></td><td><code>nil</code></td><td>Docks inside this frame instead of floating</td></tr><tr><td><code>Top</code></td><td><code>number</code></td><td><code>12</code></td><td>Floating only, distance from the top of the screen</td></tr><tr><td><code>Providers</code></td><td><code>table</code></td><td><code>{ "files", "spotify", "demo" }</code></td><td>Ordered source list</td></tr><tr><td><code>Folder</code></td><td><code>string</code></td><td><code>"Ender Hub/songs"</code></td><td>Where the files provider looks</td></tr><tr><td><code>Source</code></td><td><code>number | string</code></td><td><code>1</code></td><td>Which source boots</td></tr><tr><td><code>Expanded</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Boot with the card open</td></tr><tr><td><code>Scale</code></td><td><code>number</code></td><td><code>1</code></td><td>Multiplier on the fitted scale</td></tr><tr><td><code>PollRate</code></td><td><code>number</code></td><td><code>0.25</code></td><td>Seconds between provider polls</td></tr><tr><td><code>OnExpand</code></td><td><code>function</code></td><td><code>nil</code></td><td><code>function(DynamicIsland)</code></td></tr><tr><td><code>OnCollapse</code></td><td><code>function</code></td><td><code>nil</code></td><td><code>function(DynamicIsland)</code></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Parent</code></td><td><code>Instance</code></td><td><code>nil</code></td><td>Docks inside this frame instead of floating</td></tr><tr><td><code>Top</code></td><td><code>number</code></td><td><code>12</code></td><td>Floating only, distance from the top of the screen</td></tr><tr><td><code>Providers</code></td><td><code>table</code></td><td><code>{ "files", "spotify", "demo" }</code></td><td>Ordered source list</td></tr><tr><td><code>Folder</code></td><td><code>string</code></td><td><code>"Ender Hub/songs"</code></td><td>Where the files provider looks</td></tr><tr><td><code>Source</code></td><td><code>number | string</code></td><td><code>1</code></td><td>Which source boots</td></tr><tr><td><code>Expanded</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Boot with the card open</td></tr><tr><td><code>Scale</code></td><td><code>number</code></td><td><code>1</code></td><td>Multiplier on the fitted scale</td></tr><tr><td><code>PollRate</code></td><td><code>number</code></td><td><code>0.25</code></td><td>Seconds between provider polls</td></tr><tr><td><code>AutoCollapse</code></td><td><code>boolean</code></td><td><code>true</code></td><td>Count down to the pill after the pointer has been over the island; <code>false</code> keeps it open</td></tr><tr><td><code>OnExpand</code></td><td><code>function</code></td><td><code>nil</code></td><td><code>function(DynamicIsland)</code></td></tr><tr><td><code>OnCollapse</code></td><td><code>function</code></td><td><code>nil</code></td><td><code>function(DynamicIsland)</code></td></tr></tbody></table></div>
 <h2 id="methods">Methods<a class="anchor" href="#methods" aria-hidden="true">#</a></h2>
 <pre class="code" data-lang="lua"><code>Island:Expand()
 Island:Collapse()
@@ -302,6 +302,8 @@ Island:Previous()
 Island:Seek(42)
 Island:SetVolume(35)
 Island:ToggleShuffle()
+Island:ToggleSide()       -- sources pane
+Island:ToggleSide(true)   -- force open, false to force closed
 
 Island:CycleSource()
 Island:SetSource("spotify")  -- index or provider id

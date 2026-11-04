@@ -8,18 +8,21 @@
 --   -- docked inside a window instead of floating over the game:
 --   local Island = WindUI:DynamicIsland({ Parent = Tab.Frame })
 --
--- Collapsed it is a 212 x 40 capsule: 28 px artwork at (6, 6) and six 2 x 14
--- bars on the right edge. Tapped it springs into a 540 x 204 card: a header
--- with the source name and the ping, the now-playing card with 84 px artwork,
--- two chips, then the scrubber with both times and the transport. Measured off
--- the island the client runs. Everything service-specific lives in
--- modules/MusicProviders.
+-- Ported from the Novoline island: the shell is a 212 x 40 capsule with 28 px
+-- artwork at (6, 6) and six 2 px bars on the right edge. Tapped it springs to
+-- 476 x 204 (752 wide with the sources pane open): header strip with the source
+-- and the ping, a 288 x 96 now-playing card with 72 px artwork, a 176 x 120 chip
+-- grid, a 448 x 50 scrubber card with the transport, and the 360 x 154 sources
+-- pane. Every size is a spring, every section fades in on a stagger, and the
+-- cover morphs between the pill size and the card size on the same curve the
+-- reference uses. Service plumbing lives in modules/MusicProviders.
 
 local cloneref = (cloneref or clonereference or function(instance)
 	return instance
 end)
 
 local UserInputService = cloneref(game:GetService("UserInputService"))
+local RunService = cloneref(game:GetService("RunService"))
 local Stats = cloneref(game:GetService("Stats"))
 
 local Creator = require("../../modules/Creator")
@@ -28,95 +31,203 @@ local Surface = require("../../modules/MusicSurface")
 local New = Creator.New
 local Tween = Creator.Tween
 
+local Medium = Font.new(Creator.Font, Enum.FontWeight.Medium)
+local Bold = Font.new(Creator.Font, Enum.FontWeight.Bold)
+
 local DynamicIsland = {}
 DynamicIsland.__index = DynamicIsland
 
----------------------------------------------------------------------------
--- metrics, in island pixels
----------------------------------------------------------------------------
+--------------------------------------------------------------------------
+-- metrics, straight off the reference
+--------------------------------------------------------------------------
 
-local PillW, PillH = 212, 40
-local OpenW, OpenH = 540, 204
+local W, SW, AW, P = 476, 276, 288, 14
+local SX, SWW = 378, 360
+local HE, HC = 204, 40
 
-local PillRadius, OpenRadius = 20, 30
+local PILL_W, PILL_H = 212, 40
+local BW = W - P * 2
 
-local PillCover, PillCoverAt, PillCoverRadius = 28, Vector2.new(6, 6), 12
-local OpenCover, OpenCoverAt, OpenCoverRadius = 84, Vector2.new(38, 66), 16
+local WHITE = Color3.new(1, 1, 1)
+local SUBTLE = Color3.fromRGB(154, 156, 164)
+local ACCENT = Color3.fromRGB(110, 220, 170)
 
-local PillBarW, PillBarH, PillBarGap = 2, 14, 2
-local PillBarRight = 14
-
-local P = 24
-local NowW, NowH = 320, 114
-local SideW, SideH = 160, 54
-
-local Palette = {
-	Shell = Color3.fromRGB(0, 0, 0),
-	Text = Color3.fromRGB(255, 255, 255),
-	Muted = Color3.fromRGB(154, 156, 164),
-	Card = Color3.fromRGB(255, 255, 255),
-	Blue = Color3.fromRGB(20, 49, 63),
-	BlueIcon = Color3.fromRGB(64, 166, 255),
-	Purple = Color3.fromRGB(36, 26, 63),
-	PurpleIcon = Color3.fromRGB(168, 112, 255),
-	Hairline = Color3.fromRGB(255, 255, 255),
+local TINT = {
+	like = { Color3.fromRGB(62, 20, 24), Color3.fromRGB(255, 96, 96) },
+	shuffle = { Color3.fromRGB(13, 40, 51), Color3.fromRGB(64, 186, 255) },
+	sources = { Color3.fromRGB(14, 46, 40), Color3.fromRGB(56, 224, 186) },
+	library = { Color3.fromRGB(38, 28, 62), Color3.fromRGB(168, 120, 255) },
 }
 
-local Ease = Enum.EasingStyle.Quint
-local EaseOut = Enum.EasingDirection.Out
-local EaseIn = Enum.EasingDirection.In
+local ICONS = {
+	note = "lucide:music",
+	pause = "sfsymbols:pauseFill",
+	play = "sfsymbols:playFill",
+	previous = "sfsymbols:backwardFill",
+	next = "sfsymbols:forwardFill",
+	shuffle = "lucide:shuffle",
+	library = "lucide:library",
+	pulse = "lucide:activity",
+	clock = "lucide:clock",
+	back = "sfsymbols:chevronLeft",
+}
 
----------------------------------------------------------------------------
--- primitives
----------------------------------------------------------------------------
-
-local function Corner(Object, Radius_)
-	return New("UICorner", { CornerRadius = UDim.new(0, Radius_), Parent = Object })
+local function Icon(IconName)
+	local Image, Rect = Creator.Icon(ICONS[IconName] or IconName)
+	return Image, Rect
 end
 
-local function Stroke(Object, Color, Transparency, Thickness)
-	return New("UIStroke", {
-		Color = Color,
-		Transparency = Transparency or 0,
-		Thickness = Thickness or 1,
-		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+local function Corner(Object, Radius)
+	return New("UICorner", { Parent = Object, CornerRadius = UDim.new(0, Radius) })
+end
+
+local function Stroke(Object, Transparency)
+	local Rim = New("UIStroke", {
 		Parent = Object,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Color = WHITE,
+		Thickness = 1,
+		Transparency = Transparency or 0,
 	})
+	pcall(function()
+		Rim.BorderStrokePosition = Enum.BorderStrokePosition.Inner
+	end)
+	return Rim
 end
 
-local function Glyph(Icon, Size, Color)
-	local Image, Rect = Creator.Icon(Icon)
-	return New("ImageLabel", {
-		Image = Image,
-		ImageRectOffset = Rect.ImageRectPosition,
-		ImageRectSize = Rect.ImageRectSize,
-		ImageColor3 = Color or Palette.Text,
-		ScaleType = Enum.ScaleType.Fit,
-		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(Size, Size),
-	})
+local function Gradient(Object, Rotation, Sequence)
+	return New("UIGradient", { Parent = Object, Rotation = Rotation, Transparency = Sequence })
 end
 
-local function Text(Properties)
-	Properties.FontFace = Properties.FontFace or Font.new(Creator.Font, Enum.FontWeight.Medium)
-	Properties.BackgroundTransparency = 1
-	Properties.TextXAlignment = Properties.TextXAlignment or Enum.TextXAlignment.Left
-	Properties.TextYAlignment = Properties.TextYAlignment or Enum.TextYAlignment.Center
-	Properties.TextColor3 = Properties.TextColor3 or Palette.Text
-	Properties.TextTruncate = Enum.TextTruncate.AtEnd
-	return New("TextLabel", Properties)
+local function Sequence(...)
+	local Keypoints = {}
+	for _, Pair in ipairs({ ... }) do
+		table.insert(Keypoints, NumberSequenceKeypoint.new(Pair[1], Pair[2]))
+	end
+	return NumberSequence.new(Keypoints)
 end
 
-local function Button(Properties)
-	Properties.BackgroundTransparency = Properties.BackgroundTransparency or 1
-	Properties.Text = ""
-	Properties.AutoButtonColor = false
-	return New("TextButton", Properties)
+local function Fade(From, To, Speed, Delta)
+	return From + (To - From) * (1 - math.exp(-Speed * Delta))
 end
 
----------------------------------------------------------------------------
+local function Lerp(From, To, K)
+	return From + (To - From) * K
+end
+
+local function Pop(Icon_)
+	local Scale = Icon_:FindFirstChild("Pop") or New("UIScale", { Parent = Icon_, Name = "Pop" })
+	Scale.Scale = 0.72
+	Tween(Scale, 0.42, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
+end
+
+--------------------------------------------------------------------------
+-- fade groups: every descendant of a group is scaled toward full
+-- transparency by the group's alpha, so a whole subtree can fade as one
+--------------------------------------------------------------------------
+
+local FX = { Groups = {}, ByFrame = setmetatable({}, { __mode = "k" }) }
+
+FX.Props = {
+	TextLabel = { "TextTransparency", "BackgroundTransparency" },
+	TextButton = { "TextTransparency", "BackgroundTransparency" },
+	ImageLabel = { "ImageTransparency", "BackgroundTransparency" },
+	ImageButton = { "ImageTransparency", "BackgroundTransparency" },
+	Frame = { "BackgroundTransparency" },
+	UIStroke = { "Transparency" },
+	UIShadow = { "Transparency" },
+}
+
+function FX.Group(Frame, Parent, Alpha)
+	local Group = {
+		Frame = Frame,
+		Parent = Parent,
+		Alpha = Alpha or 1,
+		Live = false,
+		Items = setmetatable({}, { __mode = "k" }),
+		Base = setmetatable({}, { __mode = "k" }),
+		Wrote = setmetatable({}, { __mode = "k" }),
+	}
+	table.insert(FX.Groups, Group)
+	FX.ByFrame[Frame] = Group
+	return Group
+end
+
+function FX.Set(Group, Alpha)
+	if Group then
+		Group.Alpha = Alpha
+	end
+end
+
+function FX.Claim(Instance_)
+	if not FX.Props[Instance_.ClassName] then
+		return
+	end
+	local Node = Instance_
+	while Node do
+		local Group = FX.ByFrame[Node]
+		if Group then
+			Group.Items[Instance_] = true
+			return
+		end
+		Node = Node.Parent
+	end
+end
+
+function FX.Step()
+	for _, Group in ipairs(FX.Groups) do
+		local Effective, Node = Group.Alpha, Group.Parent
+		while Node do
+			Effective = Effective * Node.Alpha
+			Node = Node.Parent
+		end
+
+		if Effective >= 0.999 then
+			if Group.Live then
+				Group.Live = false
+				for Instance_, Wrote in pairs(Group.Wrote) do
+					local Base = Group.Base[Instance_]
+					if Base and Instance_.Parent then
+						for Property, Value in pairs(Wrote) do
+							if Base[Property] ~= nil and math.abs(Instance_[Property] - Value) < 1e-4 then
+								Instance_[Property] = Base[Property]
+							end
+						end
+					end
+				end
+				table.clear(Group.Wrote)
+				table.clear(Group.Base)
+			end
+		elseif Group.Frame.Visible then
+			Group.Live = true
+			for Instance_ in pairs(Group.Items) do
+				if Instance_.Parent then
+					local Wrote, Base = Group.Wrote[Instance_], Group.Base[Instance_]
+					if not Wrote then
+						Wrote, Base = {}, {}
+						Group.Wrote[Instance_], Group.Base[Instance_] = Wrote, Base
+					end
+					for _, Property in ipairs(FX.Props[Instance_.ClassName]) do
+						local Current = Instance_[Property]
+						local Last = Wrote[Property]
+						if Last == nil or math.abs(Current - Last) > 1e-4 then
+							Base[Property] = Current
+						end
+						local Value = 1 - (1 - Base[Property]) * Effective
+						if math.abs(Value - Current) > 1e-4 then
+							Instance_[Property] = Value
+						end
+						Wrote[Property] = Value
+					end
+				end
+			end
+		end
+	end
+end
+
+--------------------------------------------------------------------------
 -- construction
----------------------------------------------------------------------------
+--------------------------------------------------------------------------
 
 function DynamicIsland.New(Config)
 	Config = Config or {}
@@ -126,860 +237,1740 @@ function DynamicIsland.New(Config)
 		WindUI = Config.WindUI,
 		Parent = Config.Parent,
 		Alive = true,
-		Expanded = Config.Expanded == true,
-		HoverScale = 1,
-		FitScale = 1,
-		CoverId = nil,
-		Volume = 60,
-		Muted = false,
+		Floating = Config.Parent == nil,
+		Expanded = false,
+		SideOpen = false,
+		Liked = false,
 		Shuffled = false,
-		Born = os.time(),
+		Born = os.clock(),
 		Signals = {},
+		Glass = {},
+		Chips = {},
+		ChipBy = {},
+		Sections = {},
+		Bars = {},
 	}, DynamicIsland)
-
-	self.Floating = self.Parent == nil
 
 	local Folder = self.Parent or (self.WindUI and self.WindUI.ScreenGui)
 	if not Folder then
 		error("DynamicIsland: floating mode needs WindUI.ScreenGui, pass Config.Parent instead")
 	end
 
-	local StartW = self.Expanded and OpenW or PillW
-	local StartH = self.Expanded and OpenH or PillH
+	local State = self
+	local KeepUntil = 0
+	local Geo = ""
+	local Peeking, Pressing = false, false
+	local LeftAt, TouchAt = nil, nil
+	local Touched = false
+	local Width = { x = 120, v = 0, g = 120 }
+	local Height = { x = 36, v = 0, g = 36 }
+	local Expand = { a = 0, goal = 0, at = 0 }
+	local Accent = Config.Accent or ACCENT
+	local AccentLive = Accent
+	local Beat, BeatTarget, BeatAcc = 0, 0, 0
+	local Position, PositionAt, Duration = 0, 0, 0
+	local Playing = false
+	local Title, Artist, Cover, Hint = "", "", "", ""
+	local ScrubDrag, ScrubRel = false, 0
+	local GlassHeld = nil
 
-	--------------------------------------------------------------- shell
+	--------------------------------------------------------------- host
 
-	local Shell = New("Frame", {
-		Name = "DynamicIsland",
-		Size = UDim2.fromOffset(StartW, StartH),
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, self.Floating and (Config.Top or 12) or 0),
-		BackgroundColor3 = Palette.Shell,
-		BackgroundTransparency = 0,
-		ClipsDescendants = true,
+	local Host = New("Frame", {
+		Name = "DynamicIslandHost",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ClipsDescendants = false,
 		Parent = Folder,
 	})
-	local ShellCorner = Corner(Shell, self.Expanded and OpenRadius or PillRadius)
+	self.Host = Host
 
-	New("UIGradient", {
-		Rotation = 90,
-		Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(0.55, 0.02),
-			NumberSequenceKeypoint.new(1, 0.1),
-		}),
-		Parent = Shell,
-	})
-
-	-- UIShadow caches the parent's size when it is created, so a shadow on a
-	-- frame that is about to resize leaves a stale silhouette behind. It is
-	-- torn down before each size tween and rebuilt after it lands.
-	self.Shadow = nil
-
-	local ShellScale = New("UIScale", { Scale = 1, Parent = Shell })
-	self.Shell = Shell
-	self.ShellCorner = ShellCorner
-	self.ShellScale = ShellScale
-
-	--------------------------------------------------------------- artwork
-
-	local Cover = New("ImageLabel", {
-		Name = "Cover",
-		Size = UDim2.fromOffset(self.Expanded and OpenCover or PillCover, self.Expanded and OpenCover or PillCover),
-		Position = UDim2.fromOffset(self.Expanded and OpenCoverAt.X or PillCoverAt.X, self.Expanded and OpenCoverAt.Y or PillCoverAt.Y),
-		BackgroundColor3 = Color3.fromRGB(22, 22, 26),
+	local Root = New("Frame", {
+		Name = "DynamicIsland",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, Config.Top or (self.Floating and 10 or 0)),
+		Size = UDim2.fromOffset(PILL_W, PILL_H),
+		BackgroundColor3 = Color3.new(0, 0, 0),
 		BackgroundTransparency = 0,
-		Image = "",
-		ScaleType = Enum.ScaleType.Crop,
-		ZIndex = 20,
-		Parent = Shell,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Visible = false,
+		ZIndex = 1,
+		Parent = Host,
 	})
-	local CoverCorner = Corner(Cover, PillCoverRadius)
+	self.Root = Root
 
-	local CoverGlyph = Glyph("sfsymbols:musicNote", 14, Palette.Muted)
-	CoverGlyph.Name = "Placeholder"
-	CoverGlyph.Size = UDim2.fromScale(0.42, 0.42)
-	CoverGlyph.Position = UDim2.fromScale(0.5, 0.5)
-	CoverGlyph.AnchorPoint = Vector2.new(0.5, 0.5)
-	CoverGlyph.ZIndex = 21
-	CoverGlyph.Parent = Cover
+	local Corner_ = Corner(Root, 20)
+	self.Corner = Corner_
 
-	self.Cover = Cover
-	self.CoverCorner = CoverCorner
-	self.CoverGlyph = CoverGlyph
+	local GlassGrad = Gradient(Root, 90, NumberSequence.new(0))
+	self.GlassGrad = GlassGrad
 
-	--------------------------------------------------------------- pill bars
+	local FxRoot = FX.Group(Root, nil, 1)
+	self.FxRoot = FxRoot
 
-	local PillWave = New("Frame", {
-		Name = "PillWave",
-		Size = UDim2.fromOffset(PillBarW * 6 + PillBarGap * 5, PillBarH),
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -PillBarRight, 0.5, 0),
+	local Shadow, Contact
+	pcall(function()
+		Shadow = New("UIShadow", {
+			Name = "DarkGlow",
+			Color = Color3.new(0, 0, 0),
+			BlurRadius = UDim.new(0, 38),
+			Offset = UDim2.fromOffset(0, 16),
+			Transparency = 1,
+			ZIndex = -2,
+			Parent = Root,
+		})
+		Contact = New("UIShadow", {
+			Name = "Contact",
+			Color = Color3.new(0, 0, 0),
+			BlurRadius = UDim.new(0, 9),
+			Offset = UDim2.fromOffset(0, 3),
+			Transparency = 1,
+			ZIndex = -1,
+			Parent = Root,
+		})
+	end)
+	self.Shadow, self.Contact = Shadow, Contact
+
+	local Outline = New("Frame", {
+		Parent = Root,
+		Name = "Outline",
 		BackgroundTransparency = 1,
-		Visible = not self.Expanded,
-		ZIndex = 5,
-		Parent = Shell,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 30,
 	})
-	self.PillWave = PillWave
+	local OutlineCorner = Corner(Outline, 20)
+	self.OutlineCorner = OutlineCorner
+	local Edge = Stroke(Outline)
+	Gradient(Edge, 90, Sequence({ 0, 0.8 }, { 0.5, 0.93 }, { 1, 0.89 }))
 
+	local Hit = New("TextButton", {
+		Parent = Root,
+		Name = "Hit",
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 3,
+	})
+	self.Hit = Hit
+
+	--------------------------------------------------------------- cover
+
+	local CoverFrame = New("ImageLabel", {
+		Parent = Root,
+		Name = "Cover",
+		BackgroundColor3 = WHITE,
+		BorderSizePixel = 0,
+		ScaleType = Enum.ScaleType.Crop,
+		Image = "",
+		Size = UDim2.fromOffset(28, 28),
+		Position = UDim2.fromOffset(6, 6),
+		ZIndex = 4,
+	})
+	local CoverGrad = Gradient(CoverFrame, 90, nil)
+	CoverGrad.Color = ColorSequence.new(Color3.fromRGB(46, 46, 49), Color3.fromRGB(32, 32, 35))
+	local CoverCorner = Corner(CoverFrame, 9)
+	self.Cover = CoverFrame
+	self.CoverGrad = CoverGrad
+	self.CoverCorner = CoverCorner
+
+	local Mark = New("ImageLabel", {
+		Parent = CoverFrame,
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.46, 0.46),
+		ImageColor3 = SUBTLE,
+		ZIndex = 5,
+		ScaleType = Enum.ScaleType.Fit,
+	})
+	local MarkImage, MarkRect = Icon("note")
+	Mark.Image, Mark.ImageRectOffset, Mark.ImageRectSize = MarkImage, MarkRect.ImageRectPosition, MarkRect.ImageRectSize
+	self.Mark = Mark
+
+	--------------------------------------------------------------- wave
+
+	local Wave = New("Frame", {
+		Parent = Root,
+		Name = "Wave",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Size = UDim2.fromOffset(24, 18),
+		Position = UDim2.new(1, -14, 0, 20),
+		ZIndex = 4,
+	})
 	for Index = 1, 6 do
 		local Bar = New("Frame", {
-			Name = "Bar" .. Index,
-			Size = UDim2.fromOffset(PillBarW, PillBarH),
-			Position = UDim2.fromOffset((Index - 1) * (PillBarW + PillBarGap), 0),
-			BackgroundColor3 = Palette.Text,
+			Parent = Wave,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset((Index - 1) * 4 + 2, 9),
+			Size = UDim2.fromOffset(2, 3),
+			BackgroundColor3 = WHITE,
 			BorderSizePixel = 0,
 			ZIndex = 5,
-			Parent = PillWave,
 		})
 		Corner(Bar, 1)
+		self.Bars[Index] = { Frame = Bar, Current = 0, Goal = 0, Height = 3, Weight = 0.55 + 0.45 * ((Index * 37) % 10) / 10 }
 	end
+	self.Wave = Wave
 
-	--------------------------------------------------------------- open card
+	--------------------------------------------------------------- cards
 
-	local Card = New("CanvasGroup", {
-		Name = "Card",
-		Size = UDim2.fromOffset(OpenW, OpenH),
-		Position = UDim2.fromOffset(0, 0),
+	local Back = New("Frame", {
+		Parent = Root,
+		Name = "Cards",
 		BackgroundTransparency = 1,
-		GroupTransparency = self.Expanded and 0 or 1,
-		Visible = self.Expanded,
+		BorderSizePixel = 0,
+		Size = UDim2.fromOffset(W + SW, HE),
+		Visible = false,
+		ZIndex = 2,
+	})
+	self.Back = Back
+	local FxBack = FX.Group(Back, FxRoot, 0)
+	self.FxBack = FxBack
+
+	local function Card(Parent_, Name, X, Y, CardW, CardH)
+		local Frame = New("Frame", {
+			Parent = Parent_,
+			Name = Name,
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 0.955,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(X, Y),
+			Size = UDim2.fromOffset(CardW, CardH),
+			ZIndex = 2,
+		})
+		Corner(Frame, 16)
+		local Rim = Stroke(Frame)
+		Gradient(Rim, 90, Sequence({ 0, 0.84 }, { 0.5, 0.95 }, { 1, 0.9 }))
+		return Frame, Rim
+	end
+
+	local function Wash(Card_, Rotation, FadeSeq)
+		local Frame = New("Frame", {
+			Parent = Card_,
+			Name = "Wash",
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 3,
+		})
+		Corner(Frame, 16)
+		Gradient(Frame, Rotation, FadeSeq)
+		return Frame
+	end
+
+	local CardA = Card(Back, "NowPlaying", P, 36, AW, 96)
+	local CardB = Card(Back, "Progress", P, 140, BW, 50)
+	local CardS, CardSRim = Card(Back, "Side", SX, 36, SWW, 154)
+	self.CardA, self.CardB, self.CardS, self.CardSRim = CardA, CardB, CardS, CardSRim
+
+	local WashA = Wash(CardA, 0, Sequence({ 0, 0.84 }, { 0.42, 1 }, { 1, 1 }))
+	local WashB = Wash(CardB, 90, Sequence({ 0, 1 }, { 0.5, 0.94 }, { 1, 0.8 }))
+	self.WashA, self.WashB = WashA, WashB
+
+	local ArtShade
+	pcall(function()
+		ArtShade = New("UIShadow", {
+			Parent = CoverFrame,
+			Name = "ArtShade",
+			Color = Color3.new(0, 0, 0),
+			BlurRadius = UDim.new(0, 14),
+			Offset = UDim2.fromOffset(0, 5),
+			Transparency = 1,
+			ZIndex = -1,
+		})
+	end)
+	self.ArtShade = ArtShade
+
+	--------------------------------------------------------------- player
+
+	local Player = New("Frame", {
+		Parent = Root,
+		Name = "Player",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, -6),
+		Size = UDim2.fromOffset(W + SW, HE),
 		ZIndex = 6,
-		Parent = Shell,
+		Visible = false,
 	})
-	self.Card = Card
+	self.Player = Player
+	local FxPlayer = FX.Group(Player, FxRoot, 0)
+	self.FxPlayer = FxPlayer
 
-	-- header: the source disc, the source name, ping and uptime
-	local Disc = New("Frame", {
-		Name = "SourceDisc",
-		Size = UDim2.fromOffset(26, 26),
-		Position = UDim2.fromOffset(P, 12),
-		BackgroundColor3 = Palette.Text,
-		BackgroundTransparency = 0.94,
-		ZIndex = 7,
-		Parent = Card,
-	})
-	Corner(Disc, 13)
-
-	local DiscGlyph = Glyph("sfsymbols:musicNote", 13, Palette.Text)
-	DiscGlyph.AnchorPoint = Vector2.new(0.5, 0.5)
-	DiscGlyph.Position = UDim2.fromScale(0.5, 0.5)
-	DiscGlyph.ZIndex = 8
-	DiscGlyph.Parent = Disc
-
-	local SourceLabel = Text({
-		Name = "SourceLabel",
-		Size = UDim2.fromOffset(200, 26),
-		Position = UDim2.fromOffset(P + 34, 12),
-		Text = "Library",
-		TextSize = 13,
-		TextColor3 = Color3.fromRGB(216, 216, 222),
-		ZIndex = 8,
-		Parent = Card,
-	})
-	self.SourceLabel = SourceLabel
-
-	local PingIcon = Glyph("sfsymbols:wifi", 11, Palette.Muted)
-	PingIcon.AnchorPoint = Vector2.new(1, 0.5)
-	PingIcon.Position = UDim2.fromOffset(OpenW - P - 86, 25)
-	PingIcon.ZIndex = 8
-	PingIcon.Parent = Card
-
-	local PingText = Text({
-		Name = "Ping",
-		Size = UDim2.fromOffset(60, 26),
-		Position = UDim2.fromOffset(OpenW - P - 80, 12),
-		Text = "0 ms",
-		TextSize = 12,
-		TextColor3 = Palette.Muted,
-		ZIndex = 8,
-		Parent = Card,
-	})
-	self.PingText = PingText
-
-	local ClockIcon = Glyph("sfsymbols:clock", 11, Palette.Muted)
-	ClockIcon.AnchorPoint = Vector2.new(1, 0.5)
-	ClockIcon.Position = UDim2.fromOffset(OpenW - P - 28, 25)
-	ClockIcon.ZIndex = 8
-	ClockIcon.Parent = Card
-
-	local UptimeText = Text({
-	Name = "Uptime",
-		Size = UDim2.fromOffset(40, 26),
-		Position = UDim2.fromOffset(OpenW - P - 22, 12),
-		Text = "0m",
-		TextSize = 12,
-		TextColor3 = Palette.Muted,
-		TextXAlignment = Enum.TextXAlignment.Right,
-		ZIndex = 8,
-		Parent = Card,
-	})
-	self.UptimeText = UptimeText
-
-	-- now playing
-	local Now = New("Frame", {
-		Name = "NowPlaying",
-		Size = UDim2.fromOffset(NowW, NowH),
-		Position = UDim2.fromOffset(P, 50),
-		BackgroundColor3 = Palette.Card,
-		BackgroundTransparency = 0.945,
-		ZIndex = 7,
-		Parent = Card,
-	})
-	Corner(Now, 22)
-	Stroke(Now, Palette.Hairline, 0.93, 1)
-
-	local Artist = Text({
-		Name = "Artist",
-		Size = UDim2.fromOffset(190, 14),
-		Position = UDim2.fromOffset(112, 14),
-		Text = "",
-		TextSize = 12,
-		TextColor3 = Palette.Muted,
-		ZIndex = 8,
-		Parent = Now,
-	})
-	self.ArtistLabel = Artist
-
-	local Title = Text({
-		Name = "Title",
-		Size = UDim2.fromOffset(190, 20),
-		Position = UDim2.fromOffset(112, 32),
-		Text = "Nothing playing",
-		TextSize = 15,
-		FontFace = Font.new(Creator.Font, Enum.FontWeight.Bold),
-		ZIndex = 8,
-		Parent = Now,
-	})
-	self.TitleLabel = Title
-
-	local StateIcon = Glyph("sfsymbols:playFill", 10, Palette.Muted)
-	StateIcon.Position = UDim2.fromOffset(112, 66)
-	StateIcon.ZIndex = 8
-	StateIcon.Parent = Now
-	self.StateIcon = StateIcon
-
-	local StateText = Text({
-		Name = "State",
-		Size = UDim2.fromOffset(170, 14),
-		Position = UDim2.fromOffset(128, 64),
-		Text = "Paused",
-		TextSize = 11,
-		TextColor3 = Palette.Muted,
-		ZIndex = 8,
-		Parent = Now,
-	})
-	self.StateText = StateText
-
-	-- chips
-	local function Chip(Name, Y, Label, Icon, Background, IconColor, OnPress)
-		local Frame = Button({
+	local function Section(Name, X, Y, SectionW, SectionH, Delay)
+		local Frame = New("Frame", {
+			Parent = Player,
 			Name = Name,
-			Size = UDim2.fromOffset(SideW, SideH),
-			Position = UDim2.fromOffset(OpenW - P - SideW, Y),
-			BackgroundColor3 = Background,
-			BackgroundTransparency = 0.35,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(X, Y),
+			Size = UDim2.fromOffset(SectionW, SectionH),
 			ZIndex = 7,
-			Parent = Card,
 		})
-		Corner(Frame, 18)
-		Stroke(Frame, Palette.Hairline, 0.94, 1)
+		local Record = { Frame = Frame, X = X, Y = Y, Delay = Delay, K = 0, K0 = 0, Rise = -1 }
+		table.insert(self.Sections, Record)
+		return Frame, Record
+	end
 
-		local GlyphIcon = Glyph(Icon, 16, IconColor)
-		GlyphIcon.Position = UDim2.fromOffset(14, 10)
-		GlyphIcon.ZIndex = 8
-		GlyphIcon.Parent = Frame
-
-		Text({
-			Name = "Label",
-			Size = UDim2.fromOffset(132, 18),
-			Position = UDim2.fromOffset(14, 28),
-			Text = Label,
-			TextSize = 13,
-			FontFace = Font.new(Creator.Font, Enum.FontWeight.Bold),
+	local function Label(Parent_, FontFace, Size, Color, X, Y, LabelW, LabelH, Align)
+		return New("TextLabel", {
+			Parent = Parent_,
+			BackgroundTransparency = 1,
+			FontFace = FontFace,
+			TextSize = Size,
+			TextColor3 = Color,
+			Text = "",
+			Position = UDim2.fromOffset(X, Y),
+			Size = UDim2.fromOffset(LabelW, LabelH),
 			ZIndex = 8,
-			Parent = Frame,
+			TextXAlignment = Align or Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 		})
-
-		Frame.MouseButton1Click:Connect(OnPress)
-		Frame.MouseEnter:Connect(function()
-			Tween(Frame, 0.16, { BackgroundTransparency = 0.2 }, Enum.EasingStyle.Quad, EaseOut):Play()
-		end)
-		Frame.MouseLeave:Connect(function()
-			Tween(Frame, 0.18, { BackgroundTransparency = 0.35 }, Enum.EasingStyle.Quad, EaseOut):Play()
-		end)
-
-		return Frame, GlyphIcon
 	end
 
-	local ShuffleChip = Chip("Shuffle", 50, "Shuffle", "sfsymbols:shuffle", Palette.Blue, Palette.BlueIcon, function()
-		self:ToggleShuffle()
-	end)
-	self.ShuffleChip = ShuffleChip
-
-	Chip("Library", 110, "Library", "sfsymbols:squareStack", Palette.Purple, Palette.PurpleIcon, function()
-		self:CycleSource()
-	end)
-
-	-- scrubber
-	local Track = New("Frame", {
-		Name = "Track",
-		Size = UDim2.fromOffset(320, 4),
-		Position = UDim2.fromOffset(P, 176),
-		BackgroundColor3 = Palette.Text,
-		BackgroundTransparency = 0.8,
-		BorderSizePixel = 0,
-		ZIndex = 8,
-		Parent = Card,
-	})
-	Corner(Track, 2)
-	self.Track = Track
-
-	local Fill = New("Frame", {
-		Name = "Fill",
-		Size = UDim2.new(0, 0, 1, 0),
-		BackgroundColor3 = Palette.Text,
-		BorderSizePixel = 0,
-		ZIndex = 9,
-		Parent = Track,
-	})
-	Corner(Fill, 2)
-	self.Fill = Fill
-
-	local Scrub = Button({
-		Name = "Scrub",
-		Size = UDim2.new(1, 0, 0, 22),
-		Position = UDim2.fromOffset(0, -9),
-		ZIndex = 11,
-		Parent = Track,
-	})
-
-	local function SeekAt(Input)
-		local Width = Track.AbsoluteSize.X
-		if Width <= 0 then
-			return
-		end
-		local Ratio = math.clamp((Input.Position.X - Track.AbsolutePosition.X) / Width, 0, 1)
-		local Duration = self.MusicState and self.MusicState.Duration or 0
-		if Duration > 0 then
-			self:Seek(Ratio * Duration)
-		end
-	end
-
-	Scrub.MouseButton1Down:Connect(SeekAt)
-	Scrub.InputChanged:Connect(function(Input)
-		if Input.UserInputType == Enum.UserInputType.MouseMovement and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-			SeekAt(Input)
-		end
-	end)
-
-	local Elapsed = Text({
-		Name = "Elapsed",
-		Size = UDim2.fromOffset(60, 14),
-		Position = UDim2.fromOffset(P, 186),
-		Text = "0:00",
-		TextSize = 12,
-		TextColor3 = Palette.Muted,
-		ZIndex = 8,
-		Parent = Card,
-	})
-	self.Elapsed = Elapsed
-
-	local Remaining = Text({
-		Name = "Remaining",
-		Size = UDim2.fromOffset(60, 14),
-		Position = UDim2.fromOffset(P + 320 - 60, 186),
-		Text = "-0:00",
-		TextSize = 12,
-		TextColor3 = Palette.Muted,
-		TextXAlignment = Enum.TextXAlignment.Right,
-		ZIndex = 8,
-		Parent = Card,
-	})
-	self.Remaining = Remaining
-
-	-- transport
-	local function Disc_(Name, CenterX, Icon, GlyphSize, Bright, OnPress)
-		local Frame = Button({
-			Name = Name,
-			Size = UDim2.fromOffset(30, 30),
+	local function Glyph(Parent_, Name, Size, Color, Z)
+		local Image = New("ImageLabel", {
+			Parent = Parent_,
+			BackgroundTransparency = 1,
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromOffset(CenterX, 184),
-			BackgroundColor3 = Palette.Text,
-			BackgroundTransparency = Bright and 0.88 or 0.94,
-			ZIndex = 10,
-			Parent = Card,
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(Size, Size),
+			ScaleType = Enum.ScaleType.Fit,
+			ImageColor3 = Color or WHITE,
+			ZIndex = Z or 9,
 		})
-		Corner(Frame, 15)
-		Stroke(Frame, Palette.Hairline, 0.9, 1)
-
-		local Image = Glyph(Icon, GlyphSize, Palette.Text)
-		Image.AnchorPoint = Vector2.new(0.5, 0.5)
-		Image.Position = UDim2.fromScale(0.5, 0.5)
-		Image.ZIndex = 11
-		Image.Parent = Frame
-
-		Frame.MouseButton1Click:Connect(OnPress)
-		Frame.MouseEnter:Connect(function()
-			Tween(Frame, 0.14, { BackgroundTransparency = 0.84 }, Enum.EasingStyle.Quad, EaseOut):Play()
-		end)
-		Frame.MouseLeave:Connect(function()
-			Tween(Frame, 0.16, { BackgroundTransparency = Bright and 0.88 or 0.94 }, Enum.EasingStyle.Quad, EaseOut):Play()
-		end)
-
+		local Source, Rect = Icon(Name)
+		Image.Image, Image.ImageRectOffset, Image.ImageRectSize = Source, Rect.ImageRectPosition, Rect.ImageRectSize
 		return Image
 	end
 
-	Disc_("Previous", 391, "sfsymbols:backwardFill", 13, false, function()
-		self:Previous()
-	end)
+	--------------------------------------------------------------- header
 
-	self.PlayIcon = Disc_("Play", 436, "sfsymbols:playFill", 13, true, function()
-		self:TogglePlay()
-	end)
+	local Top = Section("Top", 0, 0, W + SW, 36, 0.03)
 
-	Disc_("Next", 481, "sfsymbols:forwardFill", 13, false, function()
-		self:Next()
-	end)
-
-	--------------------------------------------------------------- input
-
-	local PillHit = Button({
-		Name = "PillHit",
-		Size = UDim2.fromScale(1, 1),
-		Visible = not self.Expanded,
-		ZIndex = 25,
-		Parent = Shell,
+	local Tabs = New("Frame", {
+		Parent = Top,
+		Name = "Tabs",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.95,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Position = UDim2.fromOffset(P + 6, 9),
+		Size = UDim2.fromOffset(32, 22),
+		ZIndex = 8,
 	})
-	self.PillHit = PillHit
-
-	local HeaderHit = Button({
-		Name = "HeaderHit",
-		Size = UDim2.fromOffset(OpenW, 46),
-		Position = UDim2.fromOffset(0, 0),
-		Visible = self.Expanded,
-		ZIndex = 25,
-		Parent = Shell,
+	Corner(Tabs, 11)
+	local TabPill = New("Frame", {
+		Parent = Tabs,
+		Name = "Active",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.86,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(3, 3),
+		Size = UDim2.fromOffset(26, 16),
+		ZIndex = 9,
 	})
-	self.HeaderHit = HeaderHit
+	Corner(TabPill, 8)
+	local TabHit = New("TextButton", {
+		Parent = Tabs,
+		Name = "music",
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(3, 3),
+		Size = UDim2.fromOffset(26, 16),
+		ZIndex = 10,
+	})
+	Glyph(TabHit, "note", 15, WHITE, 11)
 
-	--------------------------------------------------------------- wiring
+	local SourceLabel = Label(Top, Medium, 11, SUBTLE, P + 46, 9, 140, 22)
+	self.SourceLabel = SourceLabel
 
-	Surface.Bind(self, Config)
-	self:_WireDrag()
-	self:_WireStatus()
-	self:_RefreshShadow()
+	local Status = New("Frame", {
+		Parent = Top,
+		Name = "Status",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromOffset(W - P - 6, 9),
+		Size = UDim2.fromOffset(220, 22),
+		ZIndex = 8,
+	})
+	New("UIListLayout", {
+		Parent = Status,
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 5),
+	})
 
-	self:Fit()
-
-	return self
-end
-
----------------------------------------------------------------------------
--- status: ping and uptime in the header
----------------------------------------------------------------------------
-
-function DynamicIsland:_WireStatus()
-	task.spawn(function()
-		while self.Alive do
-			local Ping = 0
-			pcall(function()
-				Ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
-			end)
-			self.PingText.Text = Ping .. " ms"
-			self.UptimeText.Text = math.floor((os.time() - self.Born) / 60) .. "m"
-			task.wait(1)
-		end
-	end)
-end
-
----------------------------------------------------------------------------
--- drag and click
----------------------------------------------------------------------------
-
-function DynamicIsland:_WireDrag()
-	local Shell = self.Shell
-	local Pressed, Dragging, Moved = false, false, 0
-	local DragStart, StartPosition = nil, nil
-
-	local function Begin(Input)
-		Pressed = true
-		Moved = 0
-		DragStart = Input.Position
-		StartPosition = Shell.Position
+	local function StatusItem(Order, IconName)
+		local Image = New("ImageLabel", {
+			Parent = Status,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(15, 15),
+			ScaleType = Enum.ScaleType.Fit,
+			ImageColor3 = SUBTLE,
+			LayoutOrder = Order,
+			ZIndex = 9,
+		})
+		local Source, Rect = Icon(IconName)
+		Image.Image, Image.ImageRectOffset, Image.ImageRectSize = Source, Rect.ImageRectPosition, Rect.ImageRectSize
+		return New("TextLabel", {
+			Parent = Status,
+			BackgroundTransparency = 1,
+			FontFace = Medium,
+			TextSize = 11,
+			TextColor3 = SUBTLE,
+			Text = "",
+			AutomaticSize = Enum.AutomaticSize.X,
+			Size = UDim2.fromOffset(0, 22),
+			LayoutOrder = Order + 1,
+			ZIndex = 9,
+		})
 	end
 
-	local function Release()
-		if not Pressed then
+	local PingText = StatusItem(1, "pulse")
+	New("Frame", { Parent = Status, BackgroundTransparency = 1, Size = UDim2.fromOffset(4, 1), LayoutOrder = 3 })
+	local UptimeText = StatusItem(4, "clock")
+	self.PingText, self.UptimeText = PingText, UptimeText
+
+	--------------------------------------------------------------- now playing
+
+	local Now, NowRecord = Section("Now", P, 36, AW, 96, 0.07)
+	self.NowSection = NowRecord
+
+	local ArtistLabel = Label(Now, Medium, 11, SUBTLE, 98, 16, AW - 110, 14)
+	local TitleLabel = Label(Now, Bold, 15, WHITE, 98, 33, AW - 132, 20)
+	self.ArtistLabel, self.TitleLabel = ArtistLabel, TitleLabel
+	self.TitleWidth = AW - 132
+
+	local StateIcon = Glyph(Now, "pause", 15, SUBTLE, 9)
+	StateIcon.Position = UDim2.fromOffset(104, 70)
+	local StateText = Label(Now, Medium, 11, SUBTLE, 114, 63, AW - 126, 14)
+	self.StateIcon, self.StateText = StateIcon, StateText
+
+	--------------------------------------------------------------- chips
+
+	local Grid = Section("Grid", P + AW - 4, 24, 176, 120, 0.1)
+	self.Grid = Grid
+
+	local function ChipLayout(List, Strip)
+		local Count, Out = #List, {}
+		if Strip then
+			local Y0 = math.floor((154 - (Count * 30 + (Count - 1) * 8)) / 2 + 0.5)
+			for Index = 1, Count do
+				Out[Index] = { 28, Y0 + (Index - 1) * 38, 30, 30 }
+			end
+		elseif Count == 1 then
+			Out[1] = { 0, 0, 152, 96 }
+		elseif Count == 2 then
+			Out[1], Out[2] = { 0, 0, 152, 44 }, { 0, 52, 152, 44 }
+		elseif Count == 3 then
+			Out[1], Out[2], Out[3] = { 0, 0, 72, 44 }, { 80, 0, 72, 44 }, { 0, 52, 152, 44 }
+		else
+			for Index = 1, Count do
+				Out[Index] = { ((Index - 1) % 2) * 80, ((Index - 1) // 2) * 52, 72, 44 }
+			end
+		end
+		return Out
+	end
+
+	local function Chip(Key, Text_, IconName, OnClick)
+		local Tint = TINT[Key]
+		local Holder = New("Frame", {
+			Parent = Grid,
+			Name = "Chip",
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(96, 68),
+			Visible = false,
+			ZIndex = 8,
+		})
+
+		local function Fire()
+			KeepUntil = math.max(KeepUntil, os.clock() + 4)
+			pcall(OnClick)
+		end
+
+		local Button_ = New("TextButton", {
+			Parent = Holder,
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundColor3 = Tint[1],
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(12, 12),
+			Size = UDim2.fromOffset(72, 44),
+			ZIndex = 20,
+		})
+		Corner(Button_, 14)
+		Button_.Activated:Connect(Fire)
+
+		local ChipIcon = Glyph(Button_, IconName, 15, Tint[2], 22)
+		ChipIcon.Position = UDim2.fromOffset(16, 8)
+
+		local ChipText = New("TextLabel", {
+			Parent = Button_,
+			BackgroundTransparency = 1,
+			FontFace = Bold,
+			TextSize = 11,
+			TextColor3 = WHITE,
+			Text = Text_,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, 12, 1, -6),
+			Size = UDim2.new(1, -20, 0, 12),
+			ZIndex = 22,
+		})
+
+		local Record = {
+			Key = Key,
+			Holder = Holder,
+			Button = Button_,
+			Icon = ChipIcon,
+			Text = ChipText,
+			Tint = Tint,
+			Base = Text_,
+			IconName = IconName,
+			Scale = New("UIScale", { Parent = Holder, Scale = 0.7 }),
+			On = false,
+			X = { x = 0, v = 0, g = 0 },
+			Y = { x = 0, v = 0, g = 0 },
+			W = { x = 72, v = 0, g = 72 },
+			H = { x = 44, v = 0, g = 44 },
+			A = { x = 0, v = 0, g = 0 },
+			Pr = { x = 0, v = 0, g = 0 },
+		}
+
+		local function Pressed(Input)
+			return Input.UserInputType == Enum.UserInputType.MouseButton1
+				or Input.UserInputType == Enum.UserInputType.Touch
+		end
+
+		Button_.InputBegan:Connect(function(Input)
+			if Pressed(Input) then
+				Record.Pr.g = 100
+			end
+		end)
+		Button_.InputEnded:Connect(function(Input)
+			if Pressed(Input) then
+				Record.Pr.g = 0
+			end
+		end)
+		Button_.MouseLeave:Connect(function()
+			Record.Pr.g = 0
+		end)
+
+		table.insert(self.Chips, Record)
+		self.ChipBy[Key] = Record
+		return Record
+	end
+
+	Chip("shuffle", "Shuffle", "shuffle", function()
+		State:ToggleShuffle()
+	end)
+	Chip("library", "Library", "library", function()
+		State:ToggleSide()
+	end)
+
+	--------------------------------------------------------------- scrubber
+
+	local M = 8
+	local Seek, SeekRecord = Section("Seek", P - M, 140 - M, BW + M * 2, 50 + M * 2, 0.13)
+	self.SeekSection = SeekRecord
+	self.TrackWidth = BW - 150
+
+	local Track = New("Frame", {
+		Parent = Seek,
+		Name = "Track",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.fromOffset(M + 14, M + 18),
+		Size = UDim2.fromOffset(self.TrackWidth, 5),
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.82,
+		BorderSizePixel = 0,
+		ZIndex = 8,
+	})
+	Corner(Track, 3)
+
+	local Fill = New("Frame", {
+		Parent = Track,
+		Name = "Fill",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(0, 1),
+		ZIndex = 9,
+	})
+	New("UICorner", { Parent = Fill, CornerRadius = UDim.new(1, 0) })
+	self.Track, self.Fill = Track, Fill
+
+	local Elapsed = Label(Seek, Medium, 12, SUBTLE, M + 14, M + 26, 60, 16)
+	local Remaining = Label(Seek, Medium, 12, SUBTLE, M + 14 + self.TrackWidth - 60, M + 26, 60, 16, Enum.TextXAlignment.Right)
+	self.Elapsed, self.Remaining = Elapsed, Remaining
+
+	local SeekHit = New("TextButton", {
+		Parent = Seek,
+		Name = "Seek",
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(M + 10, M + 4),
+		Size = UDim2.fromOffset(self.TrackWidth + 8, 28),
+		ZIndex = 11,
+	})
+	self.SeekHit = SeekHit
+
+	local function GlassButton(Parent_, X, Y, Size, IconName, IconSize, OnClick)
+		local Holder = New("Frame", {
+			Parent = Parent_,
+			Name = "Glass",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset(X, Y),
+			Size = UDim2.fromOffset(Size, Size),
+			ZIndex = 8,
+		})
+		local Face = New("TextButton", {
+			Parent = Holder,
+			Name = "Face",
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 0.9,
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 9,
+		})
+		New("UICorner", { Parent = Face, CornerRadius = UDim.new(1, 0) })
+		Gradient(Face, 90, Sequence({ 0, 0 }, { 1, 0.3 }))
+		local Rim = Stroke(Face)
+		Gradient(Rim, 90, Sequence({ 0, 0.5 }, { 0.5, 0.86 }, { 1, 0.72 }))
+		pcall(function()
+			New("UIShadow", {
+				Parent = Face,
+				Name = "Drop",
+				Color = Color3.new(0, 0, 0),
+				BlurRadius = UDim.new(0, 8),
+				Offset = UDim2.fromOffset(0, 2),
+				Transparency = 0.62,
+				ZIndex = -1,
+			})
+		end)
+
+		local Record = {
+			Holder = Holder,
+			Face = Face,
+			Icon = Glyph(Face, IconName, IconSize, WHITE, 11),
+			Size = Size,
+			Callback = OnClick,
+			Scale = New("UIScale", { Parent = Holder }),
+			OX = { x = 0, v = 0, g = 0 },
+			OY = { x = 0, v = 0, g = 0 },
+			S = { x = 100, v = 0, g = 100 },
+			Lit = 0,
+			Raw = Vector2.zero,
+		}
+
+		Face.MouseEnter:Connect(function()
+			Record.Over = true
+		end)
+		Face.MouseLeave:Connect(function()
+			Record.Over = false
+		end)
+		Face.InputBegan:Connect(function(Input)
+			local Type_ = Input.UserInputType
+			if Type_ ~= Enum.UserInputType.MouseButton1 and Type_ ~= Enum.UserInputType.Touch then
+				return
+			end
+			Record.Hold, Record.Raw, Record.Touch = true, Vector2.zero, Type_ == Enum.UserInputType.Touch
+			Record.Start = Vector2.new(Input.Position.X, Input.Position.Y)
+			GlassHeld = Record
+			KeepUntil = math.max(KeepUntil, os.clock() + 4)
+		end)
+
+		table.insert(self.Glass, Record)
+		return Record
+	end
+
+	local CenterX = M + BW - 14
+	local Previous = GlassButton(Seek, CenterX - 91, M + 25, 30, "previous", 15, function()
+		State:Previous()
+	end)
+	local Play = GlassButton(Seek, CenterX - 53, M + 25, 38, "play", 15, function()
+		State:TogglePlay()
+	end)
+	local NextButton = GlassButton(Seek, CenterX - 15, M + 25, 30, "next", 15, function()
+		State:Next()
+	end)
+	self.PlayIcon = Play.Icon
+	self.Transport = { { Record = Previous, DX = -91 }, { Record = Play, DX = -53 }, { Record = NextButton, DX = -15 } }
+
+	--------------------------------------------------------------- sources pane
+
+	local Side = New("Frame", {
+		Parent = Player,
+		Name = "Side",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Position = UDim2.fromOffset(SX, 36),
+		Size = UDim2.fromOffset(SWW, 154),
+		ZIndex = 7,
+	})
+	self.Side = Side
+	local SideSection = { Frame = Side, X = SX, Y = 36, Delay = 0.17, K = 0, K0 = 0, Rise = -1, Move = false }
+	table.insert(self.Sections, SideSection)
+	self.SideSection = SideSection
+
+	local SourcesPage = New("Frame", {
+		Parent = Side,
+		Name = "SourcesPage",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.fromOffset(SWW - 24, 154),
+		Visible = false,
+		ZIndex = 8,
+	})
+	self.SourcesPage = SourcesPage
+	local FxSources = FX.Group(SourcesPage, FxPlayer, 0)
+	self.FxSources = FxSources
+
+	GlassButton(SourcesPage, 26, 24, 28, "back", 15, function()
+		State:ToggleSide(false)
+	end)
+
+	local SourcesHead = Label(SourcesPage, Bold, 13, WHITE, 36, 14, SWW - 62, 20)
+	SourcesHead.Text = "Sources"
+
+	local SourcesList = New("Frame", {
+		Parent = SourcesPage,
+		Name = "List",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, 46),
+		Size = UDim2.fromOffset(SWW - 24, 100),
+		ZIndex = 9,
+	})
+	self.SourcesList = SourcesList
+	local SideSpring = { x = 0, v = 0, g = 0 }
+
+	--------------------------------------------------------------- springs
+
+	local function Spring(Value, Delta, Omega, Zeta)
+		Delta = math.min(Delta, 0.1)
+		local Steps = math.clamp(math.ceil(Delta * 240), 1, 24)
+		local Step = Delta / Steps
+		for _ = 1, Steps do
+			Value.v += (-Omega * Omega * (Value.x - Value.g) - 2 * Zeta * Omega * Value.v) * Step
+			Value.x += Value.v * Step
+		end
+		if math.abs(Value.x - Value.g) < 0.05 and math.abs(Value.v) < 0.5 then
+			Value.x, Value.v = Value.g, 0
+		end
+	end
+
+	local function Swift(Value, Delta, Response, Damping)
+		Spring(Value, Delta, 2 * math.pi / Response, Damping)
+	end
+
+	local function Band(Delta, Limit, K)
+		local Absolute = math.abs(Delta)
+		if Absolute < 0.01 then
+			return 0
+		end
+		return math.sign(Delta) * Limit * (1 - 1 / (Absolute * K / Limit + 1))
+	end
+
+	local function Quart(T)
+		T = math.clamp(T, 0, 1)
+		return 1 - (1 - T) ^ 4
+	end
+
+	--------------------------------------------------------------- state
+
+	local function GoalSize()
+		return State.Expanded and { W + (State.SideOpen and SW or 0), HE } or { PILL_W, PILL_H }
+	end
+
+	local function PointerOver(Margin)
+		Margin = Margin or 0
+		local Mouse = UserInputService:GetMouseLocation()
+		local Position_, Size = Root.AbsolutePosition, Root.AbsoluteSize
+		local Goal = GoalSize()
+		local GoalW, GoalH = math.max(Size.X, Goal[1]), math.max(Size.Y, Goal[2])
+		local CenterX_ = Position_.X + Size.X / 2
+		return Mouse.X >= CenterX_ - GoalW / 2 - 10 - Margin
+			and Mouse.X <= CenterX_ + GoalW / 2 + 10 + Margin
+			and Mouse.Y >= Position_.Y - 14 - Margin
+			and Mouse.Y <= Position_.Y + GoalH + 12 + Margin
+	end
+	self.PointerOver = PointerOver
+
+	--------------------------------------------------------------- shape
+
+	local function Shape(Delta)
+		local Now = os.clock()
+		local Goal = GoalSize()
+		local GoalW, GoalH = Goal[1], Goal[2]
+		if not State.Expanded then
+			if Pressing then
+				GoalW, GoalH = GoalW - 8, GoalH - 2
+			elseif Peeking then
+				GoalW, GoalH = GoalW + 16, GoalH + 4
+			end
+		end
+		Width.g, Height.g = GoalW, GoalH
+
+		local Omega, Zeta, OmegaH, ZetaH = 16, 0.97, 16, 0.97
+		if State.Expanded then
+			Omega, Zeta, OmegaH, ZetaH = 15, 0.72, 15, 0.72
+		elseif Peeking or Pressing then
+			Omega, Zeta, OmegaH, ZetaH = 18, 0.62, 18, 0.62
+		end
+		Spring(Width, Delta, Omega, Zeta)
+		Spring(Height, Delta, OmegaH, ZetaH)
+
+		local CurrentW = math.max(40, 2 * math.floor(Width.x / 2 + 0.5))
+		local CurrentH = math.max(20, math.floor(Height.x + 0.5))
+		local Key = CurrentW .. "," .. CurrentH
+		if Key == Geo then
 			return
 		end
-		Pressed = false
-		if Dragging then
-			Dragging = false
+		Geo = Key
+
+		local P_ = math.clamp((CurrentH - HC) / (HE - HC), 0, 1)
+		Root.Size = UDim2.fromOffset(CurrentW, CurrentH)
+
+		local CoverSize = math.floor(Lerp(28, 72, P_) + 0.5)
+		local Pad = math.floor(Lerp(6, P + 12, P_) + 0.5)
+		local CoverY = math.floor(Lerp((CurrentH - CoverSize) / 2, 48, P_) + 0.5)
+		CoverFrame.Size = UDim2.fromOffset(CoverSize, CoverSize)
+		CoverFrame.Position = UDim2.fromOffset(Pad, CoverY)
+		CoverCorner.CornerRadius = UDim.new(0, math.floor(Lerp(9, 12, P_) + 0.5))
+
+		Wave.Position = UDim2.fromOffset(
+			math.floor(Lerp(CurrentW - 14, P + AW - 14, P_) + 0.5),
+			math.floor(Lerp(CurrentH / 2, 54, P_) + 0.5)
+		)
+		Wave.Visible = P_ < 0.6
+
+		local Radius = math.floor(math.min(CurrentH / 2, Lerp(20, 30, P_)) + 0.5)
+		Corner_.CornerRadius = UDim.new(0, Radius)
+		OutlineCorner.CornerRadius = Corner_.CornerRadius
+		State.P = P_
+	end
+
+	--------------------------------------------------------------- fade
+
+	local function Sheet(Frame, Group, Alpha, Y)
+		local Visible = Alpha > 0.001
+		if Frame.Visible ~= Visible then
+			Frame.Visible = Visible
+		end
+		FX.Set(Group, Alpha)
+		if not Visible then
 			return
 		end
-		if Moved < 6 and not self.Expanded then
+		if Frame.Position.Y.Offset ~= Y then
+			Frame.Position = UDim2.fromOffset(0, Y)
+		end
+	end
+
+	local function PaintShadow()
+		if Shadow then
+			pcall(function()
+				Shadow.Transparency = 0.5
+			end)
+		end
+		if Contact then
+			pcall(function()
+				Contact.Transparency = 0.62
+			end)
+		end
+	end
+
+	local GlassK = 0
+
+	local function FadeStep(Delta, Now)
+		local Ex = Expand
+		if Ex.a ~= Ex.goal then
+			Ex.a = Fade(Ex.a, Ex.goal, Ex.goal == 1 and 11 or 28, Delta)
+			if math.abs(Ex.a - Ex.goal) < 0.01 then
+				Ex.a = Ex.goal
+			end
+		end
+
+		local Y = math.floor(-6 * (1 - Ex.a) + 0.5)
+		local Alpha = Ex.a
+		local Key = math.floor(Ex.a * 40 + 0.5) / 40
+		if Key ~= GlassK then
+			GlassK = Key
+			local M = 0.42 * Key
+			GlassGrad.Transparency = Key <= 0 and NumberSequence.new(0)
+				or Sequence({ 0, 0 }, { 0.55, 0 }, { 0.62, 0.14 * M }, { 0.7, 0.5 * M }, { 0.78, 0.86 * M }, { 0.85, M }, { 1, M })
+			PaintShadow()
+		end
+
+		Sheet(Player, FxPlayer, Alpha, Y)
+		Sheet(Back, FxBack, Alpha, Y)
+
+		if Ex.at ~= State.SecAt then
+			State.SecAt = Ex.at
+			for _, Record in ipairs(State.Sections) do
+				Record.K0 = Record.K
+			end
+		end
+
+		local Open = Ex.goal == 1
+		local Live = Player.Visible
+		for _, Record in ipairs(State.Sections) do
+			local K
+			if Open then
+				K = Record.K0 + (1 - Record.K0) * Quart((Now - Ex.at - Record.Delay) / 0.36)
+			else
+				K = math.min(Record.K, Ex.a)
+			end
+			Record.K = K
+			local Frame = Record.Frame
+			if Frame and Live and Record.Move ~= false then
+				local Rise = math.floor(12 * (1 - K) * 2 + 0.5) / 2
+				if Rise ~= Record.Rise then
+					Record.Rise = Rise
+					Frame.Position = UDim2.fromOffset(Record.X, Record.Y + Rise)
+				end
+			end
+		end
+	end
+
+	--------------------------------------------------------------- header paint
+
+	local function TopStep(Delta, Width_)
+		local StatusX = math.floor(Width_ - P - 6 + 0.5)
+		if Status.Position.X.Offset ~= StatusX then
+			Status.Position = UDim2.fromOffset(StatusX, 9)
+		end
+	end
+
+	local StatAt = 0
+	local function StatusStep(Now)
+		if Now - StatAt < 1 then
+			return
+		end
+		StatAt = Now
+
+		local Milliseconds
+		local Ok, Value = pcall(function()
+			return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+		end)
+		if Ok and tonumber(Value) then
+			Milliseconds = math.floor(tonumber(Value) + 0.5)
+		end
+		if not Milliseconds then
+			Ok, Value = pcall(function()
+				return game:GetService("Players").LocalPlayer:GetNetworkPing()
+			end)
+			if Ok and tonumber(Value) then
+				Milliseconds = math.floor(tonumber(Value) * 1000 + 0.5)
+			end
+		end
+
+		local Ping = Milliseconds and (Milliseconds .. " ms") or ""
+		if PingText.Text ~= Ping then
+			PingText.Text = Ping
+		end
+
+		local Up = math.max(0, math.floor(Now - State.Born))
+		local UpText = Up < 60 and (Up .. "s")
+			or (Up < 3600 and ((Up // 60) .. "m") or string.format("%dh %02dm", Up // 3600, (Up % 3600) // 60))
+		if UptimeText.Text ~= UpText then
+			UptimeText.Text = UpText
+		end
+	end
+
+	--------------------------------------------------------------- tint
+
+	local TintC, TintP
+	local function TintStep()
+		local Color, P_ = AccentLive, State.P or 0
+		if Color == TintC and P_ == TintP then
+			return
+		end
+		TintC, TintP = Color, P_
+
+		local H, S = Color:ToHSV()
+		local K = math.clamp(S * 1.6, 0, 1)
+		local Glow = Color3.fromHSV(H, math.min(S, 0.75), 1)
+		WashA.BackgroundColor3, WashA.BackgroundTransparency = Glow, 1 - 0.9 * K
+		WashB.BackgroundColor3, WashB.BackgroundTransparency = Glow, 1 - K
+		if ArtShade then
+			ArtShade.Transparency = 1 - 0.5 * P_
+		end
+	end
+
+	--------------------------------------------------------------- wave
+
+	local function WaveTint(Color)
+		local H, S, V = Color:ToHSV()
+		if S < 0.08 then
+			return Color3.fromRGB(226, 226, 232)
+		end
+		return Color3.fromHSV(H, S * 0.58, math.max(V, 0.95))
+	end
+
+	local BarAcc = 0
+	local function WaveStep(Delta)
+		BarAcc += Delta
+		if BarAcc >= 0.09 then
+			BarAcc = 0
+			for _, Bar in ipairs(State.Bars) do
+				local Random = 0.45 + 0.55 * math.random()
+				Bar.Goal = Playing and math.clamp(0.1 + 0.45 * Random + 0.6 * Beat * Bar.Weight * Random, 0, 1) or 0
+			end
+		end
+
+		local Color = WaveTint(AccentLive)
+		for _, Bar in ipairs(State.Bars) do
+			Bar.Current = Fade(Bar.Current, Bar.Goal, Bar.Goal > Bar.Current and 26 or 9, Delta)
+			local BarHeight = math.floor(3 + 15 * Bar.Current + 0.5)
+			if Bar.Height ~= BarHeight then
+				Bar.Height = BarHeight
+				Bar.Frame.Size = UDim2.fromOffset(2, BarHeight)
+			end
+			Bar.Frame.BackgroundColor3 = Color
+		end
+	end
+
+	--------------------------------------------------------------- chips
+
+	local function ChipStateStep()
+		local Shuffle = State.ChipBy.shuffle
+		local Library = State.ChipBy.library
+		if Library then
+			Library.Can, Library.On = true, State.SideOpen
+		end
+		if Shuffle then
+			Shuffle.Can = State.Provider ~= nil and State.Provider.Shuffle ~= nil
+			Shuffle.On = Shuffle.Can and State.Shuffled
+		end
+	end
+
+	local ChipMask
+	local function ChipStep(Delta)
+		local Mask = State.SideOpen and 16 or 0
+		for Index, Record in ipairs(State.Chips) do
+			if Record.Can then
+				Mask += 2 ^ (Index - 1)
+			end
+		end
+
+		if Mask ~= ChipMask then
+			ChipMask = Mask
+			local List = {}
+			for _, Record in ipairs(State.Chips) do
+				if Record.Can then
+					table.insert(List, Record)
+				end
+			end
+			local Layout = ChipLayout(List, State.SideOpen)
+			for Index, Record in ipairs(List) do
+				local Target = Layout[Index]
+				Record.X.g, Record.Y.g, Record.W.g, Record.H.g = Target[1], Target[2], Target[3], Target[4]
+				if not Record.Placed then
+					Record.X.x, Record.Y.x, Record.W.x, Record.H.x = Target[1], Target[2], Target[3], Target[4]
+					Record.Placed = true
+				end
+			end
+		end
+
+		for _, Record in ipairs(State.Chips) do
+			Record.A.g = Record.Can and 100 or 0
+			Swift(Record.A, Delta, Record.Can and 0.34 or 0.22, 1)
+			local Alpha = math.clamp(Record.A.x / 100, 0, 1)
+			local Visible = Alpha > 0.02
+			if Record.Holder.Visible ~= Visible then
+				Record.Holder.Visible = Visible
+			end
+			if Visible then
+				local Scale = math.floor((0.7 + 0.3 * Alpha) * 200 + 0.5) / 200
+				if Scale ~= Record.LastScale then
+					Record.LastScale = Scale
+					Record.Scale.Scale = Scale
+				end
+				Swift(Record.X, Delta, 0.42, 0.82)
+				Swift(Record.Y, Delta, 0.42, 0.82)
+				Swift(Record.W, Delta, 0.42, 0.82)
+				Swift(Record.H, Delta, 0.42, 0.82)
+				local X, Y = math.floor(Record.X.x + 0.5), math.floor(Record.Y.x + 0.5)
+				local ChipW, ChipH = math.floor(Record.W.x + 0.5), math.floor(Record.H.x + 0.5)
+				if Record.Pr.g > 0 then
+					Swift(Record.Pr, Delta, 0.1, 1)
+				else
+					Swift(Record.Pr, Delta, 0.32, 0.7)
+				end
+				local Depth = math.floor(math.max(0, Record.Pr.x) / 100 * 2.5 * 2 + 0.5) / 2
+				local LK = math.floor((Record.LK or 0) * 50 + 0.5) / 50
+				if X ~= Record.GX or Y ~= Record.GY or ChipW ~= Record.GW or ChipH ~= Record.GH or Depth ~= Record.GD or LK ~= Record.GLK then
+					Record.GX, Record.GY, Record.GW, Record.GH, Record.GD, Record.GLK = X, Y, ChipW, ChipH, Depth, LK
+					Record.Holder.Position = UDim2.fromOffset(X + 12 + ChipW / 2, Y + 12 + ChipH / 2)
+					Record.Holder.Size = UDim2.fromOffset(ChipW + 24, ChipH + 24)
+					Record.Button.Position = UDim2.fromOffset(12 + Depth, 12 + Depth)
+					Record.Button.Size = UDim2.fromOffset(ChipW - Depth * 2, ChipH - Depth * 2)
+					Record.Icon.Position = UDim2.fromOffset(math.floor(Lerp(18, ChipW / 2, LK) + 0.5), math.floor(Lerp(16, ChipH / 2, LK) + 0.5))
+					Record.Text.TextTransparency = math.clamp(LK * 1.6, 0, 1)
+				end
+				if Record.On ~= Record.ShownOn then
+					local First = Record.ShownOn == nil
+					Record.ShownOn = Record.On
+					local Tint = Record.Tint
+					local Background = Record.On and Tint[1]:Lerp(Tint[2], 0.24) or Tint[1]
+					Record.Text.Text = Record.Key == "like" and (Record.On and "Liked" or "Like") or Record.Base
+					if First then
+						Record.Button.BackgroundColor3 = Background
+					else
+						Tween(Record.Button, 0.26, { BackgroundColor3 = Background }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+					end
+					Pop(Record.Icon)
+				end
+			end
+		end
+	end
+
+	--------------------------------------------------------------- side pane
+
+	local function SideStep(Delta)
+		SideSpring.g = State.SideOpen and 100 or 0
+		Swift(SideSpring, Delta, SideSpring.g > 0 and 0.5 or 0.3, 0.92)
+		local S = math.clamp(SideSpring.x / 100, 0, 1)
+		State.SideProgress = S
+		local K = S * (SideSection.K or 0)
+		local Slide = math.floor(18 * (1 - S) + 0.5)
+
+		local Visible = K > 0.005
+		if SourcesPage.Visible ~= Visible then
+			SourcesPage.Visible = Visible
+		end
+		if Visible then
+			FX.Set(FxSources, K)
+			local X = 12 + Slide
+			if SourcesPage.Position.X.Offset ~= X then
+				SourcesPage.Position = UDim2.fromOffset(X, 0)
+			end
+		end
+
+		local SideVisible = S > 0.005
+		if CardS.Visible ~= SideVisible then
+			CardS.Visible = SideVisible
+		end
+		if SideVisible then
+			local Transparency = 1 - 0.045 * S
+			if math.abs(CardS.BackgroundTransparency - Transparency) > 0.0005 then
+				CardS.BackgroundTransparency = Transparency
+				CardSRim.Transparency = 1 - S
+			end
+		end
+
+		for _, Record in ipairs(State.Chips) do
+			Record.LK = S
+		end
+	end
+
+	--------------------------------------------------------------- glass
+
+	local function GlassStep(Delta)
+		for _, Record in ipairs(State.Glass) do
+			local Held = Record.Hold == true
+			Record.OX.g = Held and Band(Record.Raw.X, 7, 0.16) or 0
+			Record.OY.g = Held and Band(Record.Raw.Y, 7, 0.16) or 0
+			Record.S.g = Held and 90 or (Record.Over and 105 or 100)
+			if Held then
+				Swift(Record.OX, Delta, 0.12, 1)
+				Swift(Record.OY, Delta, 0.12, 1)
+				Swift(Record.S, Delta, 0.16, 0.86)
+			else
+				Swift(Record.OX, Delta, 0.45, 0.72)
+				Swift(Record.OY, Delta, 0.45, 0.72)
+				Swift(Record.S, Delta, 0.36, 0.66)
+			end
+			Record.Lit = Fade(Record.Lit, Held and 1 or (Record.Over and 0.5 or 0), Held and 30 or 12, Delta)
+
+			local OX, OY = math.floor(Record.OX.x * 2 + 0.5) / 2, math.floor(Record.OY.x * 2 + 0.5) / 2
+			if OX ~= Record.LX or OY ~= Record.LY then
+				Record.LX, Record.LY = OX, OY
+				Record.Face.Position = UDim2.new(0.5, OX, 0.5, OY)
+			end
+			local Scale = math.floor(Record.S.x * 5 + 0.5) / 500
+			if Scale ~= Record.LS then
+				Record.LS = Scale
+				Record.Scale.Scale = Scale
+			end
+			local Transparency = math.floor((0.9 - 0.06 * Record.Lit) * 200 + 0.5) / 200
+			if Transparency ~= Record.LB then
+				Record.LB = Transparency
+				Record.Face.BackgroundTransparency = Transparency
+			end
+		end
+	end
+
+	--------------------------------------------------------------- layout
+
+	local LastLayout, LastArtist
+	local function LayoutStep()
+		local S = State.SideProgress or 0
+		local Key = math.floor(S * 400 + 0.5)
+		local ShowArtist = Artist ~= ""
+		if Key == LastLayout and ShowArtist == LastArtist then
+			return
+		end
+		LastLayout, LastArtist = Key, ShowArtist
+
+		local CardAW = math.floor(Lerp(AW, 314, S) + 0.5)
+		local CardBW = math.floor(Lerp(BW, 314, S) + 0.5)
+		CardA.Size = UDim2.fromOffset(CardAW, 96)
+		CardB.Size = UDim2.fromOffset(CardBW, 50)
+		Now.Size = UDim2.fromOffset(CardAW, 96)
+		State.TitleWidth = CardAW - 132
+
+		if ArtistLabel.Visible ~= ShowArtist then
+			ArtistLabel.Visible = ShowArtist
+		end
+		ArtistLabel.Size = UDim2.fromOffset(CardAW - 110, 14)
+		TitleLabel.Size = UDim2.fromOffset(State.TitleWidth, 20)
+		TitleLabel.Position = UDim2.fromOffset(98, ShowArtist and 33 or 25)
+		StateText.Size = UDim2.fromOffset(CardAW - 126, 14)
+		StateText.Position = UDim2.fromOffset(114, ShowArtist and 63 or 55)
+		StateIcon.Position = UDim2.fromOffset(104, ShowArtist and 70 or 62)
+
+		local TrackW = CardBW - 150
+		State.TrackWidth = TrackW
+		Seek.Size = UDim2.fromOffset(CardBW + M * 2, 50 + M * 2)
+		Track.Size = UDim2.fromOffset(TrackW, 5)
+		Remaining.Position = UDim2.fromOffset(M + 14 + TrackW - 60, M + 26)
+		SeekHit.Size = UDim2.fromOffset(TrackW + 8, 28)
+		local Center = M + CardBW - 14
+		for _, Entry in ipairs(State.Transport) do
+			Entry.Record.Holder.Position = UDim2.fromOffset(Center + Entry.DX, M + 25)
+		end
+	end
+
+	--------------------------------------------------------------- progress
+
+	local LastFill = 0
+	local function ProgressStep(Delta)
+		local Pos, Len = Position, Duration
+		if ScrubDrag then
+			Pos = ScrubRel * Len
+		elseif Playing and Len > 0 then
+			Pos = math.min(Len, Position + (os.clock() - PositionAt))
+		end
+
+		local Ratio = Len > 0 and math.clamp(Pos / Len, 0, 1) or 0
+		if math.abs(Ratio - LastFill) > 0.0005 then
+			LastFill = Ratio
+			Fill.Size = UDim2.fromScale(Ratio, 1)
+		end
+
+		local ElapsedText = Surface.FormatTime(Pos)
+		local RemainText = "-" .. Surface.FormatTime(math.max(Len - Pos, 0))
+		if Elapsed.Text ~= ElapsedText then
+			Elapsed.Text = ElapsedText
+		end
+		if Remaining.Text ~= RemainText then
+			Remaining.Text = RemainText
+		end
+	end
+
+	--------------------------------------------------------------- transport paint
+
+	local PlayName
+	local function PaintPlay()
+		local Name = Playing and "pause" or "play"
+		if PlayName == Name then
+			return
+		end
+		local First = PlayName == nil
+		PlayName = Name
+		local Source, Rect = Icon(Name)
+		State.PlayIcon.Image = Source
+		State.PlayIcon.ImageRectOffset, State.PlayIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
+		if not First then
+			Pop(State.PlayIcon)
+		end
+	end
+
+	local StateName
+	local function PaintState()
+		local Name = Playing and "play" or "pause"
+		if StateName ~= Name then
+			StateName = Name
+			local Source, Rect = Icon(Name)
+			StateIcon.Image = Source
+			StateIcon.ImageRectOffset, StateIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
+		end
+		local Text_ = (Playing and "Playing" or "Paused") .. (State.Shuffled and "  \u{b7}  Shuffle" or "")
+		if StateText.Text ~= Text_ then
+			StateText.Text = Text_
+		end
+	end
+
+	--------------------------------------------------------------- sources list
+
+	local function RenderSources()
+		local Provider = State.Provider
+		if Provider then
+			local Name = Provider.Name or "Library"
+			if Name == "My files" then
+				Name = "Library"
+			end
+			SourceLabel.Text = Name
+		end
+
+		for _, Child in ipairs(SourcesList:GetChildren()) do
+			if Child:IsA("GuiObject") then
+				Child:Destroy()
+			end
+		end
+
+		for Index, Provider in ipairs(State.Sources) do
+			local Active = Index == State.SourceIndex
+			local Row = New("TextButton", {
+				Parent = SourcesList,
+				Text = "",
+				AutoButtonColor = false,
+				BackgroundColor3 = WHITE,
+				BackgroundTransparency = Active and 0.9 or 0.955,
+				BorderSizePixel = 0,
+				Position = UDim2.fromOffset(0, (Index - 1) * 34),
+				Size = UDim2.new(1, 0, 0, 30),
+				ZIndex = 9,
+			})
+			Corner(Row, 10)
+
+			local Glyph_ = Glyph(Row, Active and "play" or "library", 15, Active and Color3.fromRGB(30, 215, 96) or WHITE, 10)
+			Glyph_.AnchorPoint = Vector2.new(0, 0)
+			Glyph_.Position = UDim2.fromOffset(10, 8)
+			Glyph_.Size = UDim2.fromOffset(15, 15)
+
+			New("TextLabel", {
+				Parent = Row,
+				BackgroundTransparency = 1,
+				FontFace = Bold,
+				TextSize = 12,
+				TextColor3 = Active and Color3.fromRGB(30, 215, 96) or WHITE,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Text = (Provider.Name or "Source") .. (Active and "  (playing here)" or ""),
+				Position = UDim2.fromOffset(34, 0),
+				Size = UDim2.new(1, -44, 1, 0),
+				ZIndex = 10,
+			})
+
+			Row.Activated:Connect(function()
+				KeepUntil = os.clock() + 4
+				State:SelectSource(Index)
+			end)
+		end
+	end
+	self.RenderSources = RenderSources
+
+	--------------------------------------------------------------- public
+
+	function DynamicIsland:Expand()
+		if self.Expanded or not self.Alive then
+			return
+		end
+		self.Expanded = true
+		LeftAt = nil
+		Expand.goal, Expand.at = 1, os.clock()
+		PaintState()
+		PaintPlay()
+		if self.Config.OnExpand then
+			pcall(self.Config.OnExpand, self)
+		end
+	end
+
+	function DynamicIsland:Collapse()
+		if not self.Expanded or not self.Alive then
+			return
+		end
+		self.Expanded = false
+		self.SideOpen = false
+		Expand.goal, Expand.at = 0, os.clock()
+		if self.Config.OnCollapse then
+			pcall(self.Config.OnCollapse, self)
+		end
+	end
+
+	function DynamicIsland:Toggle()
+		if self.Expanded then
+			self:Collapse()
+		else
 			self:Expand()
 		end
 	end
 
-	self.PillHit.MouseButton1Down:Connect(Begin)
-	self.HeaderHit.MouseButton1Down:Connect(Begin)
-
-	local function Move(Input)
-		if not Pressed or not self.Floating then
-			return
-		end
-		if Input.UserInputType ~= Enum.UserInputType.MouseMovement and Input.UserInputType ~= Enum.UserInputType.Touch then
-			return
-		end
-		local Delta = Input.Position - DragStart
-		if math.abs(Delta.X) > 4 or math.abs(Delta.Y) > 4 then
-			Dragging = true
-			Moved = math.max(Moved, math.abs(Delta.X) + math.abs(Delta.Y))
-			Shell.Position = UDim2.new(
-				StartPosition.X.Scale,
-				StartPosition.X.Offset + Delta.X,
-				StartPosition.Y.Scale,
-				StartPosition.Y.Offset + Delta.Y
-			)
-		end
-	end
-
-	table.insert(
-		self.Signals,
-		UserInputService.InputChanged:Connect(Move)
-	)
-
-	table.insert(
-		self.Signals,
-		UserInputService.InputEnded:Connect(function(Input)
-			if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-				Release()
-			end
-		end)
-	)
-
-	self.PillHit.MouseButton1Up:Connect(Release)
-	self.HeaderHit.MouseButton1Up:Connect(Release)
-
-	-- right click anywhere on the island closes the card
-	table.insert(
-		self.Signals,
-		UserInputService.InputBegan:Connect(function(Input)
-			if Input.UserInputType ~= Enum.UserInputType.MouseButton2 then
-				return
-			end
-			local Mouse = UserInputService:GetMouseLocation()
-			local Size, Position = Shell.AbsoluteSize, Shell.AbsolutePosition
-			if Mouse.X >= Position.X and Mouse.X <= Position.X + Size.X and Mouse.Y >= Position.Y and Mouse.Y <= Position.Y + Size.Y then
-				self:Collapse()
-			end
-		end)
-	)
-end
-
----------------------------------------------------------------------------
--- state
----------------------------------------------------------------------------
-
-function DynamicIsland:RenderState(State)
-	local Title = State.Title ~= "" and State.Title or State.Hint or "Nothing playing"
-	self.TitleLabel.Text = Title
-	self.ArtistLabel.Text = State.Artist ~= "" and State.Artist or (State.Album or "")
-
-	local Cover = State.Cover or ""
-	if Cover ~= self.CoverId then
-		self.CoverId = Cover
-		if Cover ~= "" then
-			self.Cover.Image = Cover
-			self.Cover.BackgroundTransparency = 1
-			self.CoverGlyph.Visible = false
+	function DynamicIsland:ToggleSide(Force)
+		if Force ~= nil then
+			self.SideOpen = Force == true
 		else
-			self.Cover.Image = ""
-			self.Cover.BackgroundTransparency = 0
-			self.CoverGlyph.Visible = true
+			self.SideOpen = not self.SideOpen
+		end
+		if self.SideOpen and not self.Expanded then
+			self:Expand()
 		end
 	end
 
-	if State.Duration and State.Duration > 0 then
-		local Ratio = math.clamp((State.Position or 0) / State.Duration, 0, 1)
-		Tween(self.Fill, 0.2, { Size = UDim2.new(Ratio, 0, 1, 0) }, Enum.EasingStyle.Linear):Play()
-		self.Elapsed.Text = Surface.FormatTime(State.Position or 0)
-		self.Remaining.Text = "-" .. Surface.FormatTime(math.max(State.Duration - (State.Position or 0), 0))
-	else
-		self.Elapsed.Text = "0:00"
-		self.Remaining.Text = "-0:00"
+	function DynamicIsland:ToggleShuffle()
+		self.Shuffled = not self.Shuffled
+		local Provider = self.Provider
+		if Provider then
+			if type(Provider.Shuffle) == "function" then
+				pcall(Provider.Shuffle, Provider, self.Shuffled)
+			else
+				Provider.Shuffle = self.Shuffled
+			end
+		end
+		local Record = self.ChipBy.shuffle
+		if Record then
+			Record.On = self.Shuffled
+		end
+		PaintState()
 	end
 
-	local Playing = State.Playing == true
-	self.PlayIcon.Image = Creator.Icon(Playing and "sfsymbols:pauseFill" or "sfsymbols:playFill")
-	self.StateIcon.Image = Creator.Icon(Playing and "sfsymbols:playFill" or "sfsymbols:pauseFill")
-	self.StateText.Text = Playing and "Playing" or "Paused"
-end
-
-function DynamicIsland:RenderError(Message)
-	if self.ArtistLabel then
-		self.ArtistLabel.Text = Message
-	end
-end
-
-function DynamicIsland:RenderSources()
-	local Provider = self.Provider
-	if Provider then
-		self.SourceLabel.Text = Provider.Name or "Library"
-	end
-end
-
----------------------------------------------------------------------------
--- expand / collapse
----------------------------------------------------------------------------
-
-function DynamicIsland:_RefreshShadow()
-	if not self.Alive then
-		return
+	function DynamicIsland:SelectSource(Index, Silent)
+		Surface.SelectSource(self, Index, Silent)
 	end
 
-	if self.Shadow then
-		pcall(function()
-			self.Shadow:Destroy()
-		end)
-		self.Shadow = nil
+	function DynamicIsland:SetSource(Source)
+		Surface.SetSource(self, Source)
 	end
 
-	local Ok, Shadow = pcall(function()
-		return New("UIShadow", {
-			Color = Color3.new(0, 0, 0),
-			BlurRadius = UDim.new(0, 22),
-			Offset = UDim2.fromOffset(0, 8),
-			Transparency = 0.55,
-			Parent = self.Shell,
-		})
-	end)
-
-	if Ok then
-		self.Shadow = Shadow
-	end
-end
-
-function DynamicIsland:Fit()
-	if not self.Alive then
-		return
+	function DynamicIsland:CycleSource()
+		local Next_ = (self.SourceIndex % math.max(#self.Sources, 1)) + 1
+		self:SelectSource(Next_)
 	end
 
-	local Available = self.Parent and math.max(self.Parent.AbsoluteSize.X - 8, 120) or math.huge
-	local Design = self.Expanded and OpenW or PillW
-	local Scale = math.clamp(Available / Design, 0.3, 1)
-	if self.Config.Scale then
-		Scale = Scale * self.Config.Scale
-	end
-
-	self.FitScale = Scale
-	self.ShellScale.Scale = Scale
-end
-
-function DynamicIsland:_ApplyExpand(Instant)
-	local Duration = Instant and 0 or 0.44
-
-	if self.Shadow then
-		pcall(function()
-			self.Shadow:Destroy()
-		end)
-		self.Shadow = nil
-	end
-
-	self.Card.Visible = true
-	self.PillWave.Visible = false
-	self.PillHit.Visible = false
-	self.HeaderHit.Visible = true
-	self:Fit()
-
-	Tween(self.Shell, Duration, { Size = UDim2.fromOffset(OpenW, OpenH) }, Ease, EaseOut):Play()
-	Tween(self.ShellCorner, Duration, { CornerRadius = UDim.new(0, OpenRadius) }, Ease, EaseOut):Play()
-	Tween(self.Cover, Duration, {
-		Size = UDim2.fromOffset(OpenCover, OpenCover),
-		Position = UDim2.fromOffset(OpenCoverAt.X, OpenCoverAt.Y),
-	}, Ease, EaseOut):Play()
-	Tween(self.CoverCorner, Duration, { CornerRadius = UDim.new(0, OpenCoverRadius) }, Ease, EaseOut):Play()
-	Tween(self.Card, Instant and 0 or 0.26, { GroupTransparency = 0 }, Enum.EasingStyle.Quad, EaseOut):Play()
-
-	task.delay(Duration + 0.02, function()
-		self:_RefreshShadow()
-	end)
-end
-
-function DynamicIsland:_ApplyCollapse(Instant)
-	local Duration = Instant and 0 or 0.38
-
-	if self.Shadow then
-		pcall(function()
-			self.Shadow:Destroy()
-		end)
-		self.Shadow = nil
-	end
-
-	self:Fit()
-
-	Tween(self.Shell, Duration, { Size = UDim2.fromOffset(PillW, PillH) }, Ease, EaseOut):Play()
-	Tween(self.ShellCorner, Duration, { CornerRadius = UDim.new(0, PillRadius) }, Ease, EaseOut):Play()
-	Tween(self.Cover, Duration, {
-		Size = UDim2.fromOffset(PillCover, PillCover),
-		Position = UDim2.fromOffset(PillCoverAt.X, PillCoverAt.Y),
-	}, Ease, EaseOut):Play()
-	Tween(self.CoverCorner, Duration, { CornerRadius = UDim.new(0, PillCoverRadius) }, Ease, EaseOut):Play()
-	Tween(self.Card, Instant and 0 or 0.14, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, EaseIn):Play()
-
-	task.delay(Instant and 0 or 0.18, function()
-		if not self.Alive or self.Expanded then
+	function DynamicIsland:TogglePlay()
+		local Provider = self.Provider
+		if not Provider then
 			return
 		end
-		self.Card.Visible = false
-		self.PillWave.Visible = true
-		self.PillHit.Visible = true
-		self.HeaderHit.Visible = false
+		if Playing then
+			Provider:Pause()
+		else
+			Provider:Play()
+		end
+	end
+
+	function DynamicIsland:Play()
+		if self.Provider then
+			self.Provider:Play()
+		end
+	end
+
+	function DynamicIsland:Pause()
+		if self.Provider then
+			self.Provider:Pause()
+		end
+	end
+
+	function DynamicIsland:Next()
+		if self.Provider then
+			self.Provider:Next()
+		end
+	end
+
+	function DynamicIsland:Previous()
+		if self.Provider then
+			self.Provider:Previous()
+		end
+	end
+
+	function DynamicIsland:Seek(Seconds)
+		if self.Provider and self.Provider.Seek then
+			self.Provider:Seek(Seconds)
+		end
+	end
+
+	function DynamicIsland:SetVolume(Percent)
+		if self.Provider and self.Provider.SetVolume then
+			self.Provider:SetVolume(math.clamp(Percent or 60, 0, 100))
+		end
+	end
+
+	function DynamicIsland:GetState()
+		return self.MusicState
+	end
+
+	function DynamicIsland:Show()
+		self.Root.Visible = true
+	end
+
+	function DynamicIsland:Hide()
+		self.Root.Visible = false
+	end
+
+	function DynamicIsland:RenderState(State_)
+		self.MusicState = State_
+
+		Title = State_.Title ~= "" and State_.Title or (State_.Hint or "Nothing playing")
+		Artist = State_.Artist or ""
+		Hint = State_.Hint or ""
+		Playing = State_.Playing == true
+		Duration = tonumber(State_.Duration) or 0
+		Position = tonumber(State_.Position) or 0
+		PositionAt = os.clock()
+
+		if TitleLabel.Text ~= Title then
+			TitleLabel.Text = Title
+		end
+		if ArtistLabel.Text ~= Artist then
+			ArtistLabel.Text = Artist
+		end
+
+		local NewCover = State_.Cover or ""
+		if Cover ~= NewCover then
+			Cover = NewCover
+			if Cover ~= "" then
+				CoverFrame.Image = Cover
+				Mark.Visible = false
+				CoverGrad.Enabled = false
+				CoverFrame.BackgroundTransparency = 1
+			else
+				CoverFrame.Image = ""
+				Mark.Visible = true
+				CoverGrad.Enabled = true
+				CoverFrame.BackgroundTransparency = 0
+			end
+		end
+
+		PaintPlay()
+		PaintState()
+	end
+
+	function DynamicIsland:RenderError(Message)
+		Hint = tostring(Message or "Unavailable")
+		if ArtistLabel then
+			ArtistLabel.Text = Hint
+		end
+	end
+
+	function DynamicIsland:Destroy()
+		if not self.Alive then
+			return
+		end
+		self.Alive = false
+
+		for _, Signal in ipairs(self.Signals) do
+			pcall(function()
+				Signal:Disconnect()
+			end)
+		end
+		self.Signals = {}
+
+		Surface.Release(self)
+
+		if self.Host then
+			self.Host:Destroy()
+			self.Host = nil
+		end
+		self.Root = nil
+	end
+
+	--------------------------------------------------------------- input
+
+	Hit.Activated:Connect(function()
+		Pressing, Peeking = false, false
+		if State.Expanded then
+			State:Collapse()
+		else
+			State:Expand()
+		end
 	end)
 
-	task.delay(Duration + 0.02, function()
-		self:_RefreshShadow()
+	Hit.InputBegan:Connect(function(Input)
+		local Type_ = Input.UserInputType
+		if Type_ == Enum.UserInputType.MouseButton2 or Type_ == Enum.UserInputType.MouseButton3 then
+			State:Expand()
+		end
+		if (Type_ == Enum.UserInputType.MouseButton1 or Type_ == Enum.UserInputType.Touch) and not State.Expanded then
+			Pressing = true
+		end
 	end)
-end
 
-function DynamicIsland:Expand()
-	if self.Expanded or not self.Alive then
-		return
-	end
-	self.Expanded = true
-	self:_ApplyExpand(false)
-	if self.Config.OnExpand then
-		pcall(self.Config.OnExpand, self)
-	end
-end
+	Hit.MouseLeave:Connect(function()
+		Pressing = false
+	end)
 
-function DynamicIsland:Collapse()
-	if not self.Expanded or not self.Alive then
-		return
+	local function RelAt(X)
+		return math.clamp((X - Track.AbsolutePosition.X) / math.max(1, Track.AbsoluteSize.X), 0, 1)
 	end
-	self.Expanded = false
-	self:_ApplyCollapse(false)
-	if self.Config.OnCollapse then
-		pcall(self.Config.OnCollapse, self)
-	end
-end
 
-function DynamicIsland:Toggle()
-	if self.Expanded then
-		self:Collapse()
-	else
+	local function SeekTo(Rel)
+		local Provider = State.Provider
+		if Provider and Provider.Seek and Duration > 0 then
+			pcall(Provider.Seek, Provider, Rel * Duration)
+		end
+		Position, PositionAt = Rel * Duration, os.clock()
+	end
+
+	SeekHit.InputBegan:Connect(function(Input)
+		local Type_ = Input.UserInputType
+		if Type_ == Enum.UserInputType.MouseButton1 or Type_ == Enum.UserInputType.Touch then
+			ScrubDrag = true
+			ScrubRel = RelAt(Input.Position.X)
+		end
+	end)
+
+	table.insert(self.Signals, UserInputService.InputBegan:Connect(function(Input)
+		local Type_ = Input.UserInputType
+		if (Type_ == Enum.UserInputType.MouseButton1 or Type_ == Enum.UserInputType.Touch or Type_ == Enum.UserInputType.MouseWheel)
+			and State.Expanded
+			and PointerOver(28)
+		then
+			TouchAt = os.clock()
+		end
+	end))
+
+	table.insert(self.Signals, UserInputService.InputChanged:Connect(function(Input)
+		local Type_ = Input.UserInputType
+		if Type_ == Enum.UserInputType.MouseWheel and State.Expanded and PointerOver(28) then
+			TouchAt = os.clock()
+		end
+		local Moving = Type_ == Enum.UserInputType.MouseMovement or Type_ == Enum.UserInputType.Touch
+		if ScrubDrag and Moving then
+			ScrubRel = RelAt(Input.Position.X)
+		end
+		if GlassHeld and Moving then
+			GlassHeld.Raw = Vector2.new(Input.Position.X, Input.Position.Y) - GlassHeld.Start
+		end
+	end))
+
+	table.insert(self.Signals, UserInputService.InputEnded:Connect(function(Input)
+		local Type_ = Input.UserInputType
+		local Up = Type_ == Enum.UserInputType.MouseButton1 or Type_ == Enum.UserInputType.Touch
+		if Up then
+			Pressing = false
+		end
+		if ScrubDrag and Up then
+			SeekTo(ScrubRel)
+			ScrubDrag = false
+		end
+		local Record = GlassHeld
+		if Record and Up then
+			GlassHeld = nil
+			Record.Hold = false
+			local Distance = Record.Raw.Magnitude
+			if Record.Callback and ((Record.Touch and Distance < 36) or (not Record.Touch and Record.Over and Distance < 60)) then
+				pcall(Record.Callback)
+			end
+		end
+	end))
+
+	--------------------------------------------------------------- loop
+
+	local function Hover(Now)
+		local Open = State.Expanded
+		if PointerOver(Open and 28 or 0) then
+			LeftAt = nil
+			Touched = true
+			Peeking = not Open
+		else
+			Peeking = false
+			if Open and Touched and not ScrubDrag and not GlassHeld and State.Config.AutoCollapse ~= false then
+				local Busy = Now - (TouchAt or -9) < 1.2
+					or Now - Expand.at < 0.6
+					or math.abs(Width.v) > 40
+					or math.abs(Height.v) > 40
+				if Busy or not LeftAt then
+					LeftAt = Now
+				end
+				if Now - LeftAt > 1 then
+					State:Collapse()
+				end
+			end
+		end
+	end
+
+	local function FrameStep(Delta)
+		local Now = os.clock()
+
+		if not Root.Visible then
+			Root.Visible = true
+		end
+
+		BeatAcc += Delta
+		if BeatAcc >= 0.12 then
+			BeatAcc = 0
+			BeatTarget = math.random()
+		end
+		Beat = Fade(Beat, BeatTarget, 6, Delta)
+
+		Hover(Now)
+		Shape(Delta)
+		FadeStep(Delta, Now)
+
+		if Expand.a > 0 then
+			ProgressStep(Delta)
+			PaintPlay()
+			GlassStep(Delta)
+			SideStep(Delta)
+			LayoutStep()
+			ChipStateStep()
+			ChipStep(Delta)
+			TopStep(Delta, Root.Size.X.Offset)
+			StatusStep(Now)
+			TintStep()
+		end
+
+		-- The pill's bars animate while collapsed too, so they run outside the
+		-- expand gate the way the reference does.
+		WaveStep(Delta)
+	end
+
+	local Connection = RunService.RenderStepped:Connect(function(Delta)
+		if not State.Alive then
+			return
+		end
+		local Ok, Err = pcall(FrameStep, Delta)
+		if Ok then
+			pcall(FX.Step)
+		else
+			warn("WindUI dynamic island: " .. tostring(Err))
+		end
+	end)
+	self.Connection = Connection
+
+	--------------------------------------------------------------- boot
+
+	Root.Visible = true
+	Expand.a, Expand.goal, Expand.at = 0, 0, os.clock()
+
+	for _, Descendant in ipairs(Root:GetDescendants()) do
+		FX.Claim(Descendant)
+	end
+	table.insert(self.Signals, Root.DescendantAdded:Connect(FX.Claim))
+
+	Surface.Bind(self, Config)
+	PaintState()
+	PaintPlay()
+
+	if Config.Expanded then
+		self.Expanded = false
 		self:Expand()
 	end
-end
 
----------------------------------------------------------------------------
--- public actions
----------------------------------------------------------------------------
-
-function DynamicIsland:SelectSource(Index, Silent)
-	Surface.SelectSource(self, Index, Silent)
-end
-
-function DynamicIsland:SetSource(Source)
-	Surface.SetSource(self, Source)
-end
-
-function DynamicIsland:CycleSource()
-	local Next_ = (self.SourceIndex % math.max(#self.Sources, 1)) + 1
-	self:SelectSource(Next_)
-end
-
-function DynamicIsland:ToggleShuffle()
-	self.Shuffled = not self.Shuffled
-	local Provider = self.Provider
-	if Provider then
-		Provider.Shuffle = self.Shuffled
-	end
-	Tween(self.ShuffleChip, 0.18, { BackgroundTransparency = self.Shuffled and 0.1 or 0.35 }):Play()
-end
-
-function DynamicIsland:TogglePlay()
-	local Provider = self.Provider
-	if not Provider then
-		return
-	end
-	if self.MusicState and self.MusicState.Playing then
-		Provider:Pause()
-	else
-		Provider:Play()
-	end
-end
-
-function DynamicIsland:Play()
-	if self.Provider then
-		self.Provider:Play()
-	end
-end
-
-function DynamicIsland:Pause()
-	if self.Provider then
-		self.Provider:Pause()
-	end
-end
-
-function DynamicIsland:Next()
-	if self.Provider then
-		self.Provider:Next()
-	end
-end
-
-function DynamicIsland:Previous()
-	if self.Provider then
-		self.Provider:Previous()
-	end
-end
-
-function DynamicIsland:Seek(Seconds)
-	if self.Provider and self.Provider.Seek then
-		self.Provider:Seek(Seconds)
-	end
-end
-
-function DynamicIsland:SetVolume(Percent)
-	self.Volume = math.clamp(Percent or 60, 0, 100)
-	if self.Provider and self.Provider.SetVolume then
-		self.Provider:SetVolume(self.Volume)
-	end
-end
-
-function DynamicIsland:GetState()
-	return self.MusicState
-end
-
-function DynamicIsland:Show()
-	self.Shell.Visible = true
-end
-
-function DynamicIsland:Hide()
-	self.Shell.Visible = false
-end
-
-function DynamicIsland:Destroy()
-	if not self.Alive then
-		return
-	end
-	self.Alive = false
-
-	for _, Signal in ipairs(self.Signals) do
-		pcall(function()
-			Signal:Disconnect()
-		end)
-	end
-	self.Signals = {}
-
-	Surface.Release(self)
-
-	if self.Shell then
-		self.Shell:Destroy()
-		self.Shell = nil
-	end
+	return self
 end
 
 return DynamicIsland

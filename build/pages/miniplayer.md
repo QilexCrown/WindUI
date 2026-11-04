@@ -1,4 +1,4 @@
-The Miniplayer is the standalone music card: 300 x 162, black at the top that lets the world through down the card, artwork on the left, the title and artist beside it, a four-bar wave top right, the scrubber with both times, then previous / play / next and the source disc. Drag it anywhere.
+The Miniplayer is the standalone music card: 260 x 173, ported from the Novoline "Now playing" deck card. Black at the top that lets the world through down the card, the "Now playing" line with the note glyph on the right, 56 px artwork at (18, 46), the title and artist beside it, then three round controls on the bottom edge — 34 px previous and next, 40 px play with the light face. Drag it anywhere.
 
 It is not the dynamic island and it is not connected to it — that is a separate element (`WindUI:DynamicIsland`). This one is just the card.
 
@@ -29,7 +29,7 @@ It scales itself down to fit the parent, so a narrow tab still gets the whole ca
 
 ## Sources
 
-`Providers` is an ordered list. The first entry boots; the ellipsis disc at the bottom right opens the list and switches between them.
+`Providers` is an ordered list. The first entry boots. The card itself has no source list — that lives on the dynamic island's Library chip; switch here with `SetSource`.
 
 | Value | What it plays |
 | --- | --- |

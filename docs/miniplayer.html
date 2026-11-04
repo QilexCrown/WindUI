@@ -261,7 +261,7 @@ footer.site a { color: var(--muted); }
 <article>
 <h1>Miniplayer</h1>
 <p class="lead">The standalone music card - 300 x 162, real cover art, local songs, Spotify, or a bridge. Drag it anywhere.</p>
-<p>The Miniplayer is the standalone music card: 300 x 162, black at the top that lets the world through down the card, artwork on the left, the title and artist beside it, a four-bar wave top right, the scrubber with both times, then previous / play / next and the source disc. Drag it anywhere.</p>
+<p>The Miniplayer is the standalone music card: 260 x 173, ported from the Novoline "Now playing" deck card. Black at the top that lets the world through down the card, the "Now playing" line with the note glyph on the right, 56 px artwork at (18, 46), the title and artist beside it, then three round controls on the bottom edge — 34 px previous and next, 40 px play with the light face. Drag it anywhere.</p>
 <p>It is not the dynamic island and it is not connected to it — that is a separate element (<code>WindUI:DynamicIsland</code>). This one is just the card.</p>
 <h2 id="floating">Floating<a class="anchor" href="#floating" aria-hidden="true">#</a></h2>
 <pre class="code" data-lang="lua"><code>local Music = WindUI:Miniplayer({
@@ -278,7 +278,7 @@ footer.site a { color: var(--muted); }
 })</code></pre>
 <p>It scales itself down to fit the parent, so a narrow tab still gets the whole card.</p>
 <h2 id="sources">Sources<a class="anchor" href="#sources" aria-hidden="true">#</a></h2>
-<p><code>Providers</code> is an ordered list. The first entry boots; the ellipsis disc at the bottom right opens the list and switches between them.</p>
+<p><code>Providers</code> is an ordered list. The first entry boots. The card itself has no source list — that lives on the dynamic island's Library chip; switch here with <code>SetSource</code>.</p>
 <div class="table-wrap"><table><thead><tr><th>Value</th><th>What it plays</th></tr></thead><tbody><tr><td><code>"files"</code></td><td>Audio files in <code>Folder</code>, with sidecar cover art (<code>song.mp3</code> + <code>song.jpg</code>)</td></tr><tr><td><code>"spotify"</code></td><td>The Spotify Web API through PKCE — needs <code>Spotify = { ClientId = "..." }</code></td></tr><tr><td><code>"demo"</code></td><td>A built-in preview track, no files or account needed</td></tr><tr><td><code>"sound"</code></td><td>A <code>Sound</code> instance you already own, via <code>Sound = sound</code></td></tr><tr><td><code>{ Id, Name, Url }</code></td><td>A bridge to your own backend</td></tr></tbody></table></div>
 <pre class="code" data-lang="lua"><code>local Music = WindUI:Miniplayer({
     Providers = {

@@ -9,7 +9,7 @@ local Island = WindUI:DynamicIsland({
 })
 ```
 
-Collapsed it is 212 x 40 with 28 px artwork at (6, 6). Opened it is 540 x 204: the now-playing card is 320 x 114 at (24, 50) with 84 px artwork, the Shuffle and Library chips are 160 x 54 on the right, and the scrubber with both times and the three transport discs sits under them.
+Collapsed it is 212 x 40 with 28 px artwork at (6, 6) and six 2 px bars on the right edge. Opened it is 476 x 204: the now-playing card is 288 x 96 at (14, 36) with 72 px artwork, the Shuffle and Library chips are two 152 x 44 rows on the right, and the 448 x 50 scrubber with both times and the three transport discs sits under them. The bars keep animating while the pill is collapsed.
 
 Drag the pill to move it, drag the header to move the open card.
 
@@ -29,7 +29,7 @@ It scales itself down to fit the parent, so a narrow tab still gets the whole ca
 
 ## Sources
 
-`Providers` is an ordered list. The first entry boots; the Library chip cycles through the rest.
+`Providers` is an ordered list. The first entry boots; the Library chip opens the Sources pane, which grows the card to 752 wide and lists every provider. Shuffle toggles the active provider's shuffle. With the pane open both chips shrink to 30 x 30 icon buttons in a column beside it.
 
 | Value | What it plays |
 | --- | --- |
@@ -61,6 +61,7 @@ local Island = WindUI:DynamicIsland({
 | `Expanded` | `boolean` | `false` | Boot with the card open |
 | `Scale` | `number` | `1` | Multiplier on the fitted scale |
 | `PollRate` | `number` | `0.25` | Seconds between provider polls |
+| `AutoCollapse` | `boolean` | `true` | Count down to the pill after the pointer has been over the island; `false` keeps it open |
 | `OnExpand` | `function` | `nil` | `function(DynamicIsland)` |
 | `OnCollapse` | `function` | `nil` | `function(DynamicIsland)` |
 
@@ -79,6 +80,8 @@ Island:Previous()
 Island:Seek(42)
 Island:SetVolume(35)
 Island:ToggleShuffle()
+Island:ToggleSide()       -- sources pane
+Island:ToggleSide(true)   -- force open, false to force closed
 
 Island:CycleSource()
 Island:SetSource("spotify")  -- index or provider id
