@@ -1201,7 +1201,9 @@ function Folder:Play(Done)
 		return
 	end
 
-	Sound:Resume()
+	-- Play() resumes a paused sound and starts one that never ran; Resume()
+	-- does nothing on a sound that has not started yet.
+	Sound:Play()
 	self.Status = "Playing"
 	Done(true)
 end

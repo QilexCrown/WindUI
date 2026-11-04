@@ -8,11 +8,11 @@
 --   -- docked inside a window instead of floating over the game:
 --   local Player = WindUI:Miniplayer({ Parent = Tab.Frame })
 --
--- Ported from the Novoline "Now playing" card: 260 x 173, the header line and
--- the note glyph on the right, 56 px artwork at (18, 46), the title and artist
--- beside it, then three round controls on the bottom edge - 34 px previous and
--- next, 40 px play with the light face. Nothing here is wired to the dynamic
--- island; the two are separate elements that share provider plumbing only.
+-- Ported from the Novoline "Now playing" card: 440 x 177, 86 px artwork at
+-- (18, 16), the title and artist beside it, the level glyph top right, the
+-- scrubber with both times, then bare previous / play / next glyphs with the
+-- volume control on the right. Same provider set as the dynamic island, so a
+-- track started here shows and stops on both.
 
 local cloneref = (cloneref or clonereference or function(instance)
 	return instance
@@ -33,22 +33,24 @@ Miniplayer.__index = Miniplayer
 -- metrics, in card pixels
 ---------------------------------------------------------------------------
 
-local W, H = 260, 173
+local W, H = 440, 177
 local Radius = 24
 
-local CoverSize = 56
-local CoverAt = Vector2.new(18, 46)
-local CoverRadius = 12
+local CoverSize = 86
+local CoverAt = Vector2.new(18, 16)
+local CoverRadius = 16
 
-local ControlsY = H - 18 - 20
+-- The scrubber sits clear of the 86 px artwork (which ends at y = 102).
+local ScrubY = 118
+local TrackX, TrackW, TrackH = 62, W - 124, 4
+local ControlsY = 148
 
 local Palette = {
 	Shell = Color3.fromRGB(0, 0, 0),
 	Text = Color3.fromRGB(255, 255, 255),
-	Muted = Color3.fromRGB(154, 156, 164),
+	Muted = Color3.fromRGB(150, 152, 160),
 	Tile = Color3.fromRGB(40, 40, 44),
-	Face = Color3.fromRGB(242, 242, 244),
-	Ink = Color3.fromRGB(18, 18, 20),
+	Accent = Color3.fromRGB(30, 215, 96),
 }
 
 local EaseOut = Enum.EasingDirection.Out
@@ -91,7 +93,7 @@ local function Button(Properties)
 	return New("TextButton", Properties)
 end
 
--- "Artist - Song" and "Artist â€“ Song" both split the way the reference does.
+-- "Artist - Song" and "Artist – Song" both split the way the reference does.
 local function SplitName(Name)
 	Name = tostring(Name or ""):gsub("%.%w+$", "")
 	local Artist, Song = Name:match("^(.-)%s+%-%s+(.+)$")
@@ -117,6 +119,7 @@ function Miniplayer.New(Config)
 		CoverId = nil,
 		Volume = 60,
 		Muted = false,
+		Seeking = false,
 		Signals = {},
 	}, Miniplayer)
 
@@ -145,10 +148,10 @@ function Miniplayer.New(Config)
 		Rotation = 90,
 		Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(0.34, 0.05),
-			NumberSequenceKeypoint.new(0.58, 0.18),
-			NumberSequenceKeypoint.new(0.8, 0.52),
-			NumberSequenceKeypoint.new(1, 0.55),
+			NumberSequenceKeypoint.new(0.4, 0.05),
+			NumberSequenceKeypoint.new(0.66, 0.16),
+			NumberSequenceKeypoint.new(0.86, 0.48),
+			NumberSequenceKeypoint.new(1, 0.52),
 		}),
 		Parent = Shell,
 	})
@@ -156,9 +159,9 @@ function Miniplayer.New(Config)
 	pcall(function()
 		New("UIShadow", {
 			Color = Color3.new(0, 0, 0),
-			BlurRadius = UDim.new(0, 16),
-			Offset = UDim2.fromOffset(0, 6),
-			Transparency = 0.6,
+			BlurRadius = UDim.new(0, 18),
+			Offset = UDim2.fromOffset(0, 7),
+			Transparency = 0.58,
 			Parent = Shell,
 		})
 	end)
@@ -167,26 +170,44 @@ function Miniplayer.New(Config)
 	self.Shell = Shell
 	self.ShellScale = ShellScale
 
-	--------------------------------------------------------------- header
+	--------------------------------------------------------------- backdrop
 
-	local Heading = Text({
-		Name = "Heading",
-		Size = UDim2.fromOffset(200, 18),
-		Position = UDim2.fromOffset(18, 16),
-		Text = "Now playing",
-		TextSize = 14,
-		FontFace = Font.new(Creator.Font, Enum.FontWeight.Bold),
-		ZIndex = 8,
+	-- The card picks up the artwork: the cover is stretched behind a dark veil
+	-- so the widget carries the album's colour instead of flat black.
+	local Backdrop = New("ImageLabel", {
+		Name = "Backdrop",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Image = "",
+		ImageTransparency = 1,
+		ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 1,
 		Parent = Shell,
 	})
-	self.Heading = Heading
+	Corner(Backdrop, Radius)
 
-	local NoteGlyph = Glyph("lucide:music", 16, Palette.Muted)
-	NoteGlyph.Name = "Note"
-	NoteGlyph.AnchorPoint = Vector2.new(1, 0)
-	NoteGlyph.Position = UDim2.fromOffset(W - 18, 17)
-	NoteGlyph.ZIndex = 8
-	NoteGlyph.Parent = Shell
+	local Veil = New("Frame", {
+		Name = "Veil",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.52,
+		BorderSizePixel = 0,
+		ZIndex = 2,
+		Parent = Shell,
+	})
+	Corner(Veil, Radius)
+	New("UIGradient", {
+		Rotation = 90,
+		Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.05),
+			NumberSequenceKeypoint.new(0.55, 0.22),
+			NumberSequenceKeypoint.new(1, 0.5),
+		}),
+		Parent = Veil,
+	})
+
+	self.Backdrop = Backdrop
 
 	--------------------------------------------------------------- artwork
 
@@ -203,9 +224,10 @@ function Miniplayer.New(Config)
 	})
 	Corner(Cover, CoverRadius)
 
-	local CoverGlyph = Glyph("lucide:music", 22, Palette.Muted)
+	local CoverGlyph = Glyph("lucide:music", 28, Palette.Muted)
 	CoverGlyph.Name = "Placeholder"
-	CoverGlyph.Position = UDim2.fromOffset(17, 17)
+	CoverGlyph.AnchorPoint = Vector2.new(0.5, 0.5)
+	CoverGlyph.Position = UDim2.fromScale(0.5, 0.5)
 	CoverGlyph.ZIndex = 6
 	CoverGlyph.Parent = Cover
 
@@ -216,10 +238,10 @@ function Miniplayer.New(Config)
 
 	local Title = Text({
 		Name = "Title",
-		Size = UDim2.fromOffset(156, 18),
-		Position = UDim2.fromOffset(86, 54),
+		Size = UDim2.fromOffset(228, 20),
+		Position = UDim2.fromOffset(116, 22),
 		Text = "Nothing playing",
-		TextSize = 14,
+		TextSize = 17,
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.Bold),
 		ZIndex = 8,
 		Parent = Shell,
@@ -228,32 +250,126 @@ function Miniplayer.New(Config)
 
 	local Artist = Text({
 		Name = "Artist",
-		Size = UDim2.fromOffset(156, 16),
-		Position = UDim2.fromOffset(86, 73),
+		Size = UDim2.fromOffset(228, 16),
+		Position = UDim2.fromOffset(116, 46),
 		Text = "Pick a song from your library",
-		TextSize = 12,
+		TextSize = 14,
 		TextColor3 = Palette.Muted,
 		ZIndex = 8,
 		Parent = Shell,
 	})
 	self.ArtistLabel = Artist
 
+	local Level = Glyph("lucide:audio-lines", 20, Palette.Muted)
+	Level.Name = "Level"
+	Level.AnchorPoint = Vector2.new(1, 0.5)
+	Level.Position = UDim2.new(1, -20, 0, 46)
+	Level.ZIndex = 8
+	Level.Parent = Shell
+
+	--------------------------------------------------------------- scrubber
+
+	local Elapsed = Text({
+		Name = "Elapsed",
+		Size = UDim2.fromOffset(44, 14),
+		Position = UDim2.fromOffset(18, ScrubY - 7),
+		Text = "0:00",
+		TextSize = 12,
+		TextColor3 = Palette.Muted,
+		ZIndex = 8,
+		Parent = Shell,
+	})
+	self.Elapsed = Elapsed
+
+	local Remaining = Text({
+		Name = "Remaining",
+		Size = UDim2.fromOffset(52, 14),
+		Position = UDim2.fromOffset(W - 70, ScrubY - 7),
+		Text = "-0:00",
+		TextSize = 12,
+		TextColor3 = Palette.Muted,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 8,
+		Parent = Shell,
+	})
+	self.Remaining = Remaining
+
+	local Track = New("Frame", {
+		Name = "Track",
+		Size = UDim2.fromOffset(TrackW, TrackH),
+		Position = UDim2.fromOffset(TrackX, ScrubY - TrackH / 2),
+		BackgroundColor3 = Palette.Text,
+		BackgroundTransparency = 0.82,
+		BorderSizePixel = 0,
+		ZIndex = 8,
+		Parent = Shell,
+	})
+	Corner(Track, TrackH / 2)
+	self.Track = Track
+
+	local Fill = New("Frame", {
+		Name = "Fill",
+		Size = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = Palette.Text,
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		ZIndex = 9,
+		Parent = Track,
+	})
+	Corner(Fill, TrackH / 2)
+	self.Fill = Fill
+
+	local Scrub = Button({
+		Name = "Scrub",
+		Size = UDim2.new(1, 16, 0, 24),
+		Position = UDim2.fromOffset(-8, -10),
+		ZIndex = 11,
+		Parent = Track,
+	})
+
+	local function SeekAt(Input)
+		local Width = Track.AbsoluteSize.X
+		if Width <= 0 then
+			return
+		end
+		local Ratio = math.clamp((Input.Position.X - Track.AbsolutePosition.X) / Width, 0, 1)
+		local Duration = self.MusicState and self.MusicState.Duration or 0
+		self.Fill.Size = UDim2.new(Ratio, 0, 1, 0)
+		if Duration > 0 then
+			self:Seek(Ratio * Duration)
+		end
+	end
+
+	Scrub.InputBegan:Connect(function(Input)
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			self.Seeking = true
+			SeekAt(Input)
+		end
+	end)
+	Scrub.InputChanged:Connect(function(Input)
+		if self.Seeking and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch) then
+			SeekAt(Input)
+		end
+	end)
+	Scrub.InputEnded:Connect(function(Input)
+		if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+			self.Seeking = false
+		end
+	end)
+
 	--------------------------------------------------------------- transport
 
-	local function Control(Name, CenterX, Size, Icon, GlyphSize, OnPress, Light)
+	local function Control(Name, CenterX, Icon, GlyphSize, OnPress, Color)
 		local Hit = Button({
 			Name = Name,
-			Size = UDim2.fromOffset(Size, Size),
+			Size = UDim2.fromOffset(GlyphSize + 24, GlyphSize + 20),
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromOffset(CenterX, ControlsY),
-			BackgroundColor3 = Light and Palette.Face or Palette.Text,
-			BackgroundTransparency = Light and 0 or 0.9,
 			ZIndex = 10,
 			Parent = Shell,
 		})
-		Corner(Hit, Size / 2)
 
-		local Image = Glyph(Icon, GlyphSize, Light and Palette.Ink or Palette.Text)
+		local Image = Glyph(Icon, GlyphSize, Color or Palette.Text)
 		Image.AnchorPoint = Vector2.new(0.5, 0.5)
 		Image.Position = UDim2.fromScale(0.5, 0.5)
 		Image.ZIndex = 11
@@ -270,19 +386,23 @@ function Miniplayer.New(Config)
 		return Hit, Image
 	end
 
-	local Previous, PreviousIcon = Control("Previous", 64, 34, "sfsymbols:backwardFill", 14, function()
+	local Previous, PreviousIcon = Control("Previous", 145, "sfsymbols:backwardFill", 22, function()
 		self:Previous()
 	end)
-	local Play, PlayIcon = Control("Play", 110, 40, "sfsymbols:playFill", 16, function()
+	local Play, PlayIcon = Control("Play", 220, "sfsymbols:playFill", 30, function()
 		self:TogglePlay()
-	end, true)
-	local NextButton, NextIcon = Control("Next", 162, 34, "sfsymbols:forwardFill", 14, function()
+	end)
+	local NextButton, NextIcon = Control("Next", 295, "sfsymbols:forwardFill", 22, function()
 		self:Next()
 	end)
+	local Volume, VolumeIcon = Control("Volume", 396, "sfsymbols:speakerWave2Fill", 22, function()
+		self:ToggleMute()
+	end, Palette.Muted)
 
-	self.Previous, self.PreviousIcon = Previous, PreviousIcon
-	self.Play, self.PlayIcon = Play, PlayIcon
+	self.PreviousButton, self.PreviousIcon = Previous, PreviousIcon
+	self.PlayButton, self.PlayIcon = Play, PlayIcon
 	self.NextButton, self.NextIcon = NextButton, NextIcon
+	self.VolumeButton, self.VolumeIcon = Volume, VolumeIcon
 
 	--------------------------------------------------------------- wiring
 
@@ -387,16 +507,36 @@ function Miniplayer:RenderState(State)
 			self.Cover.Image = Cover
 			self.Cover.BackgroundTransparency = 1
 			self.CoverGlyph.Visible = false
+			self.Backdrop.Image = Cover
+			self.Backdrop.ImageTransparency = 0.25
 		else
 			self.Cover.Image = ""
 			self.Cover.BackgroundTransparency = 0
 			self.CoverGlyph.Visible = true
+			self.Backdrop.Image = ""
+			self.Backdrop.ImageTransparency = 1
 		end
 	end
 
-	self.Previous.Visible = HasTrack
+	if State.Duration and State.Duration > 0 then
+		if not self.Seeking then
+			local Ratio = math.clamp((State.Position or 0) / State.Duration, 0, 1)
+			self.Fill.Size = UDim2.new(Ratio, 0, 1, 0)
+			self.Elapsed.Text = Surface.FormatTime(State.Position or 0)
+			self.Remaining.Text = "-" .. Surface.FormatTime(math.max(State.Duration - (State.Position or 0), 0))
+		end
+	else
+		self.Fill.Size = UDim2.new(0, 0, 1, 0)
+		self.Elapsed.Text = "0:00"
+		self.Remaining.Text = "-0:00"
+	end
+
+	local Icon, Rect = Creator.Icon(Playing and "sfsymbols:pauseFill" or "sfsymbols:playFill")
+	self.PlayIcon.Image = Icon
+	self.PlayIcon.ImageRectOffset, self.PlayIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
+
+	self.PreviousButton.Visible = HasTrack
 	self.NextButton.Visible = HasTrack
-	self.PlayIcon.Image = Creator.Icon(Playing and "sfsymbols:pauseFill" or "sfsymbols:playFill")
 end
 
 function Miniplayer:RenderError(Message)
@@ -442,54 +582,57 @@ function Miniplayer:TogglePlay()
 		return
 	end
 	if self.MusicState and self.MusicState.Playing then
-		Provider:Pause()
+		Provider:Pause(function() end)
 	else
-		Provider:Play()
+		Provider:Play(function() end)
 	end
 end
 
 function Miniplayer:Play()
 	if self.Provider then
-		self.Provider:Play()
+		self.Provider:Play(function() end)
 	end
 end
 
 function Miniplayer:Pause()
 	if self.Provider then
-		self.Provider:Pause()
+		self.Provider:Pause(function() end)
 	end
 end
 
 function Miniplayer:Next()
 	if self.Provider then
-		self.Provider:Next()
+		self.Provider:Next(function() end)
 	end
 end
 
 function Miniplayer:Previous()
 	if self.Provider then
-		self.Provider:Previous()
+		self.Provider:Previous(function() end)
 	end
 end
 
 function Miniplayer:Seek(Seconds)
 	if self.Provider and self.Provider.Seek then
-		self.Provider:Seek(Seconds)
+		self.Provider:Seek(Seconds, function() end)
 	end
 end
 
 function Miniplayer:SetVolume(Percent)
 	self.Volume = math.clamp(Percent or 60, 0, 100)
 	if self.Provider and self.Provider.SetVolume then
-		self.Provider:SetVolume(self.Volume)
+		self.Provider:SetVolume(self.Volume, function() end)
 	end
 end
 
 function Miniplayer:ToggleMute()
 	self.Muted = not self.Muted
 	if self.Provider and self.Provider.SetVolume then
-		self.Provider:SetVolume(self.Muted and 0 or self.Volume)
+		self.Provider:SetVolume(self.Muted and 0 or self.Volume, function() end)
 	end
+	local Icon, Rect = Creator.Icon(self.Muted and "sfsymbols:speakerSlashFill" or "sfsymbols:speakerWave2Fill")
+	self.VolumeIcon.Image = Icon
+	self.VolumeIcon.ImageRectOffset, self.VolumeIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
 end
 
 function Miniplayer:GetState()

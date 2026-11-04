@@ -1,6 +1,6 @@
-The Miniplayer is the standalone music card: 260 x 173, ported from the Novoline "Now playing" deck card. Black at the top that lets the world through down the card, the "Now playing" line with the note glyph on the right, 56 px artwork at (18, 46), the title and artist beside it, then three round controls on the bottom edge — 34 px previous and next, 40 px play with the light face. Drag it anywhere.
+The Miniplayer is the standalone music card: 440 x 177, radius 24. The cover is stretched behind a dark veil so the card takes on the album's colour, 86 px artwork at (18, 16) on top, the title and artist beside it, the level glyph top right, the scrubber with both times, then filled SF Symbols — previous, play, next — with the volume button on the right. Drag it anywhere.
 
-It is not the dynamic island and it is not connected to it — that is a separate element (`WindUI:DynamicIsland`). This one is just the card.
+It is not the dynamic island and it is not connected to it — that is a separate element (`WindUI:DynamicIsland`). This one is just the card. Both do share the same provider set when they are given the same `Providers` and `Folder`, so a track started on one shows and stops on the other.
 
 ## Floating
 

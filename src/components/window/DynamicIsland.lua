@@ -946,20 +946,20 @@ function DynamicIsland.New(Config)
 	local FxSources = FX.Group(SourcesPage, FxPlayer, 0)
 	self.FxSources = FxSources
 
-	GlassButton(SourcesPage, 26, 24, 28, "back", 15, function()
+	GlassButton(SourcesPage, 26, 22, 26, "back", 15, function()
 		State:ToggleSide(false)
 	end)
 
-	local SourcesHead = Label(SourcesPage, Bold, 13, WHITE, 36, 14, SWW - 62, 20)
-	SourcesHead.Text = "Sources"
+	local SourcesHead = Label(SourcesPage, Bold, 14, WHITE, 44, 12, SWW - 70, 20)
+	SourcesHead.Text = "Library"
 
 	local SourcesList = New("Frame", {
 		Parent = SourcesPage,
 		Name = "List",
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(0, 46),
-		Size = UDim2.fromOffset(SWW - 24, 100),
+		Position = UDim2.fromOffset(0, 40),
+		Size = UDim2.fromOffset(SWW - 24, 114),
 		ZIndex = 9,
 	})
 	self.SourcesList = SourcesList
@@ -1547,33 +1547,66 @@ function DynamicIsland.New(Config)
 				Parent = SourcesList,
 				Text = "",
 				AutoButtonColor = false,
-				BackgroundColor3 = WHITE,
-				BackgroundTransparency = Active and 0.9 or 0.955,
+				BackgroundColor3 = Active and Color3.fromRGB(30, 215, 96) or WHITE,
+				BackgroundTransparency = Active and 0.88 or 0.95,
 				BorderSizePixel = 0,
-				Position = UDim2.fromOffset(0, (Index - 1) * 34),
-				Size = UDim2.new(1, 0, 0, 30),
+				Position = UDim2.fromOffset(0, (Index - 1) * 38),
+				Size = UDim2.new(1, 0, 0, 34),
 				ZIndex = 9,
 			})
-			Corner(Row, 10)
+			Corner(Row, 12)
 
-			local Glyph_ = Glyph(Row, Active and "play" or "library", 15, Active and Color3.fromRGB(30, 215, 96) or WHITE, 10)
-			Glyph_.AnchorPoint = Vector2.new(0, 0)
-			Glyph_.Position = UDim2.fromOffset(10, 8)
-			Glyph_.Size = UDim2.fromOffset(15, 15)
+			local Tile = New("Frame", {
+				Parent = Row,
+				Name = "Tile",
+				BackgroundColor3 = Active and Color3.fromRGB(30, 215, 96) or WHITE,
+				BackgroundTransparency = Active and 0.82 or 0.92,
+				BorderSizePixel = 0,
+				Position = UDim2.fromOffset(8, 6),
+				Size = UDim2.fromOffset(22, 22),
+				ZIndex = 10,
+			})
+			Corner(Tile, 7)
+
+			local Glyph_ = Glyph(Tile, Active and "play" or "library", 14, Active and Color3.fromRGB(30, 215, 96) or WHITE, 11)
+			Glyph_.AnchorPoint = Vector2.new(0.5, 0.5)
+			Glyph_.Position = UDim2.fromScale(0.5, 0.5)
+			Glyph_.Size = UDim2.fromOffset(14, 14)
 
 			New("TextLabel", {
 				Parent = Row,
 				BackgroundTransparency = 1,
 				FontFace = Bold,
 				TextSize = 12,
-				TextColor3 = Active and Color3.fromRGB(30, 215, 96) or WHITE,
+				TextColor3 = WHITE,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextTruncate = Enum.TextTruncate.AtEnd,
-				Text = (Provider.Name or "Source") .. (Active and "  (playing here)" or ""),
-				Position = UDim2.fromOffset(34, 0),
-				Size = UDim2.new(1, -44, 1, 0),
+				Text = Provider.Name == "My files" and "Library" or (Provider.Name or "Source"),
+				Position = UDim2.fromOffset(40, 3),
+				Size = UDim2.new(1, -108, 0, 15),
 				ZIndex = 10,
 			})
+
+			New("TextLabel", {
+				Parent = Row,
+				BackgroundTransparency = 1,
+				FontFace = Medium,
+				TextSize = 10,
+				TextColor3 = Active and Color3.fromRGB(30, 215, 96) or SUBTLE,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				Text = Active and "Playing here" or (Provider.Status or "Ready"),
+				Position = UDim2.fromOffset(40, 17),
+				Size = UDim2.new(1, -58, 0, 13),
+				ZIndex = 10,
+			})
+
+			if Active then
+				local Dot = Glyph(Row, "pulse", 14, Color3.fromRGB(30, 215, 96), 10)
+				Dot.AnchorPoint = Vector2.new(1, 0.5)
+				Dot.Position = UDim2.new(1, -12, 0.5, 0)
+				Dot.Size = UDim2.fromOffset(14, 14)
+			end
 
 			Row.Activated:Connect(function()
 				KeepUntil = os.clock() + 4
@@ -1666,45 +1699,45 @@ function DynamicIsland.New(Config)
 			return
 		end
 		if Playing then
-			Provider:Pause()
+			Provider:Pause(function() end)
 		else
-			Provider:Play()
+			Provider:Play(function() end)
 		end
 	end
 
 	function DynamicIsland:Play()
 		if self.Provider then
-			self.Provider:Play()
+			self.Provider:Play(function() end)
 		end
 	end
 
 	function DynamicIsland:Pause()
 		if self.Provider then
-			self.Provider:Pause()
+			self.Provider:Pause(function() end)
 		end
 	end
 
 	function DynamicIsland:Next()
 		if self.Provider then
-			self.Provider:Next()
+			self.Provider:Next(function() end)
 		end
 	end
 
 	function DynamicIsland:Previous()
 		if self.Provider then
-			self.Provider:Previous()
+			self.Provider:Previous(function() end)
 		end
 	end
 
 	function DynamicIsland:Seek(Seconds)
 		if self.Provider and self.Provider.Seek then
-			self.Provider:Seek(Seconds)
+			self.Provider:Seek(Seconds, function() end)
 		end
 	end
 
 	function DynamicIsland:SetVolume(Percent)
 		if self.Provider and self.Provider.SetVolume then
-			self.Provider:SetVolume(math.clamp(Percent or 60, 0, 100))
+			self.Provider:SetVolume(math.clamp(Percent or 60, 0, 100), function() end)
 		end
 	end
 
