@@ -108,8 +108,8 @@ const PAGES = [
 		group: "UI",
 		title: "Music Mini Player",
 		nav: "Music Mini Player",
-		lead: "A draggable glass widget with cover art, transport and a source picker — Spotify, Apple Music, YouTube Music, local audio.",
-		card: "Floating player widget: drag, scrub, volume, source settings.",
+		lead: "A dynamic-island pill that springs into a glass player - local songs with real cover art, Spotify, or a bridge.",
+		card: "Top-docked island and expanded card: songs folder, cover fetch, sources.",
 		md: md("musicminiplayer"),
 	},
 	{

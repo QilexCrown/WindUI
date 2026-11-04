@@ -29,3 +29,5 @@ build/.init.lua
 *.njsproj
 *.sln
 *.sw?
+# local preview harness (bundle, screenshots, bootstrap)
+preview/

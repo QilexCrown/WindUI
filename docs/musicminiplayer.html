@@ -259,79 +259,99 @@ footer.site a { color: var(--muted); }
 <main>
 <article>
 <h1>Music Mini Player</h1>
-<p class="lead">A draggable glass widget with cover art, transport and a source picker — Spotify, Apple Music, YouTube Music, local audio.</p>
-<p>A draggable glass card that floats on its own, outside the window — cover art bleeding behind the text, hairline highlight, progress you can scrub, and a gear that swaps the source. Spotify is wired end to end; Apple Music and YouTube Music ride a local bridge; a <code>Sound</code> and a demo preview need no service at all.</p>
+<p class="lead">A dynamic-island pill that springs into a glass player - local songs with real cover art, Spotify, or a bridge.</p>
+<p>A floating player that lives outside the window: collapsed it is a black pill docked at the top of the screen — artwork on the left, a six-bar wave on the right, no text. Tap it and it springs open into a glass card with the cover, title, transport, scrubber, volume and a source picker. <code>DynamicIsland = false</code> boots the card instead and keeps it there.</p>
 <p>It is a widget, not a tab element: <code>WindUI:MusicMiniPlayer()</code> hangs off the library itself, so it works with the window closed, minimised, or never created.</p>
 <h2 id="basic">Basic<a class="anchor" href="#basic" aria-hidden="true">#</a></h2>
 <pre class="code" data-lang="lua"><code>local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/QilexCrown/WindUI/main/dist/main.lua"))()
 
 local Player = WindUI:MusicMiniPlayer({
-    Position = UDim2.new(1, -376, 0, 96),
+    SongsFolder = "Ender Hub/songs",
 })
 
--- Optional: drive it by hand before anything is connected.
-Player:SetTrack({
-    Title = "Red Flags",
-    Artist = "ny Howard",
-    Album = "What Now",
-    Cover = "https://i.scdn.co/image/ab67616d0000b273...",
-    Duration = 267,
-})</code></pre>
+-- Drop mp3, ogg, wav or flac into the folder and it shows up on the next scan.
+Player:Scan()</code></pre>
+<p>Nothing else is needed for local playback: the widget scans the folder, splits <code>Artist - Title.mp3</code> filenames, and plays through a <code>Sound</code> it creates under <code>SoundService</code>.</p>
+<h2 id="always-open">Always Open<a class="anchor" href="#always-open" aria-hidden="true">#</a></h2>
+<pre class="code" data-lang="lua"><code>local Player = WindUI:MusicMiniPlayer({
+    DynamicIsland = false,   -- no pill, no expanding: the card from frame one
+    Top = 10,
+    Scale = 1,
+})
+
+-- Switch back at runtime.
+Player:SetDynamicIsland(true)</code></pre>
+<p><code>SetDynamicIsland(false)</code> freezes the card open and disables the outside-click collapse. <code>SetDynamicIsland(true)</code> drops it back to the pill and collapses it. The chevron in the top-right corner is hidden while the island is off.</p>
 <h2 id="full">Full<a class="anchor" href="#full" aria-hidden="true">#</a></h2>
 <pre class="code" data-lang="lua"><code>local Player = WindUI:MusicMiniPlayer({
-    Width = 348,
-    Height = 178,
-    Radius = 22,
+    DynamicIsland = true,
+    SongsFolder = "Ender Hub/songs",
+    Folder = "MyHub",          -- cache folder under WindUI/
+    Top = 10,                  -- px from the top of the screen
     Scale = 1,
-    Position = UDim2.new(1, -376, 0, 96),
-    Draggable = true,
-    SavePosition = true,
-    Folder = "MyHub",
-    PollInterval = 1.5,
+    PollInterval = 1.25,
+    Position = UDim2.new(0.5, 0, 0, 10),
 
     -- Which rows the gear shows. A table means "this exact set, this order".
     Providers = {
         "spotify",
+        "files",
         { Id = "apple", Name = "Apple Music", Url = "http://127.0.0.1:5764" },
         { Id = "youtube", Name = "YouTube Music", Url = "http://127.0.0.1:5765" },
-        "local",
+        "sound",
         "demo",
     },
 
-    -- local source (optional)
+    -- "sound" source: mirror a Sound object the game already plays.
     Sound = workspace.Jukebox.Sound,
-    Playlist = {
-        { Title = "Static Bloom", Artist = "Vesper Lane", SoundId = "rbxassetid://1837879082" },
-        { Title = "Chrome Garden", Artist = "Mira Sextant", SoundId = "rbxassetid://1836194892" },
-    },
 
-    -- fire once per change; connect it to your own backend if you like
     OnVolume = function(percent)
         print("volume", percent)
     end,
 
     Callbacks = {
-        Play = function() end,
-        Pause = function() end,
-        Next = function() end,
-        Previous = function() end,
+        Connect = function(provider) end,   -- a source came online
+        Provider = function(provider) end,  -- the active source changed
+        Update = function(state) end,       -- every poll
+        Expanded = function(open) end,      -- pill &lt;-&gt; card
+        Settings = function(open) end,
+        Toggle = function(playing) end,
         Seek = function(seconds) end,
-        Connect = function(provider) end,
-        State = function(state) end,
+        Scrub = function(seconds) end,
+        Volume = function(percent) end,
+        CoverClick = function(state) end,   -- artwork tapped, after the link opens
+        Error = function(message) end,
     },
 })</code></pre>
+<p>Leaving <code>Providers</code> out gives all five in the order above.</p>
 <h2 id="settings">Settings<a class="anchor" href="#settings" aria-hidden="true">#</a></h2>
-<p>The gear in the top-right corner opens the source panel. Each row carries a status dot: grey when idle, green when the source answered.</p>
-<div class="table-wrap"><table><thead><tr><th>Row</th><th>Connects with</th></tr></thead><tbody><tr><td>Spotify</td><td>Access token, or refresh token + <code>client_id:client_secret</code></td></tr><tr><td>Apple Music</td><td>JSON bridge on <code>http://127.0.0.1:5764</code></td></tr><tr><td>YouTube Music</td><td>JSON bridge on <code>http://127.0.0.1:5765</code></td></tr><tr><td>Local audio</td><td>The <code>Sound</code> you passed in <code>Config.Sound</code></td></tr><tr><td>Demo</td><td>Nothing — three preview tracks on a clock</td></tr></tbody></table></div>
-<p>The panel is 306px tall when open and the card grows to fit it, then shrinks back on close.</p>
+<p>The gear in the top-right corner opens the source panel. Each row carries a status dot: grey when idle, green when the source answered. The sheet is 752x300; the right-hand pane is a short overview of the player.</p>
+<div class="table-wrap"><table><thead><tr><th>Row</th><th>Connects with</th></tr></thead><tbody><tr><td>Spotify</td><td>PKCE authorize link, then the pasted redirect URL</td></tr><tr><td>My files</td><td>The folder in <code>SongsFolder</code>, scanned with <code>listfiles</code></td></tr><tr><td>Apple Music</td><td>JSON bridge on <code>http://127.0.0.1:5764</code></td></tr><tr><td>YouTube Music</td><td>JSON bridge on <code>http://127.0.0.1:5765</code></td></tr><tr><td>Sound object</td><td>The <code>Sound</code> you passed in <code>Config.Sound</code></td></tr><tr><td>Demo</td><td>Nothing — preview tracks on a clock</td></tr></tbody></table></div>
+<h2 id="songs-folder">Songs Folder<a class="anchor" href="#songs-folder" aria-hidden="true">#</a></h2>
+<p>Any executor with <code>listfiles</code> works. The scan keeps the extensions <code>.mp3</code>, <code>.ogg</code>, <code>.wav</code>, <code>.flac</code>, <code>.m4a</code> and <code>.aac</code>, and reads the name two ways:</p>
+<pre class="code" data-lang="lua"><code>Artist - Title.mp3   -&gt; Artist, Title
+Luv(sic).mp3         -&gt; "Local file", "Luv(sic)"</code></pre>
+<p>Playback is <code>getcustomasset(path)</code> into a <code>Sound</code> parented to <code>SoundService</code>, named <code>WindUIMusicFile</code>, so the widget never steals the game's own audio.</p>
+<h3 id="cover-art">Cover art<a class="anchor" href="#cover-art" aria-hidden="true">#</a></h3>
+<p>Art is resolved in this order, and only the first miss costs a network call:</p>
+<ol><li>A sidecar image next to the audio with the same stem — <code>Luv(sic).jpg</code> (<code>.png</code>, <code>.jpeg</code>, <code>.webp</code>).</li><li>An iTunes Search lookup from the filename (<code>no key, no account</code>), the first <code>artworkUrl100</code> rewritten to 600x600, downloaded and written as <code>&lt;stem&gt;.jpg</code> beside the mp3.</li><li>Nothing — the placeholder glyph stays.</li></ol>
+<p>The write is what makes it cheap: the next <code>Scan()</code> finds the jpg through the sidecar check and no request goes out. Attempts are also cached per path for the session, so a track with no match is not searched twice.</p>
+<pre class="code" data-lang="lua"><code>local files = Player.ByProviderId.files
+files.OnCover = function(track, asset)
+    -- asset is an rbxasset:// URL that now also feeds the pill and the card
+end</code></pre>
+<p>Tap the artwork to open the track link, if the source provided one.</p>
+<h3 id="playlists-json">playlists.json<a class="anchor" href="#playlists-json" aria-hidden="true">#</a></h3>
+<p>The folder carries its library state next to the audio, in the same shape the reference player writes:</p>
+<pre class="code" data-lang="json"><code>{"playlists":[],"shuffle":false,"selected":[]}</code></pre>
+<p>The file is created on the first scan if it is missing, and shuffle is written back when the toggle flips. Existing files are read, not overwritten.</p>
 <h2 id="spotify">Spotify<a class="anchor" href="#spotify" aria-hidden="true">#</a></h2>
-<p>Create an app at the <a href="https://developer.spotify.com/dashboard">Spotify developer dashboard</a>, add <code>http://127.0.0.1:8888/callback</code> as a redirect URI, then run the PKCE authorize flow once and paste the result into the widget:</p>
-<ol><li>Authorize with scopes <code>user-read-playback-state user-modify-playback-state user-read-currently-playing</code>.</li><li>Paste the access token into the first field, submit.</li><li>To survive the token's one-hour life, paste the refresh token and <code>client_id:client_secret</code> into the two remaining fields.</li></ol>
-<p>With credentials stored, the widget refreshes on its own and the token is written to <code>WindUI/&lt;Folder&gt;/music/spotify.json</code>.</p>
-<p>The widget polls <code>GET /me/player</code> every <code>PollInterval</code> seconds and mirrors whatever device is active — phone, desktop app, speaker. Controls go to <code>player/play</code>, <code>player/pause</code>, <code>player/next</code>, <code>player/previous</code>, <code>player/seek</code> and <code>player/volume</code>, so dragging the volume slider changes the volume of the device you are actually hearing, not just an in-game number.</p>
+<p>Create an app at the <a href="https://developer.spotify.com/dashboard">Spotify developer dashboard</a>, add <code>http://127.0.0.1:8888/callback</code> as a redirect URI, then open the Spotify row in the widget:</p>
+<ol><li>Hit the authorize link with scopes <code>user-read-playback-state user-modify-playback-state user-read-currently-playing</code>.</li><li>Paste the redirect URL back into the field — the PKCE exchange happens in the executor.</li><li>Credentials land in <code>WindUI/&lt;Folder&gt;/music/spotify.json</code> and refresh on their own.</li></ol>
+<p>The widget polls <code>GET /me/player</code> every <code>PollInterval</code> seconds and mirrors whatever device is active — phone, desktop app, speaker. Controls go to <code>player/play</code>, <code>player/pause</code>, <code>player/next</code>, <code>player/previous</code>, <code>player/seek</code> and <code>player/volume</code>, so dragging the volume changes the volume of the device you are actually hearing. Cover art comes from the API response, not a placeholder.</p>
 <pre class="code" data-lang="lua"><code>-- drive it yourself: the same calls the widget makes
 local spotify = Player.ByProviderId.spotify
-spotify:Connect({ AccessToken = "BQ..." }, function(ok, message)
+spotify:Connect({}, function(ok, message)
     print(ok, message)
 end)</code></pre>
 <h2 id="bridge">Bridge<a class="anchor" href="#bridge" aria-hidden="true">#</a></h2>
@@ -343,13 +363,12 @@ POST /next
 POST /previous
 POST /seek       &lt;- { position = seconds }
 POST /volume     &lt;- { volume = 0-100 }</code></pre>
-<p><code>bridge/server.js</code> in the repository is a working reference: an AppleScript adapter for the Music app on macOS and an iTunes COM adapter for Windows, both behind the same routes.</p>
 <h2 id="methods">Methods<a class="anchor" href="#methods" aria-hidden="true">#</a></h2>
-<div class="table-wrap"><table><thead><tr><th>Method</th><th>Notes</th></tr></thead><tbody><tr><td><code>Player:SetTrack(track)</code></td><td>Manual state: <code>{ Title, Artist, Album, Cover, Duration }</code></td></tr><tr><td><code>Player:SetProgress(elapsed, duration)</code></td><td>Seconds</td></tr><tr><td><code>Player:SetPlaying(bool)</code></td><td>Flips the transport icon only</td></tr><tr><td><code>Player:SetVolume(percent)</code></td><td>0-100, routed through the active provider</td></tr><tr><td><code>Player:ToggleMute()</code></td><td>Zero, then back to the previous level</td></tr><tr><td><code>Player:Seek(seconds)</code></td><td>Same path the progress bar uses</td></tr><tr><td><code>Player:Toggle()</code></td><td>Play / pause</td></tr><tr><td><code>Player:SelectProvider(provider)</code></td><td>Swap the active source</td></tr><tr><td><code>Player:ToggleSettings(bool)</code></td><td>Open or close the source panel</td></tr><tr><td><code>Player:SetPosition(UDim2)</code></td><td>Moves the card</td></tr><tr><td><code>Player:GetPosition()</code></td><td>Current <code>UDim2</code></td></tr><tr><td><code>Player:SetScale(number)</code></td><td><code>UIScale</code> on the widget only</td></tr><tr><td><code>Player:Show()</code> / <code>Player:Hide()</code></td><td>Visibility</td></tr><tr><td><code>Player:Destroy()</code></td><td>Stops the poll loop, disconnects, removes the card</td></tr><tr><td><code>Player:Fire(name, ...)</code></td><td>Fires a <code>Callbacks</code> entry</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Method</th><th>Notes</th></tr></thead><tbody><tr><td><code>Player:Expand()</code> / <code>Player:Collapse()</code></td><td>Pill &lt;-&gt; card, spring driven</td></tr><tr><td><code>Player:ToggleSettings(bool)</code></td><td>Open or close the source sheet</td></tr><tr><td><code>Player:SetDynamicIsland(bool)</code></td><td>Swap between pill mode and always-open card</td></tr><tr><td><code>Player:Scan()</code></td><td>Re-read the songs folder</td></tr><tr><td><code>Player:Toggle()</code></td><td>Play / pause</td></tr><tr><td><code>Player:Next()</code> / <code>Player:Previous()</code></td><td>Skip on the active source</td></tr><tr><td><code>Player:Seek(seconds)</code></td><td>Same path the scrubber uses</td></tr><tr><td><code>Player:SetVolume(percent)</code></td><td>0-100, routed through the active provider</td></tr><tr><td><code>Player:ToggleShuffle()</code></td><td>Writes <code>shuffle</code> back to <code>playlists.json</code></td></tr><tr><td><code>Player:SetPlaying(bool)</code></td><td>Flips the transport icon only</td></tr><tr><td><code>Player:ApplyState(state)</code></td><td>Push a whole state table by hand</td></tr><tr><td><code>Player:OpenTrack()</code></td><td>Open the current track link and fire <code>CoverClick</code></td></tr><tr><td><code>Player:SelectProvider(provider)</code></td><td>Swap the active source</td></tr><tr><td><code>Player:SetScale(number)</code></td><td><code>UIScale</code> on the widget only</td></tr><tr><td><code>Player:Show()</code> / <code>Player:Hide()</code></td><td>Visibility</td></tr><tr><td><code>Player:Destroy()</code></td><td>Stops the poll loop, disconnects, removes the shell</td></tr><tr><td><code>Player:Fire(name, ...)</code></td><td>Fires a <code>Callbacks</code> entry</td></tr></tbody></table></div>
 <h2 id="parameters">Parameters<a class="anchor" href="#parameters" aria-hidden="true">#</a></h2>
-<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Width</code></td><td><code>number</code></td><td><code>348</code></td><td></td></tr><tr><td><code>Height</code></td><td><code>number</code></td><td><code>178</code></td><td>Grows to 306 while settings are open</td></tr><tr><td><code>Radius</code></td><td><code>number</code></td><td><code>22</code></td><td>Squircle radius</td></tr><tr><td><code>Scale</code></td><td><code>number</code></td><td><code>1</code></td><td><code>UIScale</code> on the card</td></tr><tr><td><code>Position</code></td><td><code>UDim2?</code></td><td>top-right</td><td>Remembered when <code>SavePosition</code> is on</td></tr><tr><td><code>Draggable</code></td><td><code>boolean?</code></td><td><code>true</code></td><td>Drag anywhere that is not a control</td></tr><tr><td><code>SavePosition</code></td><td><code>boolean?</code></td><td><code>true</code></td><td>Needs <code>writefile</code></td></tr><tr><td><code>Folder</code></td><td><code>string?</code></td><td>window folder</td><td>Folder under <code>WindUI/</code> for cache and tokens</td></tr><tr><td><code>PollInterval</code></td><td><code>number?</code></td><td><code>1.5</code></td><td>Seconds between provider polls</td></tr><tr><td><code>Providers</code></td><td><code>table?</code></td><td>all five</td><td><code>"spotify"</code>, <code>"local"</code>, <code>"demo"</code>, or <code>{ Id, Name, Url }</code></td></tr><tr><td><code>Sound</code></td><td><code>Sound?</code></td><td>—</td><td>Local source</td></tr><tr><td><code>Playlist</code></td><td><code>table?</code></td><td>—</td><td><code>{ Title, Artist, Cover, SoundId }</code> entries</td></tr><tr><td><code>OnVolume</code></td><td><code>function?</code></td><td>—</td><td>Receives 0-100</td></tr><tr><td><code>Callbacks</code></td><td><code>table?</code></td><td>—</td><td><code>Play</code>, <code>Pause</code>, <code>Next</code>, <code>Previous</code>, <code>Seek</code>, <code>Connect</code>, <code>State</code>, <code>Source</code>, <code>Settings</code></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>DynamicIsland</code></td><td><code>boolean?</code></td><td><code>true</code></td><td><code>false</code> boots the expanded card and keeps it there</td></tr><tr><td><code>SongsFolder</code></td><td><code>string?</code></td><td><code>Ender Hub/songs</code></td><td>Folder the <code>files</code> source scans</td></tr><tr><td><code>Folder</code></td><td><code>string?</code></td><td>window folder</td><td>Cache folder under <code>WindUI/</code> for tokens and state</td></tr><tr><td><code>Top</code></td><td><code>number?</code></td><td><code>10</code></td><td>Px from the top of the screen</td></tr><tr><td><code>Scale</code></td><td><code>number?</code></td><td><code>1</code></td><td><code>UIScale</code> on the widget</td></tr><tr><td><code>Position</code></td><td><code>UDim2?</code></td><td>top-centre</td><td>Overrides the dock position</td></tr><tr><td><code>Parent</code></td><td><code>Instance?</code></td><td><code>WindUI.ScreenGui</code></td><td>Where the shell is parented</td></tr><tr><td><code>PollInterval</code></td><td><code>number?</code></td><td><code>1.25</code></td><td>Seconds between provider polls, floor 0.5</td></tr><tr><td><code>Provider</code></td><td><code>string?</code></td><td>first with a track</td><td>Id of the source to make active</td></tr><tr><td><code>Providers</code></td><td><code>table?</code></td><td>all five</td><td><code>"spotify"</code>, <code>"files"</code>, <code>"sound"</code>, <code>"demo"</code>, or <code>{ Id, Name, Url }</code></td></tr><tr><td><code>Sound</code></td><td><code>Sound?</code></td><td>—</td><td>Bound <code>Sound</code> for the <code>sound</code> source</td></tr><tr><td><code>AppleBridge</code></td><td><code>string?</code></td><td><code>127.0.0.1:5764</code></td><td>Default Apple bridge URL</td></tr><tr><td><code>YouTubeBridge</code></td><td><code>string?</code></td><td><code>127.0.0.1:5765</code></td><td>Default YouTube bridge URL</td></tr><tr><td><code>OnVolume</code></td><td><code>function?</code></td><td>—</td><td>Receives 0-100</td></tr><tr><td><code>Callbacks</code></td><td><code>table?</code></td><td>—</td><td><code>Connect</code>, <code>Provider</code>, <code>Update</code>, <code>Expanded</code>, <code>Settings</code>, <code>Toggle</code>, <code>Seek</code>, <code>Scrub</code>, <code>Volume</code>, <code>CoverClick</code>, <code>Error</code></td></tr></tbody></table></div>
 <h2 id="notes">Notes<a class="anchor" href="#notes" aria-hidden="true">#</a></h2>
-<ul><li>The card is a <code>ScreenGui</code> widget parented to <code>WindUI.ScreenGui</code>, not to a window, a tab or a section — it survives <code>Window:Destroy()</code> only if you re-create it, and it never appears in <code>Window.AllElements</code>.</li><li>Cover art goes through the same image pipeline as every other element: HTTP covers are downloaded once, cached under <code>WindUI/&lt;Folder&gt;/assets</code>, and re-used.</li><li>Drag starts on the card surface only, so scrubbing the progress bar or clicking a control never moves the widget. On release the card is clamped inside the viewport.</li><li>The progress readout is interpolated between polls, so the bar moves every frame even at a 1.5s poll interval.</li><li>A volume slider can only change the Spotify device volume, the bridge's own gain, or the <code>Sound.Volume</code> of the local source. Roblox cannot touch the operating system's master volume; use the bridge for that.</li><li>Right-click the speaker to mute without opening the slider.</li></ul>
+<ul><li>The shell is 212x40 collapsed, 752x204 expanded, 752x300 with settings open, radius 20. Expansion is a real spring (stiffness scaled by duration, damping ratio 0.82), not an ease — it overshoots a couple of pixels and settles.</li><li>Glass is four layers: a north sheen that fades before the middle, a specular band that sweeps on hover and expand, a 1px hairline stroke and a second rim one pixel in. Roblox has no refraction, so the moving highlight is what sells it.</li><li>The widget is parented to <code>WindUI.ScreenGui</code>, not to a window, a tab or a section, and never appears in <code>Window.AllElements</code>.</li><li>Local art also tints the shell: a 1.9x copy at 84% transparency behind a scrim, which reads as the blurred backdrop without a blur pass.</li><li>A volume change can only touch the Spotify device, the bridge's own gain, or the local <code>Sound.Volume</code>. Roblox cannot reach the OS master volume; use the bridge for that.</li></ul>
 <div class="pager">
 <a href="./notification.html"><small>Previous</small><span>Notification</span></a>
 <a class="next" href="./tag.html"><small>Next</small><span>Tag</span></a>
