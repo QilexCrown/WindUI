@@ -104,6 +104,15 @@ const PAGES = [
 		md: md("notification"),
 	},
 	{
+		slug: "musicminiplayer",
+		group: "UI",
+		title: "Music Mini Player",
+		nav: "Music Mini Player",
+		lead: "A draggable glass widget with cover art, transport and a source picker — Spotify, Apple Music, YouTube Music, local audio.",
+		card: "Floating player widget: drag, scrub, volume, source settings.",
+		md: md("musicminiplayer"),
+	},
+	{
 		slug: "tag",
 		group: "UI",
 		title: "Tag",

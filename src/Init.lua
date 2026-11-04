@@ -367,6 +367,15 @@ function WindUI:Popup(PopupConfig)
 	return require("./components/popup/Init").new(PopupConfig, WindUI.ScreenGui.Popups)
 end
 
+-- Music Mini Player: a draggable glass widget that lives on its own, outside
+-- the window. Config.Providers picks which sources appear in its settings —
+-- "spotify", "local", "demo", or a bridge table { Id, Name, Url }.
+function WindUI:MusicMiniPlayer(Config)
+	Config = Config or {}
+	Config.WindUI = WindUI
+	return require("./components/window/MusicMiniPlayer").New(Config)
+end
+
 WindUI.Themes = require("./themes/Init")(WindUI, Creator)
 
 Creator.Themes = WindUI.Themes
