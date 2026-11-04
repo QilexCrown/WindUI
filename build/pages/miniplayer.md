@@ -1,6 +1,6 @@
-The Miniplayer is the standalone music card: 440 x 177, radius 24. The cover is stretched behind a dark veil so the card takes on the album's colour, 86 px artwork at (18, 16) on top, the title and artist beside it, the level glyph top right, the scrubber with both times, then filled SF Symbols — previous, play, next — with the volume button on the right. Drag it anywhere.
+The Miniplayer is the compact now-playing strip: 340 x 88, radius 18, floating over the game. The 56 px artwork sits at (14, 16), the title and artist beside it, five level bars on the right that only move while a track is running, then bare previous / play / next glyphs and a hairline progress bar along the bottom edge. Black and white only — the cover colour lives on the dynamic island, not here. Drag it anywhere with the library's own drag, the same one every other WindUI surface uses.
 
-It is not the dynamic island and it is not connected to it — that is a separate element (`WindUI:DynamicIsland`). This one is just the card. Both do share the same provider set when they are given the same `Providers` and `Folder`, so a track started on one shows and stops on the other.
+It is not the dynamic island and it does not open it — that is a separate element (`WindUI:DynamicIsland`). Both share the same provider set when they are given the same `Providers` and `Folder`, so a track started on one shows, pauses and skips on the other.
 
 ## Floating
 
@@ -11,7 +11,7 @@ local Music = WindUI:Miniplayer({
 })
 ```
 
-Grab the card anywhere that is not a control and drag it.
+Grab the strip anywhere that is not a control and drag it.
 
 ## Inside a window
 

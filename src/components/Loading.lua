@@ -1,4 +1,5 @@
 local Creator = require("../modules/Creator")
+local MusicLook = require("../modules/MusicLook")
 local New = Creator.New
 local Tween = Creator.Tween
 
@@ -456,6 +457,24 @@ function LoadingModule.New(Config)
 	}, {
 		Main,
 	})
+
+	-- The music-player face: near-black glass, white type, one coloured bloom
+	-- rising from the bottom edge. Every ThemeTag above is left in place so a
+	-- theme change still has something to write to; these values just win at
+	-- build time.
+	Main.ImageColor3 = MusicLook.Shell
+	Main.ImageTransparency = MusicLook.ShellTransparency
+	Inner.ImageColor3 = MusicLook.Shell
+	Inner.ImageTransparency = 0.62
+	Glass.ImageColor3 = MusicLook.Text
+	Title.TextColor3 = MusicLook.Text
+	Content.TextColor3 = MusicLook.Text
+	Percent.TextColor3 = MusicLook.Text
+	Track.ImageColor3 = MusicLook.Text
+	Track.ImageTransparency = 0.88
+	Fill.ImageColor3 = MusicLook.Text
+	local PillGlow = MusicLook.Glow(Main, Corner, Height)
+	PillGlow.ZIndex = 49
 
 	Loading.UIElements = {
 		Main = Main,

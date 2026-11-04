@@ -1,4 +1,8 @@
-The DynamicIsland is the capsule at the top of the screen. Collapsed it is a black pill with the artwork on the left and a six-bar wave on the right. Click it and it springs into the full music card — header with the source and the ping, the now-playing block, the two chips, then the scrubber and the transport. Click the header again (or right-click the island) to close it.
+The DynamicIsland is the capsule at the top of the screen and the general surface for short-lived content: music is one mode it can show, a toast is another. Collapsed it is a black pill with the artwork on the left and a six-bar wave on the right. Click it and it springs into the full music card — header with the source and the ping, the now-playing block, the two chips, then the scrubber and the transport. Click the header again (or right-click the island) to close it.
+
+The pill takes its colour from the sleeve: the wave bars and the glow under the cards are single pixels of the artwork stretched flat, so a cover with white in the middle gets white bars and a white wash. Nothing is guessed and no palette is fixed — it is the cover's own colour, taken at render time. No artwork, white bars.
+
+The pill never moves. It is anchored to the top centre at `Top`, and expanding changes its size, not its position.
 
 ## Floating
 
@@ -72,6 +76,9 @@ Island:Expand()
 Island:Collapse()
 Island:Toggle()
 
+Island:Toast({ Title = "Copied", Icon = "lucide:clipboard", Duration = 2 })
+Island:Dismiss()
+
 Island:Play()
 Island:Pause()
 Island:TogglePlay()
@@ -94,6 +101,18 @@ local State = Island:GetState()
 -- Title, Artist, Album, Cover, Position, Duration, Playing, Volume,
 -- CanSeek, CanSkip, Link, Hint
 ```
+
+## Toast
+
+The pill is not music-only. `Toast` swaps the artwork and the wave for an icon and a line, keeps the same footprint, and hands the pill back to now-playing when the timer runs out. Clicking a toast dismisses it; a toast does not expand.
+
+```lua
+Island:Toast({ Title = "Copied to clipboard", Icon = "lucide:clipboard", Duration = 2 })
+Island:Toast({ Title = "Player joined", Icon = "sfsymbols:personFill", Duration = 4 })
+Island:Dismiss()  -- back to now-playing right away
+```
+
+`Icon` takes any name `Creator.Icon` understands, `Duration` is in seconds (default 3), and `Color` tints both the glyph and the line. The music keeps playing underneath.
 
 ## Header
 

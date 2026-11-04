@@ -52,11 +52,12 @@ local WHITE = Color3.new(1, 1, 1)
 local SUBTLE = Color3.fromRGB(154, 156, 164)
 local ACCENT = Color3.fromRGB(110, 220, 170)
 
+-- The bench is monochrome: the only colour on screen comes from the artwork.
 local TINT = {
-	like = { Color3.fromRGB(62, 20, 24), Color3.fromRGB(255, 96, 96) },
-	shuffle = { Color3.fromRGB(13, 40, 51), Color3.fromRGB(64, 186, 255) },
-	sources = { Color3.fromRGB(14, 46, 40), Color3.fromRGB(56, 224, 186) },
-	library = { Color3.fromRGB(38, 28, 62), Color3.fromRGB(168, 120, 255) },
+	like = { Color3.fromRGB(20, 20, 22), WHITE },
+	shuffle = { Color3.fromRGB(20, 20, 22), WHITE },
+	sources = { Color3.fromRGB(20, 20, 22), WHITE },
+	library = { Color3.fromRGB(20, 20, 22), WHITE },
 }
 
 local ICONS = {
@@ -271,6 +272,23 @@ function DynamicIsland.New(Config)
 	local Position, PositionAt, Duration = 0, 0, 0
 	local Playing = false
 	local Title, Artist, Cover, Hint = "", "", "", ""
+	local ArtW, ArtH = 0, 0
+	local Mode = "music"
+	local ToastUntil = 0
+	local PillMode
+
+	-- Roblox has no pixel reader for a texture, so colour is taken by
+	-- rendering: a 1 x 1 crop of the sleeve stretched flat is that pixel's
+	-- colour, whatever it happens to be. The header gives the size; without
+	-- one, the top-left pixel is still a colour from the cover.
+	local function Sample(FX, FY)
+		if ArtW <= 0 or ArtH <= 0 then
+			return Vector2.zero
+		end
+		local X = math.clamp(math.floor(ArtW * FX), 0, ArtW - 1)
+		local Y = math.clamp(math.floor(ArtH * FY), 0, ArtH - 1)
+		return Vector2.new(X, Y)
+	end
 	local ScrubDrag, ScrubRel = false, 0
 	local GlassHeld = nil
 
@@ -402,20 +420,87 @@ function DynamicIsland.New(Config)
 		Position = UDim2.new(1, -14, 0, 20),
 		ZIndex = 4,
 	})
+	-- Every bar is a one-pixel slice of the artwork stretched flat, so it wears
+	-- the sleeve's own colour instead of a guess at it: a cover with white in
+	-- the middle gets white bars. No artwork, white bars.
+	local SAMPLES = {
+		{ 0.50, 0.50 },
+		{ 0.34, 0.42 },
+		{ 0.66, 0.42 },
+		{ 0.42, 0.64 },
+		{ 0.58, 0.64 },
+		{ 0.50, 0.30 },
+	}
 	for Index = 1, 6 do
 		local Bar = New("Frame", {
 			Parent = Wave,
+			Name = "Bar",
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromOffset((Index - 1) * 4 + 2, 9),
 			Size = UDim2.fromOffset(2, 3),
 			BackgroundColor3 = WHITE,
 			BorderSizePixel = 0,
+			ClipsDescendants = true,
 			ZIndex = 5,
 		})
 		Corner(Bar, 1)
-		self.Bars[Index] = { Frame = Bar, Current = 0, Goal = 0, Height = 3, Weight = 0.55 + 0.45 * ((Index * 37) % 10) / 10 }
+		local Art = New("ImageLabel", {
+			Parent = Bar,
+			Name = "Art",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(4, 4),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Image = "",
+			ImageRectSize = Vector2.new(1, 1),
+			ScaleType = Enum.ScaleType.Stretch,
+			ZIndex = 5,
+		})
+		self.Bars[Index] = {
+			Frame = Bar,
+			Art = Art,
+			Sample = SAMPLES[Index],
+			Current = 0,
+			Goal = 0,
+			Height = 3,
+			Weight = 0.55 + 0.45 * ((Index * 37) % 10) / 10,
+		}
 	end
 	self.Wave = Wave
+
+	--------------------------------------------------------------- generic pill
+
+	-- The pill is the general element; music is one thing it can show. Toast
+	-- mode swaps the artwork and the level bars for an icon and a line, keeps
+	-- the same footprint, and hands the pill back when the timer runs out.
+	local PillIcon = New("ImageLabel", {
+		Parent = Root,
+		Name = "PillIcon",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(12, 11),
+		Size = UDim2.fromOffset(18, 18),
+		ImageColor3 = WHITE,
+		ScaleType = Enum.ScaleType.Fit,
+		Visible = false,
+		ZIndex = 5,
+	})
+	local PillText = New("TextLabel", {
+		Parent = Root,
+		Name = "PillText",
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 13,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "",
+		Position = UDim2.fromOffset(38, 10),
+		Size = UDim2.fromOffset(PILL_W - 50, 20),
+		Visible = false,
+		ZIndex = 5,
+	})
+	self.PillIcon, self.PillText = PillIcon, PillText
 
 	--------------------------------------------------------------- cards
 
@@ -449,13 +534,20 @@ function DynamicIsland.New(Config)
 		return Frame, Rim
 	end
 
+	-- The glow under the cards is one pixel of the sleeve stretched flat: a
+	-- solid colour, not the photograph, faded out by the gradient. Whatever
+	-- the cover's own colour is, that is what the card glows with.
 	local function Wash(Card_, Rotation, FadeSeq)
-		local Frame = New("Frame", {
+		local Frame = New("ImageLabel", {
 			Parent = Card_,
 			Name = "Wash",
 			BackgroundColor3 = WHITE,
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
+			Image = "",
+			ImageRectSize = Vector2.new(1, 1),
+			ImageTransparency = 1,
+			ScaleType = Enum.ScaleType.Stretch,
 			Size = UDim2.fromScale(1, 1),
 			ZIndex = 3,
 		})
@@ -469,8 +561,8 @@ function DynamicIsland.New(Config)
 	local CardS, CardSRim = Card(Back, "Side", SX, 36, SWW, 154)
 	self.CardA, self.CardB, self.CardS, self.CardSRim = CardA, CardB, CardS, CardSRim
 
-	local WashA = Wash(CardA, 0, Sequence({ 0, 0.84 }, { 0.42, 1 }, { 1, 1 }))
-	local WashB = Wash(CardB, 90, Sequence({ 0, 1 }, { 0.5, 0.94 }, { 1, 0.8 }))
+	local WashA = Wash(CardA, 90, Sequence({ 0, 1 }, { 0.55, 0.88 }, { 1, 0.28 }))
+	local WashB = Wash(CardB, 90, Sequence({ 0, 1 }, { 0.5, 0.82 }, { 1, 0.1 }))
 	self.WashA, self.WashB = WashA, WashB
 
 	local ArtShade
@@ -904,13 +996,13 @@ function DynamicIsland.New(Config)
 	end
 
 	local CenterX = M + BW - 14
-	local Previous = GlassButton(Seek, CenterX - 91, M + 25, 30, "previous", 15, function()
+	local Previous = GlassButton(Seek, CenterX - 91, M + 25, 30, "previous", 20, function()
 		State:Previous()
 	end)
-	local Play = GlassButton(Seek, CenterX - 53, M + 25, 38, "play", 15, function()
+	local Play = GlassButton(Seek, CenterX - 53, M + 25, 38, "play", 22, function()
 		State:TogglePlay()
 	end)
-	local NextButton = GlassButton(Seek, CenterX - 15, M + 25, 30, "next", 15, function()
+	local NextButton = GlassButton(Seek, CenterX - 15, M + 25, 30, "next", 20, function()
 		State:Next()
 	end)
 	self.PlayIcon = Play.Icon
@@ -1063,7 +1155,7 @@ function DynamicIsland.New(Config)
 			math.floor(Lerp(CurrentW - 14, P + AW - 14, P_) + 0.5),
 			math.floor(Lerp(CurrentH / 2, 54, P_) + 0.5)
 		)
-		Wave.Visible = P_ < 0.6
+		Wave.Visible = P_ < 0.6 and Mode == "music"
 
 		local Radius = math.floor(math.min(CurrentH / 2, Lerp(20, 30, P_)) + 0.5)
 		Corner_.CornerRadius = UDim.new(0, Radius)
@@ -1202,17 +1294,25 @@ function DynamicIsland.New(Config)
 
 	local TintC, TintP
 	local function TintStep()
-		local Color, P_ = AccentLive, State.P or 0
-		if Color == TintC and P_ == TintP then
+		local Art, P_ = Cover .. "@" .. ArtW .. "x" .. ArtH, State.P or 0
+		if Art == TintC and P_ == TintP then
 			return
 		end
-		TintC, TintP = Color, P_
+		TintC, TintP = Art, P_
+		Art = Cover
 
-		local H, S = Color:ToHSV()
-		local K = math.clamp(S * 1.6, 0, 1)
-		local Glow = Color3.fromHSV(H, math.min(S, 0.75), 1)
-		WashA.BackgroundColor3, WashA.BackgroundTransparency = Glow, 1 - 0.9 * K
-		WashB.BackgroundColor3, WashB.BackgroundTransparency = Glow, 1 - K
+		if Art ~= "" then
+			local Centre = Sample(0.5, 0.5)
+			WashA.Image, WashA.ImageTransparency = Art, 0.32 - 0.12 * P_
+			WashB.Image, WashB.ImageTransparency = Art, 0.24 - 0.14 * P_
+			WashA.ImageRectOffset, WashB.ImageRectOffset = Centre, Centre
+			WashA.BackgroundTransparency, WashB.BackgroundTransparency = 1, 1
+		else
+			WashA.Image, WashB.Image = "", ""
+			WashA.BackgroundColor3, WashB.BackgroundColor3 = WHITE, WHITE
+			WashA.BackgroundTransparency, WashB.BackgroundTransparency = 0.94, 0.9
+		end
+
 		if ArtShade then
 			ArtShade.Transparency = 1 - 0.5 * P_
 		end
@@ -1240,6 +1340,7 @@ function DynamicIsland.New(Config)
 		end
 
 		local Color = WaveTint(AccentLive)
+		local HasArt = Cover ~= ""
 		for _, Bar in ipairs(State.Bars) do
 			Bar.Current = Fade(Bar.Current, Bar.Goal, Bar.Goal > Bar.Current and 26 or 9, Delta)
 			local BarHeight = math.floor(3 + 15 * Bar.Current + 0.5)
@@ -1247,7 +1348,14 @@ function DynamicIsland.New(Config)
 				Bar.Height = BarHeight
 				Bar.Frame.Size = UDim2.fromOffset(2, BarHeight)
 			end
+			if Bar.Art.Image ~= (HasArt and Cover or "") then
+				Bar.Art.Image = HasArt and Cover or ""
+			end
+			if HasArt then
+				Bar.Art.ImageRectOffset = Sample(Bar.Sample[1], Bar.Sample[2])
+			end
 			Bar.Frame.BackgroundColor3 = Color
+			Bar.Frame.BackgroundTransparency = HasArt and 1 or 0
 		end
 	end
 
@@ -1618,8 +1726,50 @@ function DynamicIsland.New(Config)
 
 	--------------------------------------------------------------- public
 
+	-- The pill as a general surface: a short line with an icon, no music
+	-- required. Duration in seconds; the pill returns to now-playing on its
+	-- own, or immediately through :Dismiss().
+	function DynamicIsland:Toast(Options)
+		if not self.Alive then
+			return
+		end
+		Options = Options or {}
+		local Duration = math.max(0.5, tonumber(Options.Duration) or 3)
+		Mode, ToastUntil = "toast", os.clock() + Duration
+		self.Mode = Mode
+
+		if self.Expanded then
+			self:Collapse()
+		end
+
+		local Source, Rect = Icon(Options.Icon or "note")
+		PillIcon.Image = Source
+		PillIcon.ImageRectOffset, PillIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
+		PillIcon.ImageColor3 = Options.Color or WHITE
+		PillIcon.Visible = true
+		PillText.Text = tostring(Options.Title or Options.Text or "")
+		PillText.TextColor3 = Options.Color or WHITE
+		PillText.Visible = true
+
+		if self.Config.OnToast then
+			pcall(self.Config.OnToast, self, Options)
+		end
+	end
+
+	function DynamicIsland:Dismiss()
+		if Mode ~= "toast" then
+			return
+		end
+		Mode, ToastUntil = "music", 0
+		self.Mode = Mode
+		PillIcon.Visible = false
+		PillText.Visible = false
+		PillIcon.ImageColor3 = WHITE
+		PillText.TextColor3 = WHITE
+	end
+
 	function DynamicIsland:Expand()
-		if self.Expanded or not self.Alive then
+		if self.Expanded or not self.Alive or Mode == "toast" then
 			return
 		end
 		self.Expanded = true
@@ -1771,6 +1921,9 @@ function DynamicIsland.New(Config)
 			ArtistLabel.Text = Artist
 		end
 
+		ArtW = tonumber(State_.CoverW) or 0
+		ArtH = tonumber(State_.CoverH) or 0
+
 		local NewCover = State_.Cover or ""
 		if Cover ~= NewCover then
 			Cover = NewCover
@@ -1824,7 +1977,9 @@ function DynamicIsland.New(Config)
 
 	Hit.Activated:Connect(function()
 		Pressing, Peeking = false, false
-		if State.Expanded then
+		if Mode == "toast" then
+			State:Dismiss()
+		elseif State.Expanded then
 			State:Collapse()
 		else
 			State:Expand()
@@ -1938,6 +2093,10 @@ function DynamicIsland.New(Config)
 	local function FrameStep(Delta)
 		local Now = os.clock()
 
+		if Mode == "toast" and Now >= ToastUntil then
+			State:Dismiss()
+		end
+
 		if not Root.Visible then
 			Root.Visible = true
 		end
@@ -1951,6 +2110,16 @@ function DynamicIsland.New(Config)
 
 		Hover(Now)
 		Shape(Delta)
+
+		-- Shape only repaints when the capsule changes size, so the swap
+		-- between artwork and toast content happens on the mode edge.
+		if PillMode ~= Mode then
+			PillMode = Mode
+			local Toast = Mode == "toast"
+			CoverFrame.Visible = not Toast
+			Wave.Visible = not Toast and (State.P or 0) < 0.6
+		end
+
 		FadeStep(Delta, Now)
 
 		if Expand.a > 0 then

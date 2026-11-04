@@ -36,6 +36,7 @@ local HttpService = cloneref(game:GetService("HttpService"))
 local SoundService = cloneref(game:GetService("SoundService"))
 
 local Creator = require("./Creator")
+local CoverSize = require("./CoverSize")
 
 local Providers = {}
 
@@ -825,7 +826,8 @@ function Folder:SidecarCover(Directory, Name)
 		if isfile(Candidate) then
 			local Ok, Asset = pcall(getcustomasset, Candidate)
 			if Ok and type(Asset) == "string" then
-				return Asset
+				local W, H = CoverSize.Of(Candidate)
+				return Asset, W, H
 			end
 		end
 	end
@@ -968,10 +970,12 @@ function Folder:FetchCover(Track, Done)
 		end
 
 		local Asset = ""
+		local CoverFile = ""
 		if type(Art) == "string" and Art ~= "" then
 			local Bytes = HttpGet(Art)
 			if Bytes and #Bytes > 512 then
 				local Target = Track.Directory .. "/" .. Stem(Track.Name) .. ".jpg"
+				CoverFile = Target
 				local Wrote = type(writefile) == "function" and pcall(writefile, Target, Bytes)
 
 				if Wrote and type(getcustomasset) == "function" then
@@ -988,6 +992,7 @@ function Folder:FetchCover(Track, Done)
 
 		if Asset ~= "" then
 			Track.Cover = Asset
+			Track.CoverW, Track.CoverH = CoverSize.Of(CoverFile)
 			if self.OnCover then
 				self.OnCover(Track, Asset)
 			end
@@ -1041,6 +1046,7 @@ function Folder:Scan()
 		end
 
 		local Directory = (Entry.Path:gsub("\\", "/"):match("^(.*)/[^/]+$")) or self.Path
+		local Cover, CoverW, CoverH = self:SidecarCover(Directory, Entry.Name)
 
 		self.Tracks[Index] = {
 			Path = Entry.Path,
@@ -1049,7 +1055,9 @@ function Folder:Scan()
 			Artist = Artist,
 			Album = "Ender Hub / songs",
 			Directory = Directory,
-			Cover = self:SidecarCover(Directory, Entry.Name),
+			Cover = Cover,
+			CoverW = CoverW,
+			CoverH = CoverH,
 			Duration = 0,
 		}
 	end
@@ -1145,6 +1153,8 @@ function Folder:Poll(Done)
 					Artist = Track.Artist,
 					Album = Track.Album,
 					Cover = Track.Cover,
+					CoverW = Track.CoverW,
+					CoverH = Track.CoverH,
 					Position = 0,
 					Duration = Track.Duration,
 					Playing = false,
@@ -1177,6 +1187,8 @@ function Folder:Poll(Done)
 		Artist = Track.Artist,
 		Album = Track.Album,
 		Cover = Track.Cover,
+		CoverW = Track.CoverW,
+		CoverH = Track.CoverH,
 		Position = Sound.TimePosition,
 		Duration = Track.Duration,
 		Playing = Sound.IsPlaying,

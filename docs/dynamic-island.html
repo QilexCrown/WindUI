@@ -261,7 +261,9 @@ footer.site a { color: var(--muted); }
 <article>
 <h1>Dynamic Island</h1>
 <p class="lead">The capsule at the top of the screen that springs into the music card - real cover art, local songs, Spotify, or a bridge.</p>
-<p>The DynamicIsland is the capsule at the top of the screen. Collapsed it is a black pill with the artwork on the left and a six-bar wave on the right. Click it and it springs into the full music card — header with the source and the ping, the now-playing block, the two chips, then the scrubber and the transport. Click the header again (or right-click the island) to close it.</p>
+<p>The DynamicIsland is the capsule at the top of the screen and the general surface for short-lived content: music is one mode it can show, a toast is another. Collapsed it is a black pill with the artwork on the left and a six-bar wave on the right. Click it and it springs into the full music card — header with the source and the ping, the now-playing block, the two chips, then the scrubber and the transport. Click the header again (or right-click the island) to close it.</p>
+<p>The pill takes its colour from the sleeve: the wave bars and the glow under the cards are single pixels of the artwork stretched flat, so a cover with white in the middle gets white bars and a white wash. Nothing is guessed and no palette is fixed — it is the cover's own colour, taken at render time. No artwork, white bars.</p>
+<p>The pill never moves. It is anchored to the top centre at <code>Top</code>, and expanding changes its size, not its position.</p>
 <h2 id="floating">Floating<a class="anchor" href="#floating" aria-hidden="true">#</a></h2>
 <pre class="code" data-lang="lua"><code>local Island = WindUI:DynamicIsland({
     Providers = { "files", "spotify", "demo" },
@@ -294,6 +296,9 @@ footer.site a { color: var(--muted); }
 Island:Collapse()
 Island:Toggle()
 
+Island:Toast({ Title = "Copied", Icon = "lucide:clipboard", Duration = 2 })
+Island:Dismiss()
+
 Island:Play()
 Island:Pause()
 Island:TogglePlay()
@@ -315,6 +320,12 @@ Island:Destroy()
 local State = Island:GetState()
 -- Title, Artist, Album, Cover, Position, Duration, Playing, Volume,
 -- CanSeek, CanSkip, Link, Hint</code></pre>
+<h2 id="toast">Toast<a class="anchor" href="#toast" aria-hidden="true">#</a></h2>
+<p>The pill is not music-only. <code>Toast</code> swaps the artwork and the wave for an icon and a line, keeps the same footprint, and hands the pill back to now-playing when the timer runs out. Clicking a toast dismisses it; a toast does not expand.</p>
+<pre class="code" data-lang="lua"><code>Island:Toast({ Title = "Copied to clipboard", Icon = "lucide:clipboard", Duration = 2 })
+Island:Toast({ Title = "Player joined", Icon = "sfsymbols:personFill", Duration = 4 })
+Island:Dismiss()  -- back to now-playing right away</code></pre>
+<p><code>Icon</code> takes any name <code>Creator.Icon</code> understands, <code>Duration</code> is in seconds (default 3), and <code>Color</code> tints both the glyph and the line. The music keeps playing underneath.</p>
 <h2 id="header">Header<a class="anchor" href="#header" aria-hidden="true">#</a></h2>
 <p>The right side of the header is live: <code>wifi</code> shows the current server ping in milliseconds, <code>clock</code> shows how long the island has been mounted. Both come off <code>Stats.Network</code> and the clock, nothing to wire up.</p>
 <h2 id="cover-art">Cover art<a class="anchor" href="#cover-art" aria-hidden="true">#</a></h2>

@@ -1,6 +1,7 @@
 local KeySystem = {}
 
 local Creator = require("../modules/Creator")
+local MusicLook = require("../modules/MusicLook")
 local New = Creator.New
 local Tween = Creator.Tween
 
@@ -28,6 +29,13 @@ function KeySystem.new(Config, Filename, func, keyValidator)
 
 	KeyDialog.UIElements.Main.AutomaticSize = "Y"
 	KeyDialog.UIElements.Main.Size = UDim2.new(0, UISize, 0, 0)
+
+	-- Same face as the island and the mini player: black shell, white type,
+	-- one coloured bloom at the bottom edge.
+	local Shell = KeyDialog.UIElements.MainContainer
+	Shell.ImageColor3 = MusicLook.Shell
+	Shell.ImageTransparency = MusicLook.ShellTransparency
+	MusicLook.Glow(Shell, 26, 200).ZIndex = 9998
 
 	local IconFrame
 
@@ -113,6 +121,13 @@ function KeySystem.new(Config, Filename, func, keyValidator)
 		})
 	end
 
+	MusicLook.PaintText(Title)
+	MusicLook.PaintText(KeySystemTitle)
+	if NoteText then
+		MusicLook.PaintText(NoteText, MusicLook.Muted)
+	end
+	MusicLook.PaintInput(InputFrame)
+
 	local ButtonsContainer = New("Frame", {
 		Size = UDim2.new(1, 0, 0, 42),
 		BackgroundTransparency = 1,
@@ -197,6 +212,7 @@ function KeySystem.new(Config, Filename, func, keyValidator)
 	local ExitButton = CreateButton("Exit", "log-out", function()
 		KeyDialog:Close()()
 	end, "Tertiary", ButtonsContainer.Frame)
+	MusicLook.PaintButton(ExitButton, "Tertiary")
 
 	if ThumbnailFrame then
 		ExitButton.Parent = ThumbnailFrame
@@ -223,6 +239,7 @@ function KeySystem.new(Config, Filename, func, keyValidator)
 		local Width = 240
 		local Opened = false
 		local ButtonFrame = CreateButton("Get key", "key", nil, "Secondary", ButtonsContainer.Frame)
+		MusicLook.PaintButton(ButtonFrame, "Secondary")
 
 		local Divider = Creator.NewRoundFrame(99, "Squircle", {
 			Size = UDim2.new(0, 1, 1, 0),
@@ -493,6 +510,7 @@ function KeySystem.new(Config, Filename, func, keyValidator)
 		end
 	end, "Primary", ButtonsContainer)
 
+	MusicLook.PaintButton(SubmitButton, "Primary")
 	SubmitButton.AnchorPoint = Vector2.new(1, 0.5)
 	SubmitButton.Position = UDim2.new(1, 0, 0.5, 0)
 
