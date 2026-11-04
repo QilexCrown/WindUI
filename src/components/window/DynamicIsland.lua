@@ -48,9 +48,16 @@ local HE, HC = 204, 40
 local PILL_W, PILL_H = 212, 40
 local BW = W - P * 2
 
+-- The key prompt fills the card the player does: same width and height, so
+-- switching between the two never resizes the capsule and the card never
+-- carries a dead band where the music header used to be.
+local KEY_W, KEY_H = W, HE
+local KEY_Y = 0
+
 local WHITE = Color3.new(1, 1, 1)
 local SUBTLE = Color3.fromRGB(154, 156, 164)
 local ACCENT = Color3.fromRGB(110, 220, 170)
+local GREEN = Color3.fromRGB(52, 199, 89)
 
 -- The bench is monochrome: the only colour on screen comes from the artwork.
 local TINT = {
@@ -71,6 +78,7 @@ local ICONS = {
 	pulse = "lucide:activity",
 	clock = "lucide:clock",
 	back = "sfsymbols:chevronLeft",
+	check = "lucide:circle-check",
 }
 
 local function Icon(IconName)
@@ -132,6 +140,7 @@ local FX = { Groups = {}, ByFrame = setmetatable({}, { __mode = "k" }) }
 FX.Props = {
 	TextLabel = { "TextTransparency", "BackgroundTransparency" },
 	TextButton = { "TextTransparency", "BackgroundTransparency" },
+	TextBox = { "TextTransparency", "BackgroundTransparency" },
 	ImageLabel = { "ImageTransparency", "BackgroundTransparency" },
 	ImageButton = { "ImageTransparency", "BackgroundTransparency" },
 	Frame = { "BackgroundTransparency" },
@@ -275,7 +284,12 @@ function DynamicIsland.New(Config)
 	local ArtW, ArtH = 0, 0
 	local Mode = "music"
 	local ToastUntil = 0
+	local ValidUntil = 0
+	local LoadUntil, LoadDuration = 0, 0
+	local HasTrack = false
 	local PillMode
+	local HeaderName = "Library"
+	local KeyCfg = Config.KeySystem
 
 	-- Roblox has no pixel reader for a texture, so colour is taken by
 	-- rendering: a 1 x 1 crop of the sleeve stretched flat is that pixel's
@@ -501,6 +515,93 @@ function DynamicIsland.New(Config)
 		ZIndex = 5,
 	})
 	self.PillIcon, self.PillText = PillIcon, PillText
+
+	-- Loading and key-valid are pill states like the toast: same footprint,
+	-- no artwork, no bars. Loading carries a label, a percentage and a
+	-- hairline that fills along the bottom edge; valid carries a green check.
+	local LoadText = New("TextLabel", {
+		Parent = Root,
+		Name = "LoadText",
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 13,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "Loading",
+		Position = UDim2.fromOffset(14, 9),
+		Size = UDim2.fromOffset(PILL_W - 82, 22),
+		Visible = false,
+		ZIndex = 5,
+	})
+	local LoadPercent = New("TextLabel", {
+		Parent = Root,
+		Name = "LoadPercent",
+		BackgroundTransparency = 1,
+		FontFace = Medium,
+		TextSize = 11,
+		TextColor3 = SUBTLE,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Text = "0%",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromOffset(PILL_W - 14, 10),
+		Size = UDim2.fromOffset(56, 20),
+		Visible = false,
+		ZIndex = 5,
+	})
+	local LoadTrack = New("Frame", {
+		Parent = Root,
+		Name = "LoadTrack",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.84,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(14, PILL_H - 8),
+		Size = UDim2.fromOffset(PILL_W - 28, 2),
+		Visible = false,
+		ZIndex = 5,
+	})
+	Corner(LoadTrack, 1)
+	local LoadFill = New("Frame", {
+		Parent = LoadTrack,
+		Name = "Fill",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.06,
+		BorderSizePixel = 0,
+		Size = UDim2.fromOffset(0, 2),
+		ZIndex = 6,
+	})
+	Corner(LoadFill, 1)
+	self.LoadText, self.LoadPercent, self.LoadFill = LoadText, LoadPercent, LoadFill
+
+	local ValidIcon = New("ImageLabel", {
+		Parent = Root,
+		Name = "ValidIcon",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(14, 11),
+		Size = UDim2.fromOffset(18, 18),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = GREEN,
+		Visible = false,
+		ZIndex = 5,
+	})
+	local ValidSource, ValidRect = Icon("check")
+	ValidIcon.Image, ValidIcon.ImageRectOffset, ValidIcon.ImageRectSize =
+		ValidSource, ValidRect.ImageRectPosition, ValidRect.ImageRectSize
+	local ValidText = New("TextLabel", {
+		Parent = Root,
+		Name = "ValidText",
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 13,
+		TextColor3 = GREEN,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Key Valid",
+		Position = UDim2.fromOffset(38, 9),
+		Size = UDim2.fromOffset(PILL_W - 52, 22),
+		Visible = false,
+		ZIndex = 5,
+	})
+	self.ValidIcon, self.ValidText = ValidIcon, ValidText
 
 	--------------------------------------------------------------- cards
 
@@ -1057,6 +1158,193 @@ function DynamicIsland.New(Config)
 	self.SourcesList = SourcesList
 	local SideSpring = { x = 0, v = 0, g = 0 }
 
+	--------------------------------------------------------------- key panel
+
+	-- Same card, same origin as the player. While it is up the music sections
+	-- fade out and this fades in on the same expansion curve, so the capsule
+	-- never changes size between the two.
+	local KeyPanel = New("Frame", {
+		Parent = Root,
+		Name = "KeyPanel",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(0, KEY_Y),
+		Size = UDim2.fromOffset(KEY_W, KEY_H),
+		Visible = false,
+		ZIndex = 6,
+	})
+	self.KeyPanel = KeyPanel
+	local FxKey = FX.Group(KeyPanel, FxRoot, 0)
+	self.FxKey = FxKey
+
+	local KeyPad = P
+	local KeyTitle = Label(KeyPanel, Bold, 15, WHITE, KeyPad, 18, KEY_W - KeyPad * 2 - 120, 20)
+	KeyTitle.Text = "Key System"
+
+	local KeyNote = New("TextLabel", {
+		Parent = KeyPanel,
+		Name = "Note",
+		BackgroundTransparency = 1,
+		FontFace = Medium,
+		TextSize = 11,
+		TextColor3 = SUBTLE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "",
+		Position = UDim2.fromOffset(KeyPad, 44),
+		Size = UDim2.fromOffset(KEY_W - KeyPad * 2 - 120, 30),
+		ZIndex = 8,
+	})
+
+	local KeyBox = New("Frame", {
+		Parent = KeyPanel,
+		Name = "KeyBox",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.94,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(KeyPad, 86),
+		Size = UDim2.fromOffset(KEY_W - KeyPad * 2 - 126, 38),
+		ZIndex = 8,
+	})
+	Corner(KeyBox, 12)
+	local KeyRim = Stroke(KeyBox, 0.86)
+	KeyRim.Color = WHITE
+
+	local KeyInput = New("TextBox", {
+		Parent = KeyBox,
+		Name = "Input",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(14, 0),
+		Size = UDim2.new(1, -28, 1, 0),
+		FontFace = Medium,
+		TextSize = 13,
+		TextColor3 = WHITE,
+		Text = "",
+		PlaceholderText = "Enter your key",
+		PlaceholderColor3 = SUBTLE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		ClearTextOnFocus = false,
+		ZIndex = 9,
+	})
+	self.KeyInput = KeyInput
+
+	local KeySubmit = New("TextButton", {
+		Parent = KeyPanel,
+		Name = "Submit",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0,
+		BorderSizePixel = 0,
+		Text = "",
+		AutoButtonColor = false,
+		Position = UDim2.fromOffset(KEY_W - KeyPad - 114, 86),
+		Size = UDim2.fromOffset(114, 38),
+		ZIndex = 8,
+	})
+	Corner(KeySubmit, 12)
+	local KeySubmitText = New("TextLabel", {
+		Parent = KeySubmit,
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(10, 10, 12),
+		Text = "Submit",
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 9,
+	})
+
+	local KeyError = Label(KeyPanel, Medium, 11, WHITE, KeyPad, 132, KEY_W - KeyPad * 2, 16)
+	KeyError.Text = ""
+
+	local KeyHint = Label(KeyPanel, Medium, 10, SUBTLE, KeyPad, 154, KEY_W - KeyPad * 2, 14)
+	KeyHint.Text = "Click the island to hide the key system"
+
+	KeySubmit.MouseEnter:Connect(function()
+		Tween(KeySubmit, 0.18, { BackgroundTransparency = 0.12 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+	end)
+	KeySubmit.MouseLeave:Connect(function()
+		Tween(KeySubmit, 0.18, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+	end)
+
+	-- One validator, three shapes: a function, a literal (or list), or the
+	-- same service table the standalone key system takes. Anything else is a
+	-- no, never an accidental yes.
+	local function ValidKey(Key)
+		if type(KeyCfg) ~= "table" then
+			return false
+		end
+		if type(KeyCfg.KeyValidator) == "function" then
+			local Ok, Result = pcall(KeyCfg.KeyValidator, Key)
+			return Ok and Result == true
+		end
+		if KeyCfg.Key ~= nil then
+			if type(KeyCfg.Key) == "table" then
+				return table.find(KeyCfg.Key, Key) ~= nil
+			end
+			return tostring(KeyCfg.Key) == Key
+		end
+		if type(KeyCfg.API) == "table" then
+			local Services = Config.WindUI and Config.WindUI.Services
+			if not Services then
+				return false
+			end
+			for _, Entry in next, KeyCfg.API do
+				local Def = type(Entry) == "table" and Services[Entry.Type]
+				if Def then
+					local Ok, Result = pcall(function()
+						local Args = {}
+						for _, Name in next, Def.Args do
+							table.insert(Args, Entry[Name])
+						end
+						local Service = Def.New(table.unpack(Args))
+						return Service:Verify(Key) and true or false
+					end)
+					if Ok and Result then
+						return true
+					end
+				end
+			end
+		end
+		return false
+	end
+
+	local function SaveKey(Key)
+		if not (KeyCfg.SaveKey and type(writefile) == "function") then
+			return
+		end
+		local Path = KeyCfg.File
+			or ((KeyCfg.Folder or Config.Folder or "Temp") .. "/" .. tostring(KeyCfg.Name or Config.Title or "WindUI") .. ".key")
+		pcall(writefile, Path, Key)
+	end
+
+	local function SubmitKey()
+		if Mode ~= "key" then
+			return
+		end
+		local Key = tostring(KeyInput.Text or "")
+		if Key == "" then
+			KeyError.Text = "Enter a key first."
+			return
+		end
+		local Ok, Valid = pcall(ValidKey, Key)
+		if Ok and Valid then
+			KeyError.Text = ""
+			SaveKey(Key)
+			State:KeyValid()
+		else
+			KeyError.Text = tostring(KeyCfg.Invalid or "Invalid key.")
+		end
+	end
+
+	KeySubmit.Activated:Connect(SubmitKey)
+	KeyInput.FocusLost:Connect(function(Enter)
+		if Enter then
+			SubmitKey()
+		end
+	end)
+
 	--------------------------------------------------------------- springs
 
 	local function Spring(Value, Delta, Omega, Zeta)
@@ -1155,7 +1443,7 @@ function DynamicIsland.New(Config)
 			math.floor(Lerp(CurrentW - 14, P + AW - 14, P_) + 0.5),
 			math.floor(Lerp(CurrentH / 2, 54, P_) + 0.5)
 		)
-		Wave.Visible = P_ < 0.6 and Mode == "music"
+		Wave.Visible = P_ < 0.6 and Mode == "music" and HasTrack
 
 		local Radius = math.floor(math.min(CurrentH / 2, Lerp(20, 30, P_)) + 0.5)
 		Corner_.CornerRadius = UDim.new(0, Radius)
@@ -1214,8 +1502,23 @@ function DynamicIsland.New(Config)
 			PaintShadow()
 		end
 
-		Sheet(Player, FxPlayer, Alpha, Y)
-		Sheet(Back, FxBack, Alpha, Y)
+		Sheet(Player, FxPlayer, Mode == "key" and 0 or Alpha, Y)
+		Sheet(Back, FxBack, Mode == "key" and 0 or Alpha, Y)
+
+		-- The key card rides the same alpha as the player but keeps its own
+		-- position: it is a sibling card, not a sliding sheet.
+		local KeyAlpha = Mode == "key" and Alpha or 0
+		FX.Set(FxKey, KeyAlpha)
+		local KeyVisible = KeyAlpha > 0.001
+		if KeyPanel.Visible ~= KeyVisible then
+			KeyPanel.Visible = KeyVisible
+		end
+		if KeyVisible then
+			local KeyTop = KEY_Y + Y
+			if KeyPanel.Position.Y.Offset ~= KeyTop then
+				KeyPanel.Position = UDim2.fromOffset(0, KeyTop)
+			end
+		end
 
 		if Ex.at ~= State.SecAt then
 			State.SecAt = Ex.at
@@ -1251,6 +1554,11 @@ function DynamicIsland.New(Config)
 		local StatusX = math.floor(Width_ - P - 6 + 0.5)
 		if Status.Position.X.Offset ~= StatusX then
 			Status.Position = UDim2.fromOffset(StatusX, 9)
+		end
+
+		local Head = Mode == "key" and "Key System" or HeaderName
+		if SourceLabel.Text ~= Head then
+			SourceLabel.Text = Head
 		end
 	end
 
@@ -1640,7 +1948,10 @@ function DynamicIsland.New(Config)
 			if Name == "My files" then
 				Name = "Library"
 			end
-			SourceLabel.Text = Name
+			HeaderName = Name
+			if Mode ~= "key" then
+				SourceLabel.Text = Name
+			end
 		end
 
 		for _, Child in ipairs(SourcesList:GetChildren()) do
@@ -1724,6 +2035,47 @@ function DynamicIsland.New(Config)
 	end
 	self.RenderSources = RenderSources
 
+	--------------------------------------------------------------- pill paint
+
+	-- One owner for pill visibility. Shape only repaints when the capsule
+	-- changes size, so every mode edge has to land here instead.
+	local function PillStep()
+		local Music = Mode == "music"
+		local ShowArt = Music and HasTrack
+		CoverFrame.Visible = ShowArt
+		Wave.Visible = ShowArt and (State.P or 0) < 0.6
+
+		local Toast = Mode == "toast"
+		PillIcon.Visible = Toast
+		PillText.Visible = Toast
+
+		local Loading = Mode == "loading"
+		LoadText.Visible = Loading
+		LoadPercent.Visible = Loading
+		LoadTrack.Visible = Loading
+
+		local Valid = Mode == "valid"
+		ValidIcon.Visible = Valid
+		ValidText.Visible = Valid
+	end
+
+	local function LoadStep()
+		if Mode ~= "loading" then
+			return
+		end
+		local Total = math.max(0.2, LoadDuration)
+		local Left = math.max(0, LoadUntil - os.clock())
+		local K = math.clamp(1 - Left / Total, 0, 1)
+		local Percent = math.floor(K * 100 + 0.5) .. "%"
+		if LoadPercent.Text ~= Percent then
+			LoadPercent.Text = Percent
+		end
+		local BarW = math.floor((PILL_W - 28) * K + 0.5)
+		if LoadFill.Size.X.Offset ~= BarW then
+			LoadFill.Size = UDim2.fromOffset(BarW, 2)
+		end
+	end
+
 	--------------------------------------------------------------- public
 
 	-- The pill as a general surface: a short line with an icon, no music
@@ -1746,10 +2098,9 @@ function DynamicIsland.New(Config)
 		PillIcon.Image = Source
 		PillIcon.ImageRectOffset, PillIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
 		PillIcon.ImageColor3 = Options.Color or WHITE
-		PillIcon.Visible = true
 		PillText.Text = tostring(Options.Title or Options.Text or "")
 		PillText.TextColor3 = Options.Color or WHITE
-		PillText.Visible = true
+		PillStep()
 
 		if self.Config.OnToast then
 			pcall(self.Config.OnToast, self, Options)
@@ -1762,10 +2113,95 @@ function DynamicIsland.New(Config)
 		end
 		Mode, ToastUntil = "music", 0
 		self.Mode = Mode
-		PillIcon.Visible = false
-		PillText.Visible = false
 		PillIcon.ImageColor3 = WHITE
 		PillText.TextColor3 = WHITE
+		PillStep()
+	end
+
+	-- Loading: no artwork, no icon. Label, percent and a hairline that fills
+	-- along the bottom edge for Duration seconds. The island flips itself to
+	-- the key prompt when the timer runs out.
+	function DynamicIsland:Loading(Duration, Label_)
+		if not self.Alive then
+			return
+		end
+		if self.Expanded then
+			self:Collapse()
+		end
+		LoadDuration = math.max(0.2, tonumber(Duration) or 5)
+		LoadUntil = os.clock() + LoadDuration
+		LoadText.Text = tostring(Label_ or "Loading")
+		LoadPercent.Text = "0%"
+		LoadFill.Size = UDim2.fromOffset(0, 2)
+		Mode = "loading"
+		self.Mode = Mode
+		PillStep()
+	end
+
+	function DynamicIsland:SetProgress(Value)
+		if Mode ~= "loading" then
+			return
+		end
+		local K = math.clamp(tonumber(Value) or 0, 0, 1)
+		LoadUntil = os.clock() + (1 - K) * math.max(0.2, LoadDuration)
+		LoadPercent.Text = math.floor(K * 100 + 0.5) .. "%"
+		LoadFill.Size = UDim2.fromOffset(math.floor((PILL_W - 28) * K + 0.5), 2)
+	end
+
+	-- Key prompt: the card at the content origin. Expanding is the show, so
+	-- the ordinary island toggle hides and re-shows it with no extra state.
+	function DynamicIsland:ShowKey()
+		if not self.Alive or type(KeyCfg) ~= "table" then
+			return
+		end
+		Mode = "key"
+		self.Mode = Mode
+		KeyError.Text = ""
+		KeyNote.Text = tostring(KeyCfg.Note or "Enter your key to unlock the interface.")
+		KeyTitle.Text = tostring(KeyCfg.Title or "Key System")
+		KeyInput.Text = ""
+		PillStep()
+		self:Expand()
+	end
+
+	function DynamicIsland:HideKey()
+		if Mode ~= "key" then
+			return
+		end
+		if self.Expanded then
+			self:Collapse()
+		end
+	end
+
+	function DynamicIsland:KeyValid()
+		if not self.Alive then
+			return
+		end
+		Mode = "valid"
+		self.Mode = Mode
+		local ValidFor = type(KeyCfg) == "table" and tonumber(KeyCfg.ValidFor) or nil
+		ValidUntil = os.clock() + (ValidFor or 4)
+		if self.Expanded then
+			self:Collapse()
+		end
+		KeyError.Text = ""
+		KeyInput.Text = ""
+		PillStep()
+		if type(KeyCfg) == "table" and KeyCfg.Callback then
+			pcall(KeyCfg.Callback, true)
+		end
+		if self.Config.OnKeyValid then
+			pcall(self.Config.OnKeyValid, self)
+		end
+	end
+
+	function DynamicIsland:DismissKey()
+		if Mode ~= "valid" then
+			return
+		end
+		Mode = "music"
+		self.Mode = Mode
+		PillStep()
 	end
 
 	function DynamicIsland:Expand()
@@ -1924,6 +2360,12 @@ function DynamicIsland.New(Config)
 		ArtW = tonumber(State_.CoverW) or 0
 		ArtH = tonumber(State_.CoverH) or 0
 
+		local Track = State_.Title ~= nil and tostring(State_.Title) ~= ""
+		if Track ~= HasTrack then
+			HasTrack = Track
+			PillStep()
+		end
+
 		local NewCover = State_.Cover or ""
 		if Cover ~= NewCover then
 			Cover = NewCover
@@ -1979,6 +2421,10 @@ function DynamicIsland.New(Config)
 		Pressing, Peeking = false, false
 		if Mode == "toast" then
 			State:Dismiss()
+		elseif Mode == "loading" then
+			return
+		elseif Mode == "valid" then
+			State:DismissKey()
 		elseif State.Expanded then
 			State:Collapse()
 		else
@@ -2075,7 +2521,7 @@ function DynamicIsland.New(Config)
 			Peeking = not Open
 		else
 			Peeking = false
-			if Open and Touched and not ScrubDrag and not GlassHeld and State.Config.AutoCollapse ~= false then
+			if Open and Touched and not ScrubDrag and not GlassHeld and Mode ~= "key" and State.Config.AutoCollapse ~= false then
 				local Busy = Now - (TouchAt or -9) < 1.2
 					or Now - Expand.at < 0.6
 					or math.abs(Width.v) > 40
@@ -2095,6 +2541,16 @@ function DynamicIsland.New(Config)
 
 		if Mode == "toast" and Now >= ToastUntil then
 			State:Dismiss()
+		elseif Mode == "loading" and Now >= LoadUntil then
+			if type(KeyCfg) == "table" then
+				State:ShowKey()
+			else
+				Mode = "music"
+				State.Mode = Mode
+				PillStep()
+			end
+		elseif Mode == "valid" and Now >= ValidUntil then
+			State:DismissKey()
 		end
 
 		if not Root.Visible then
@@ -2112,13 +2568,13 @@ function DynamicIsland.New(Config)
 		Shape(Delta)
 
 		-- Shape only repaints when the capsule changes size, so the swap
-		-- between artwork and toast content happens on the mode edge.
+		-- between artwork, toast, loading and valid happens on the mode edge.
 		if PillMode ~= Mode then
 			PillMode = Mode
-			local Toast = Mode == "toast"
-			CoverFrame.Visible = not Toast
-			Wave.Visible = not Toast and (State.P or 0) < 0.6
+			PillStep()
 		end
+
+		LoadStep()
 
 		FadeStep(Delta, Now)
 
@@ -2170,6 +2626,17 @@ function DynamicIsland.New(Config)
 	if Config.Expanded then
 		self.Expanded = false
 		self:Expand()
+	end
+
+	-- Key system: the island owns the flow now. Loading pill for Delay
+	-- seconds, then the key card; a saved key skips straight to the tick.
+	if type(KeyCfg) == "table" then
+		local Saved = KeyCfg.SavedKey
+		if Saved ~= nil and ValidKey(tostring(Saved)) then
+			self:KeyValid()
+		else
+			self:Loading(KeyCfg.Delay or 5, KeyCfg.Loading or "Loading")
+		end
 	end
 
 	return self

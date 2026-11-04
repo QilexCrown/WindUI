@@ -77,8 +77,10 @@ local LoadingModule = {
 	BarHeight = 6, -- the ProgressBar element's bar
 	MarginTop = 14,
 
-	-- The icon an element gets when the caller passes none. The hub's own mark.
-	DefaultIcon = "rbxassetid://84919257334887",
+	-- The icon an element gets when the caller passes none. None: the pill is
+	-- a label, a percentage and a hairline now, and a mark beside them was
+	-- noise. Pass Config.Icon to bring one back.
+	DefaultIcon = false,
 
 	-- The dot the element is born as, and the droplet it lengthens into
 	-- before it spreads. Both in pixels.
@@ -181,7 +183,7 @@ function LoadingModule.New(Config)
 		__type = "Loading",
 		Title = Config.Title or "Loading",
 		Content = Config.Content or "",
-		Icon = Config.Icon or LoadingModule.DefaultIcon,
+		Icon = Config.Icon or LoadingModule.DefaultIcon or nil,
 		IconThemed = Config.IconThemed,
 		Progress = nil,
 		Closed = false,

@@ -290,7 +290,7 @@ footer.site a { color: var(--muted); }
     Folder = "Ender Hub/songs",
 })</code></pre>
 <h2 id="parameters">Parameters<a class="anchor" href="#parameters" aria-hidden="true">#</a></h2>
-<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Parent</code></td><td><code>Instance</code></td><td><code>nil</code></td><td>Docks inside this frame instead of floating</td></tr><tr><td><code>Top</code></td><td><code>number</code></td><td><code>12</code></td><td>Floating only, distance from the top of the screen</td></tr><tr><td><code>Providers</code></td><td><code>table</code></td><td><code>{ "files", "spotify", "demo" }</code></td><td>Ordered source list</td></tr><tr><td><code>Folder</code></td><td><code>string</code></td><td><code>"Ender Hub/songs"</code></td><td>Where the files provider looks</td></tr><tr><td><code>Source</code></td><td><code>number | string</code></td><td><code>1</code></td><td>Which source boots</td></tr><tr><td><code>Expanded</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Boot with the card open</td></tr><tr><td><code>Scale</code></td><td><code>number</code></td><td><code>1</code></td><td>Multiplier on the fitted scale</td></tr><tr><td><code>PollRate</code></td><td><code>number</code></td><td><code>0.25</code></td><td>Seconds between provider polls</td></tr><tr><td><code>AutoCollapse</code></td><td><code>boolean</code></td><td><code>true</code></td><td>Count down to the pill after the pointer has been over the island; <code>false</code> keeps it open</td></tr><tr><td><code>OnExpand</code></td><td><code>function</code></td><td><code>nil</code></td><td><code>function(DynamicIsland)</code></td></tr><tr><td><code>OnCollapse</code></td><td><code>function</code></td><td><code>nil</code></td><td><code>function(DynamicIsland)</code></td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Parent</code></td><td><code>Instance</code></td><td><code>nil</code></td><td>Docks inside this frame instead of floating</td></tr><tr><td><code>Top</code></td><td><code>number</code></td><td><code>12</code></td><td>Floating only, distance from the top of the screen</td></tr><tr><td><code>Providers</code></td><td><code>table</code></td><td><code>{ "files", "spotify", "demo" }</code></td><td>Ordered source list</td></tr><tr><td><code>Folder</code></td><td><code>string</code></td><td><code>"Ender Hub/songs"</code></td><td>Where the files provider looks</td></tr><tr><td><code>Source</code></td><td><code>number | string</code></td><td><code>1</code></td><td>Which source boots</td></tr><tr><td><code>Expanded</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Boot with the card open</td></tr><tr><td><code>Scale</code></td><td><code>number</code></td><td><code>1</code></td><td>Multiplier on the fitted scale</td></tr><tr><td><code>PollRate</code></td><td><code>number</code></td><td><code>0.25</code></td><td>Seconds between provider polls</td></tr><tr><td><code>AutoCollapse</code></td><td><code>boolean</code></td><td><code>true</code></td><td>Count down to the pill after the pointer has been over the island; <code>false</code> keeps it open</td></tr><tr><td><code>KeySystem</code></td><td><code>table</code></td><td><code>nil</code></td><td>Loading-then-key flow on the island; see Key system</td></tr><tr><td><code>OnExpand</code></td><td><code>function</code></td><td><code>nil</code></td><td><code>function(DynamicIsland)</code></td></tr><tr><td><code>OnCollapse</code></td><td><code>function</code></td><td><code>nil</code></td><td><code>function(DynamicIsland)</code></td></tr></tbody></table></div>
 <h2 id="methods">Methods<a class="anchor" href="#methods" aria-hidden="true">#</a></h2>
 <pre class="code" data-lang="lua"><code>Island:Expand()
 Island:Collapse()
@@ -298,6 +298,13 @@ Island:Toggle()
 
 Island:Toast({ Title = "Copied", Icon = "lucide:clipboard", Duration = 2 })
 Island:Dismiss()
+
+Island:Loading(5, "Loading")
+Island:SetProgress(0.42)
+Island:ShowKey()
+Island:HideKey()
+Island:KeyValid()
+Island:DismissKey()
 
 Island:Play()
 Island:Pause()
@@ -326,6 +333,28 @@ local State = Island:GetState()
 Island:Toast({ Title = "Player joined", Icon = "sfsymbols:personFill", Duration = 4 })
 Island:Dismiss()  -- back to now-playing right away</code></pre>
 <p><code>Icon</code> takes any name <code>Creator.Icon</code> understands, <code>Duration</code> is in seconds (default 3), and <code>Color</code> tints both the glyph and the line. The music keeps playing underneath.</p>
+<h2 id="loading">Loading<a class="anchor" href="#loading" aria-hidden="true">#</a></h2>
+<p><code>Loading</code> puts the pill into its loading state: no artwork, no icon, a label on the left, a percentage on the right, and a hairline along the bottom edge that fills for <code>Duration</code> seconds. Pass <code>Config.KeySystem</code> and the island flips itself to the key prompt when the timer runs out; without one it returns to now-playing.</p>
+<pre class="code" data-lang="lua"><code>Island:Loading(5, "Loading")
+Island:SetProgress(0.42)  -- drives the hairline and the percentage</code></pre>
+<p><code>SetProgress</code> pins the remaining time to the value shown, so a caller that reports real progress keeps the pill honest.</p>
+<h2 id="key-system">Key system<a class="anchor" href="#key-system" aria-hidden="true">#</a></h2>
+<p>The key prompt is a mode of the same capsule, not a dialog. While it is up the music sections fade out and the key card fades in at the same content origin, so the island never changes size between the two. Clicking the island collapses it; clicking the pill again brings the same key card back.</p>
+<pre class="code" data-lang="lua"><code>local Island = WindUI:DynamicIsland({
+    Providers = { "files", "demo" },
+    KeySystem = {
+        Key = "WIND",                       -- or a list, or KeyValidator, or API
+        Delay = 5,                          -- loading seconds before the prompt
+        Title = "Key System",
+        Note = "Enter your key to unlock the interface.",
+        Invalid = "Invalid key.",
+        ValidFor = 4,                       -- seconds the green tick stays up
+        SaveKey = false,
+        File = "Ender Hub/key.key",
+        Callback = function(valid) end,
+    },
+})</code></pre>
+<p>A valid key closes the card, puts <code>Key Valid</code> on the pill in green with a check, then hands the pill back to now-playing after <code>ValidFor</code> seconds. <code>SavedKey</code> skips the prompt when it already validates. Without <code>Config.KeySystem</code> the island is music and toasts only.</p>
 <h2 id="header">Header<a class="anchor" href="#header" aria-hidden="true">#</a></h2>
 <p>The right side of the header is live: <code>wifi</code> shows the current server ping in milliseconds, <code>clock</code> shows how long the island has been mounted. Both come off <code>Stats.Network</code> and the clock, nothing to wire up.</p>
 <h2 id="cover-art">Cover art<a class="anchor" href="#cover-art" aria-hidden="true">#</a></h2>

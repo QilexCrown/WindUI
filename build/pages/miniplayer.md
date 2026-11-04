@@ -13,6 +13,8 @@ local Music = WindUI:Miniplayer({
 
 Grab the strip anywhere that is not a control and drag it.
 
+With no track the strip hides itself completely rather than sitting there empty: the dynamic island is the surface that stays on screen.
+
 ## Inside a window
 
 Pass `Parent` and the card docks in that frame instead of the screen:

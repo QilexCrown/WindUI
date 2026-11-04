@@ -436,10 +436,16 @@ end
 ---------------------------------------------------------------------------
 
 function Miniplayer:RenderState(State)
-	local Raw = State.Title ~= "" and State.Title or State.Hint or ""
+	-- Hint is not a track: an idle provider says "Nothing playing" there and
+	-- the strip has to disappear, not show that sentence as a song title.
+	local HasTrack = State.Title ~= nil and tostring(State.Title) ~= ""
+	local Raw = HasTrack and State.Title or ""
 	local Song, Artist = SplitName(Raw)
 	local Playing = State.Playing == true
-	local HasTrack = Raw ~= ""
+
+	if self.Shell.Visible ~= HasTrack then
+		self.Shell.Visible = HasTrack
+	end
 
 	if HasTrack then
 		self.TitleLabel.Text = Song

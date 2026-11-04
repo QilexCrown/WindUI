@@ -66,6 +66,7 @@ local Island = WindUI:DynamicIsland({
 | `Scale` | `number` | `1` | Multiplier on the fitted scale |
 | `PollRate` | `number` | `0.25` | Seconds between provider polls |
 | `AutoCollapse` | `boolean` | `true` | Count down to the pill after the pointer has been over the island; `false` keeps it open |
+| `KeySystem` | `table` | `nil` | Loading-then-key flow on the island; see Key system |
 | `OnExpand` | `function` | `nil` | `function(DynamicIsland)` |
 | `OnCollapse` | `function` | `nil` | `function(DynamicIsland)` |
 
@@ -78,6 +79,13 @@ Island:Toggle()
 
 Island:Toast({ Title = "Copied", Icon = "lucide:clipboard", Duration = 2 })
 Island:Dismiss()
+
+Island:Loading(5, "Loading")
+Island:SetProgress(0.42)
+Island:ShowKey()
+Island:HideKey()
+Island:KeyValid()
+Island:DismissKey()
 
 Island:Play()
 Island:Pause()
@@ -113,6 +121,40 @@ Island:Dismiss()  -- back to now-playing right away
 ```
 
 `Icon` takes any name `Creator.Icon` understands, `Duration` is in seconds (default 3), and `Color` tints both the glyph and the line. The music keeps playing underneath.
+
+## Loading
+
+`Loading` puts the pill into its loading state: no artwork, no icon, a label on the left, a percentage on the right, and a hairline along the bottom edge that fills for `Duration` seconds. Pass `Config.KeySystem` and the island flips itself to the key prompt when the timer runs out; without one it returns to now-playing.
+
+```lua
+Island:Loading(5, "Loading")
+Island:SetProgress(0.42)  -- drives the hairline and the percentage
+```
+
+`SetProgress` pins the remaining time to the value shown, so a caller that reports real progress keeps the pill honest.
+
+## Key system
+
+The key prompt is a mode of the same capsule, not a dialog. While it is up the music sections fade out and the key card fades in at the same content origin, so the island never changes size between the two. Clicking the island collapses it; clicking the pill again brings the same key card back.
+
+```lua
+local Island = WindUI:DynamicIsland({
+    Providers = { "files", "demo" },
+    KeySystem = {
+        Key = "WIND",                       -- or a list, or KeyValidator, or API
+        Delay = 5,                          -- loading seconds before the prompt
+        Title = "Key System",
+        Note = "Enter your key to unlock the interface.",
+        Invalid = "Invalid key.",
+        ValidFor = 4,                       -- seconds the green tick stays up
+        SaveKey = false,
+        File = "Ender Hub/key.key",
+        Callback = function(valid) end,
+    },
+})
+```
+
+A valid key closes the card, puts `Key Valid` on the pill in green with a check, then hands the pill back to now-playing after `ValidFor` seconds. `SavedKey` skips the prompt when it already validates. Without `Config.KeySystem` the island is music and toasts only.
 
 ## Header
 
