@@ -825,6 +825,11 @@ function Creator.SanitizeFilename(url)
 end
 
 function Creator.Image(Img, Name, Corner, Folder, Type, IsThemeTag, Themed, ThemeTagName)
+	-- Callers hand in shorthand packs ("sf:play"); the icon registry only
+	-- knows the real pack name, so resolve it before anything parses it.
+	if type(Img) == "string" then
+		Img = ResolveIconName(Img)
+	end
 	Folder = Folder or "Temp"
 	Name = Creator.SanitizeFilename(Name)
 
