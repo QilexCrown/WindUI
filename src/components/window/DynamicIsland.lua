@@ -305,6 +305,12 @@ function DynamicIsland.New(Config)
 	local PillMode
 	local HeaderName = "Library"
 	local KeyCfg = Config.KeySystem
+	local Hidden, KeyGiven = false, false
+
+	local function SetHidden(Value)
+		Hidden = Value == true
+		Root.Visible = not Hidden
+	end
 
 	-- Roblox has no pixel reader for a texture, so colour is taken by
 	-- rendering: a 1 x 1 crop of the sleeve stretched flat is that pixel's
@@ -2514,6 +2520,7 @@ function DynamicIsland.New(Config)
 		local Duration = math.max(0.5, tonumber(Options.Duration) or 3)
 		Mode, ToastUntil = "toast", os.clock() + Duration
 		self.Mode = Mode
+		SetHidden(false)
 
 		if self.Expanded then
 			self:Collapse()
@@ -2541,6 +2548,9 @@ function DynamicIsland.New(Config)
 		end
 		Mode, ToastUntil = "music", 0
 		self.Mode = Mode
+		if Config.HideWhenDone then
+			SetHidden(true)
+		end
 		T.Icon.ImageColor3 = WHITE
 		T.Title.TextColor3 = WHITE
 		PillStep()
@@ -2556,6 +2566,7 @@ function DynamicIsland.New(Config)
 		if self.Expanded then
 			self:Collapse()
 		end
+		SetHidden(false)
 		LoadDuration = math.max(0.2, tonumber(Duration) or 5)
 		LoadUntil = os.clock() + LoadDuration
 		LoadTitle.Text = tostring((type(KeyCfg) == "table" and KeyCfg.LoadingTitle) or "Ender Hub")
@@ -2577,6 +2588,15 @@ function DynamicIsland.New(Config)
 		LoadFill.Size = UDim2.fromOffset(math.floor((LOAD_W - 36) * K + 0.5), 4)
 	end
 
+	-- Stage line without restarting the bar. Loading() would zero the fill, so
+	-- every later stage goes through here instead.
+	function DynamicIsland:SetLoadingLabel(Text)
+		if Mode ~= "loading" then
+			return
+		end
+		LoadText.Text = tostring(Text or "")
+	end
+
 	-- Key prompt: the card at the content origin. Expanding is the show, so
 	-- the ordinary island toggle hides and re-shows it with no extra state.
 	function DynamicIsland:ShowKey()
@@ -2585,6 +2605,7 @@ function DynamicIsland.New(Config)
 		end
 		Mode = "key"
 		self.Mode = Mode
+		SetHidden(false)
 		SetKeyError("")
 		KeyShakeUntil = 0
 		K.Row.Position = UDim2.fromOffset(KeyPad, 58)
@@ -2611,6 +2632,7 @@ function DynamicIsland.New(Config)
 		end
 		Mode = "valid"
 		self.Mode = Mode
+		KeyGiven = true
 		local ValidFor = type(KeyCfg) == "table" and tonumber(KeyCfg.ValidFor) or nil
 		ValidUntil = os.clock() + (ValidFor or 4)
 		if self.Expanded then
@@ -2633,6 +2655,9 @@ function DynamicIsland.New(Config)
 		end
 		Mode = "music"
 		self.Mode = Mode
+		if Config.HideWhenDone then
+			SetHidden(true)
+		end
 		PillStep()
 	end
 
@@ -2766,11 +2791,13 @@ function DynamicIsland.New(Config)
 	end
 
 	function DynamicIsland:Show()
-		self.Root.Visible = true
+		SetHidden(false)
 	end
 
+	-- Sticky: the frame loop re-shows the root every step, so a plain
+	-- Root.Visible = false would come straight back.
 	function DynamicIsland:Hide()
-		self.Root.Visible = false
+		SetHidden(true)
 	end
 
 	function DynamicIsland:RenderState(State_)
@@ -2976,13 +3003,19 @@ function DynamicIsland.New(Config)
 		if Mode == "toast" and Now >= ToastUntil then
 			State:Dismiss()
 		elseif Mode == "loading" and Now >= LoadUntil then
-			-- Loaded: the card collapses back to the pill and says so in
-			-- green before the key prompt (or now-playing) takes over.
-			Mode, LoadedUntil = "loaded", Now + (type(KeyCfg) == "table" and (tonumber(KeyCfg.LoadedFor) or 3) or 3)
-			State.Mode = Mode
-			PillStep()
+			-- Key first, when the hub is gated: the prompt replaces the pill the
+			-- moment the bar fills, with no "loaded" claim before the key lands.
+			if type(KeyCfg) == "table" and not KeyGiven then
+				State:ShowKey()
+			else
+				Mode, LoadedUntil = "loaded", Now + (type(KeyCfg) == "table" and (tonumber(KeyCfg.LoadedFor) or 3) or 3)
+				State.Mode = Mode
+				PillStep()
+			end
 		elseif Mode == "loaded" and Now >= LoadedUntil then
-			if type(KeyCfg) == "table" then
+			if Config.HideWhenDone then
+				SetHidden(true)
+			elseif type(KeyCfg) == "table" then
 				State:ShowKey()
 			else
 				Mode = "music"
@@ -2993,7 +3026,7 @@ function DynamicIsland.New(Config)
 			State:DismissKey()
 		end
 
-		if not Root.Visible then
+		if not Hidden and not Root.Visible then
 			Root.Visible = true
 		end
 
