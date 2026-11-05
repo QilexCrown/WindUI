@@ -93,6 +93,7 @@ return function(Config)
 		Gap = 5,
 
 		TopBarButtons = {},
+		TopbarTools = {},
 		AllElements = {},
 
 		ElementConfig = {},
@@ -104,7 +105,7 @@ return function(Config)
 
 	Window.UICorner = Window.Radius
 
-	Window.TopBarButtonIconSize = Window.TopBarButtonIconSize or (Window.Topbar.ButtonsType == "Mac" and 11 or 16)
+	Window.TopBarButtonIconSize = Window.TopBarButtonIconSize or (Window.Topbar.ButtonsType == "Mac" and 8 or 16)
 
 	Window.ElementConfig = {
 		UIPadding = (Window.NewElements and 10 or 13),
@@ -268,34 +269,6 @@ return function(Config)
 			AnchorPoint = Vector2.new(0, 1),
 		}),
 		Window.UIElements.SideBar,
-	})
-
-	Window.UIElements.SideBarBackdrop = New("Frame", {
-		Size = UDim2.new(0, Window.SideBarWidth, 1, 0),
-		BackgroundColor3 = Color3.fromHex("#F2F2F7"),
-		BackgroundTransparency = 0,
-		ThemeTag = {
-			BackgroundColor3 = "SideBarBackground",
-			BackgroundTransparency = "SideBarBackgroundTransparency",
-		},
-		Name = "SideBarBackdrop",
-		Visible = Window.Topbar.ButtonsType == "Mac",
-	}, {
-		New("UICorner", {
-			CornerRadius = UDim.new(0, Window.UICorner),
-		}),
-		-- square off the right edge where the sidebar meets the content pane
-		New("Frame", {
-			Size = UDim2.new(0, Window.UICorner, 1, 0),
-			Position = UDim2.new(1, -Window.UICorner, 0, 0),
-			BackgroundColor3 = Color3.fromHex("#F2F2F7"),
-			BackgroundTransparency = 0,
-			ThemeTag = {
-				BackgroundColor3 = "SideBarBackground",
-				BackgroundTransparency = "SideBarBackgroundTransparency",
-			},
-			Name = "SideBarEdge",
-		}),
 	})
 
 	if Window.ScrollBarEnabled then
@@ -785,7 +758,6 @@ return function(Config)
 			New("UICorner", {
 				CornerRadius = UDim.new(0, Window.UICorner),
 			}),
-			Window.UIElements.SideBarBackdrop,
 			Window.UIElements.SideBarContainer,
 			Window.UIElements.MainBar,
 
@@ -987,7 +959,7 @@ return function(Config)
 			{
 				Size = Window.Topbar.ButtonsType == "Default"
 						and UDim2.new(0, Window.Topbar.Height - 16, 0, Window.Topbar.Height - 16)
-					or UDim2.new(0, 14, 0, 14),
+					or UDim2.new(0, 12, 0, 12),
 				LayoutOrder = LayoutOrder or 999,
 				--Parent = Window.Topbar.ButtonsType == "Default" and Window.UIElements.Main.Main.Topbar.Right or nil,
 				--Active = true,
@@ -1021,8 +993,18 @@ return function(Config)
 			true
 		)
 
+		if Window.Topbar.ButtonsType ~= "Default" then
+			-- faint rim keeps the dot from bleeding into a dark bar
+			New("UIStroke", {
+				Thickness = 1,
+				Color = Color3.fromRGB(0, 0, 0),
+				Transparency = 0.85,
+				Parent = Button,
+			})
+		end
+
 		local ButtonContainer = New("Frame", {
-			Size = Window.Topbar.ButtonsType ~= "Default" and UDim2.new(0, 24, 0, 24)
+			Size = Window.Topbar.ButtonsType ~= "Default" and UDim2.new(0, 20, 0, 20)
 				or UDim2.new(0, Window.Topbar.Height - 16, 0, Window.Topbar.Height - 16),
 			BackgroundTransparency = 1,
 			Parent = Window.UIElements.Main.Main.Topbar.Right,
@@ -1129,6 +1111,7 @@ return function(Config)
 			Name = Name,
 			Object = Button,
 		}
+		Window.TopbarTools[Name] = Button
 
 		Creator.AddSignal(Button.MouseButton1Click, function()
 			if Callback then
@@ -1154,10 +1137,17 @@ return function(Config)
 	do
 		local function SetSidebarVisible(visible)
 			Window.SideBarVisible = visible
-			Window.UIElements.SideBarBackdrop.Visible = visible
 			Window.UIElements.SideBarContainer.Visible = visible
-			Window.UIElements.Main.Main.Topbar.Left.Position =
-				UDim2.new(0, (visible and Window.SideBarWidth or 0) + Window.UIPadding, 0, 0)
+			-- Collapsing leaves the traffic lights and the toggle alone on the
+			-- bar, so title, search icon and tags go with the sidebar.
+			Window.UIElements.Main.Main.Topbar.Left.Visible = visible
+			Window.UIElements.Main.Main.Topbar.Center.Visible = visible
+			for _, name in ipairs({ "Undo", "Redo" }) do
+				local tool = Window.TopbarTools[name]
+				if tool then
+					tool.Visible = visible
+				end
+			end
 			if UserIcon then
 				UserIcon.Visible = visible and Window.User.Enabled or false
 			end
@@ -1187,13 +1177,13 @@ return function(Config)
 				Window:ToggleSidebar()
 			end, 1001)
 
-			Window:CreateTopbarTool("Undo", "undo-2", function()
+			Window:CreateTopbarTool("Undo", "sf:arrowUturnBackward", function()
 				if Window.OnUndo then
 					Window.OnUndo()
 				end
 			end, 1002)
 
-			Window:CreateTopbarTool("Redo", "redo-2", function()
+			Window:CreateTopbarTool("Redo", "sf:arrowUturnForward", function()
 				if Window.OnRedo then
 					Window.OnRedo()
 				end
@@ -1270,7 +1260,8 @@ return function(Config)
 	Window.OpenButtonMain = require("./Openbutton").New(Window)
 
 	task.spawn(function()
-		if Window.Icon then
+		-- Mac topbar shows the plain title block, no window icon beside it.
+		if Window.Icon and Window.Topbar.ButtonsType ~= "Mac" then
 			local WindowIconContainer = New("Frame", {
 				Size = UDim2.new(0, 22, 0, 22),
 				BackgroundTransparency = 1,
@@ -2288,35 +2279,11 @@ return function(Config)
 
 	-- / Search Bar /
 
-	if not Window.HideSearchBar then
+	do
 		local SearchBar = require("../search/Init")
 		local IsOpen = false
-		local CurrentSearchBar
 
-		-- local SearchButton
-		-- SearchButton = Window:CreateTopbarButton("search", function()
-		--     if IsOpen then return end
-
-		--     SearchBar.new(Window.TabModule, Window.UIElements.Main, function()
-		--         -- OnClose
-		--         IsOpen = false
-		--         Window.CanResize = true
-
-		--         Tween(FullScreenBlur, 0.1, {ImageTransparency = 1}):Play()
-		--         FullScreenBlur.Active = false
-		--     end)
-		--     Tween(FullScreenBlur, 0.1, {ImageTransparency = .65}):Play()
-		--     FullScreenBlur.Active = true
-
-		--     IsOpen = true
-		--     Window.CanResize = false
-		-- end, 996)
-
-		local SearchLabel = CreateLabel("Search", "search", Window.UIElements.SideBarContainer, true)
-		SearchLabel.Size = UDim2.new(1, -Window.UIPadding / 2, 0, 39)
-		SearchLabel.Position = UDim2.new(0, Window.UIPadding / 2, 0,--[[Window.UIPadding/2]] 0)
-
-		Creator.AddSignal(SearchLabel.MouseButton1Click, function()
+		local function OpenSearch()
 			if IsOpen then
 				return
 			end
@@ -2336,7 +2303,52 @@ return function(Config)
 
 			IsOpen = true
 			Window.CanResize = false
-		end)
+		end
+
+		-- The search affordance is a small icon next to the title; the field
+		-- itself only exists in the overlay it opens.
+		do
+			local IconFrame =
+				Creator.Image("search", "search", 0, Window.Folder, "WindowSearchIcon", true, true, "WindowTopbarButtonIcon")
+			IconFrame.Size = UDim2.new(0, 15, 0, 15)
+			IconFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+			IconFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+			IconFrame.ImageLabel.ImageTransparency = 0.35
+
+			local Button = New("TextButton", {
+				Size = UDim2.new(0, 20, 0, 20),
+				BackgroundTransparency = 1,
+				Text = "",
+				AutoButtonColor = false,
+				LayoutOrder = 3,
+				Parent = Window.UIElements.Main.Main.Topbar.Left,
+			}, {
+				IconFrame,
+				New("UIScale", {
+					Scale = 1,
+				}),
+			})
+
+			Window.UIElements.SearchButton = Button
+			Window.TopbarTools = Window.TopbarTools or {}
+			Window.TopbarTools.Search = Button
+
+			Creator.AddSignal(Button.MouseButton1Click, OpenSearch)
+			Creator.AddSignal(Button.MouseEnter, function()
+				Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0 }):Play()
+			end)
+			Creator.AddSignal(Button.MouseLeave, function()
+				Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0.35 }):Play()
+			end)
+		end
+
+		if not Window.HideSearchBar then
+			local SearchLabel = CreateLabel("Search", "search", Window.UIElements.SideBarContainer, true)
+			SearchLabel.Size = UDim2.new(1, -Window.UIPadding / 2, 0, 39)
+			SearchLabel.Position = UDim2.new(0, Window.UIPadding / 2, 0, 0)
+
+			Creator.AddSignal(SearchLabel.MouseButton1Click, OpenSearch)
+		end
 	end
 
 	-- / TopBar Edit /
