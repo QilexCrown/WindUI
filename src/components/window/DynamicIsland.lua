@@ -52,6 +52,10 @@ local BW = W - P * 2
 -- the label, the line under it and the bar all have room to breathe.
 local LOAD_W, LOAD_H = 340, 88
 
+-- Toasts ride the same surface as every other element: a card a touch
+-- smaller than the mini strip, with an icon tile, a title and a line.
+local TOAST_W, TOAST_H = 300, 76
+
 -- The key prompt fills the card the player does: same width and height, so
 -- switching between the two never resizes the capsule and the card never
 -- carries a dead band where the music header used to be.
@@ -295,6 +299,7 @@ function DynamicIsland.New(Config)
 	local Mode = "music"
 	local ToastUntil = 0
 	local ValidUntil = 0
+	local LoadedUntil = 0
 	local LoadUntil, LoadDuration = 0, 0
 	local HasTrack = false
 	local PillMode
@@ -348,6 +353,23 @@ function DynamicIsland.New(Config)
 
 	local GlassGrad = Gradient(Root, 90, NumberSequence.new(0))
 	self.GlassGrad = GlassGrad
+
+	-- One pixel of the sleeve, stretched over the whole shell: the island
+	-- itself carries the cover's colour, not just the cards inside it.
+	local RootWash = New("ImageLabel", {
+		Parent = Root,
+		Name = "RootWash",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Image = "",
+		ImageRectSize = Vector2.new(1, 1),
+		ImageTransparency = 1,
+		ScaleType = Enum.ScaleType.Stretch,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 2,
+	})
+	Corner(RootWash, 30)
+	Gradient(RootWash, 90, Sequence({ 0, 1 }, { 0.5, 0.94 }, { 1, 0.82 }))
 
 	local FxRoot = FX.Group(Root, nil, 1)
 	self.FxRoot = FxRoot
@@ -440,54 +462,31 @@ function DynamicIsland.New(Config)
 		Name = "Wave",
 		BackgroundTransparency = 1,
 		AnchorPoint = Vector2.new(1, 0.5),
-		Size = UDim2.fromOffset(24, 18),
+		Size = UDim2.fromOffset(28, 22),
 		Position = UDim2.new(1, -14, 0, 20),
 		ZIndex = 4,
 	})
-	-- Every bar is a one-pixel slice of the artwork stretched flat, so it wears
-	-- the sleeve's own colour instead of a guess at it: a cover with white in
-	-- the middle gets white bars. No artwork, white bars.
-	local SAMPLES = {
-		{ 0.50, 0.50 },
-		{ 0.34, 0.42 },
-		{ 0.66, 0.42 },
-		{ 0.42, 0.64 },
-		{ 0.58, 0.64 },
-		{ 0.50, 0.30 },
-	}
+	-- Plain solid bars. Colour comes from the cover tint in WaveStep, never from
+	-- a slice of the artwork. No artwork, neutral bars.
 	for Index = 1, 6 do
 		local Bar = New("Frame", {
 			Parent = Wave,
 			Name = "Bar",
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromOffset((Index - 1) * 4 + 2, 9),
-			Size = UDim2.fromOffset(2, 3),
+			Position = UDim2.fromOffset((Index - 1) * 5 + 1.5, 11),
+			Size = UDim2.fromOffset(3, 4),
 			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 0,
 			BorderSizePixel = 0,
 			ClipsDescendants = true,
 			ZIndex = 5,
 		})
-		Corner(Bar, 1)
-		local Art = New("ImageLabel", {
-			Parent = Bar,
-			Name = "Art",
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(4, 4),
-			BackgroundTransparency = 1,
-			BorderSizePixel = 0,
-			Image = "",
-			ImageRectSize = Vector2.new(1, 1),
-			ScaleType = Enum.ScaleType.Stretch,
-			ZIndex = 5,
-		})
+		Corner(Bar, 1.5)
 		self.Bars[Index] = {
 			Frame = Bar,
-			Art = Art,
-			Sample = SAMPLES[Index],
 			Current = 0,
 			Goal = 0,
-			Height = 3,
+			Height = 4,
 			Weight = 0.55 + 0.45 * ((Index * 37) % 10) / 10,
 		}
 	end
@@ -495,36 +494,65 @@ function DynamicIsland.New(Config)
 
 	--------------------------------------------------------------- generic pill
 
-	-- The pill is the general element; music is one thing it can show. Toast
-	-- mode swaps the artwork and the level bars for an icon and a line, keeps
-	-- the same footprint, and hands the pill back when the timer runs out.
-	local PillIcon = New("ImageLabel", {
+	-- The island is a surface; each mode brings its own element. Toast mode
+	-- is a small card: icon tile, title, description. No artwork, no bars.
+	local T = {}
+	T.Tile = New("Frame", {
 		Parent = Root,
-		Name = "PillIcon",
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 11),
-		Size = UDim2.fromOffset(18, 18),
-		ImageColor3 = WHITE,
-		ScaleType = Enum.ScaleType.Fit,
+		Name = "ToastTile",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.93,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(16, 20),
+		Size = UDim2.fromOffset(36, 36),
 		Visible = false,
 		ZIndex = 5,
 	})
-	local PillText = New("TextLabel", {
+	Corner(T.Tile, 12)
+	Stroke(T.Tile, 0.88).Color = WHITE
+	T.Icon = New("ImageLabel", {
+		Parent = T.Tile,
+		Name = "Icon",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(18, 18),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = WHITE,
+		ZIndex = 6,
+	})
+	T.Title = New("TextLabel", {
 		Parent = Root,
-		Name = "PillText",
+		Name = "ToastTitle",
 		BackgroundTransparency = 1,
 		FontFace = Bold,
-		TextSize = 13,
+		TextSize = 14,
 		TextColor3 = WHITE,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Text = "",
-		Position = UDim2.fromOffset(38, 10),
-		Size = UDim2.fromOffset(PILL_W - 50, 20),
+		Position = UDim2.fromOffset(64, 16),
+		Size = UDim2.fromOffset(TOAST_W - 80, 18),
 		Visible = false,
 		ZIndex = 5,
 	})
-	self.PillIcon, self.PillText = PillIcon, PillText
+	T.Desc = New("TextLabel", {
+		Parent = Root,
+		Name = "ToastDesc",
+		BackgroundTransparency = 1,
+		FontFace = Medium,
+		TextSize = 11,
+		TextColor3 = SUBTLE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "",
+		Position = UDim2.fromOffset(64, 36),
+		Size = UDim2.fromOffset(TOAST_W - 80, 14),
+		Visible = false,
+		ZIndex = 5,
+	})
+	self.ToastTile, self.ToastIcon = T.Tile, T.Icon
+	self.ToastTitle, self.ToastDesc = T.Title, T.Desc
 
 	-- Loading is its own card: hub name, what is loading, percentage, and a
 	-- bar along the bottom. No artwork, no icon.
@@ -1234,6 +1262,15 @@ function DynamicIsland.New(Config)
 	local FxKey = FX.Group(KeyPanel, FxRoot, 0)
 	self.FxKey = FxKey
 
+	-- The key card wears the same sleeve wash as the player cards, so the
+	-- island keeps the cover's colour when it changes element.
+	local WashK = Wash(KeyPanel, 90, Sequence({ 0, 1 }, { 0.32, 0.9 }, { 0.84, 0.62 }, { 1, 0.96 }))
+	WashK.ZIndex = 2
+	local WashKCorner = WashK:FindFirstChildWhichIsA("UICorner")
+	if WashKCorner then
+		WashKCorner.CornerRadius = UDim.new(0, 30)
+	end
+
 	-- Every key-card piece lives in one table: the island's New() is already
 	-- near the Luau local-register ceiling and each extra local costs a slot.
 	local K = {}
@@ -1293,21 +1330,79 @@ function DynamicIsland.New(Config)
 		ZIndex = 8,
 	})
 
-	K.Stat = New("TextLabel", {
+	-- Ping and mount time, mirroring the header: an icon for each, laid out
+	-- right to left in one auto-sized row.
+	K.Stat = New("Frame", {
 		Parent = KeyPanel,
 		Name = "Stat",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromOffset(KEY_W - KeyPad, 16),
+		Size = UDim2.fromOffset(0, 16),
+		AutomaticSize = Enum.AutomaticSize.X,
+		ZIndex = 8,
+	})
+	New("UIListLayout", {
+		Parent = K.Stat,
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+	})
+	K.PingIcon = New("ImageLabel", {
+		Parent = K.Stat,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(12, 12),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = SUBTLE,
+		LayoutOrder = 1,
+		ZIndex = 9,
+	})
+	PaintGlyph(K.PingIcon, "pulse")
+	K.Ping = New("TextLabel", {
+		Parent = K.Stat,
 		BackgroundTransparency = 1,
 		FontFace = Medium,
 		TextSize = 10,
 		TextColor3 = SUBTLE,
-		TextXAlignment = Enum.TextXAlignment.Right,
 		Text = "",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromOffset(KEY_W - KeyPad, 18),
-		Size = UDim2.fromOffset(180, 14),
-		ZIndex = 8,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 14),
+		LayoutOrder = 2,
+		ZIndex = 9,
+	})
+	New("Frame", {
+		Parent = K.Stat,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(8, 1),
+		LayoutOrder = 3,
+	})
+	K.ClockIcon = New("ImageLabel", {
+		Parent = K.Stat,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(12, 12),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = SUBTLE,
+		LayoutOrder = 4,
+		ZIndex = 9,
+	})
+	PaintGlyph(K.ClockIcon, "clock")
+	K.Time = New("TextLabel", {
+		Parent = K.Stat,
+		BackgroundTransparency = 1,
+		FontFace = Medium,
+		TextSize = 10,
+		TextColor3 = SUBTLE,
+		Text = "",
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 14),
+		LayoutOrder = 5,
+		ZIndex = 9,
 	})
 	self.KeyStat = K.Stat
+	self.KeyPing, self.KeyTime = K.Ping, K.Time
 
 	-- Input row. The row itself is the thing that shakes; the field and the
 	-- submit button ride inside it so an error moves both together.
@@ -1675,6 +1770,9 @@ function DynamicIsland.New(Config)
 		if Mode == "loading" then
 			return { LOAD_W, LOAD_H }
 		end
+		if Mode == "toast" then
+			return { TOAST_W, TOAST_H }
+		end
 		return { PILL_W, PILL_H }
 	end
 
@@ -1789,10 +1887,15 @@ function DynamicIsland.New(Config)
 		local Y = math.floor(-6 * (1 - Ex.a) + 0.5)
 		local Alpha = Ex.a
 		local Key = math.floor(Ex.a * 40 + 0.5) / 40
-		if Key ~= GlassK then
-			GlassK = Key
+		-- Mode is part of the cache key: the key card needs its own flat fill.
+		local GlassKey = Key + (Mode == "key" and 0.5 or 0)
+		if GlassKey ~= GlassK then
+			GlassK = GlassKey
 			local M = 0.42 * Key
+			-- The key card is a solid surface: the pill's bottom glass fade
+			-- reads as a grey band over it once the card is this tall.
 			GlassGrad.Transparency = Key <= 0 and NumberSequence.new(0)
+				or (Mode == "key" and NumberSequence.new(0))
 				or Sequence({ 0, 0 }, { 0.55, 0 }, { 0.62, 0.14 * M }, { 0.7, 0.5 * M }, { 0.78, 0.86 * M }, { 0.85, M }, { 1, M })
 			PaintShadow()
 		end
@@ -1893,11 +1996,12 @@ function DynamicIsland.New(Config)
 		end
 
 		-- The key card's top-right corner: ping and how long the island has
-		-- been up, updated on the same one-second tick as the header.
-		local Elapsed = string.format("%.1fs", math.max(0, Now - State.Born))
-		local Stat = Ping ~= "" and (Ping .. "  ·  " .. Elapsed) or Elapsed
-		if K.Stat.Text ~= Stat then
-			K.Stat.Text = Stat
+		-- been up, on the same one-second tick as the header.
+		if K.Ping.Text ~= Ping then
+			K.Ping.Text = Ping
+		end
+		if K.Time.Text ~= UpText then
+			K.Time.Text = UpText
 		end
 	end
 
@@ -1918,10 +2022,22 @@ function DynamicIsland.New(Config)
 			WashB.Image, WashB.ImageTransparency = Art, 0.24 - 0.14 * P_
 			WashA.ImageRectOffset, WashB.ImageRectOffset = Centre, Centre
 			WashA.BackgroundTransparency, WashB.BackgroundTransparency = 1, 1
+			WashK.Image, WashK.ImageTransparency = Art, 0.42 - 0.1 * P_
+			WashK.ImageRectOffset = Centre
+			WashK.BackgroundTransparency = 1
+			RootWash.Image = Art
+			RootWash.ImageRectOffset = Centre
+			RootWash.ImageTransparency = 0.68 - 0.1 * P_
+			RootWash.BackgroundTransparency = 1
 		else
 			WashA.Image, WashB.Image = "", ""
 			WashA.BackgroundColor3, WashB.BackgroundColor3 = WHITE, WHITE
 			WashA.BackgroundTransparency, WashB.BackgroundTransparency = 0.94, 0.9
+			WashK.Image = ""
+			WashK.BackgroundColor3 = WHITE
+			WashK.BackgroundTransparency = 0.94
+			RootWash.Image = ""
+			RootWash.ImageTransparency = 1
 		end
 
 		if ArtShade then
@@ -1951,22 +2067,17 @@ function DynamicIsland.New(Config)
 		end
 
 		local Color = WaveTint(AccentLive)
-		local HasArt = Cover ~= ""
 		for _, Bar in ipairs(State.Bars) do
-			Bar.Current = Fade(Bar.Current, Bar.Goal, Bar.Goal > Bar.Current and 26 or 9, Delta)
-			local BarHeight = math.floor(3 + 15 * Bar.Current + 0.5)
+			Bar.Current = Fade(Bar.Current, Bar.Goal, Bar.Goal > Bar.Current and 28 or 10, Delta)
+			local BarHeight = math.floor(4 + 15 * Bar.Current + 0.5)
 			if Bar.Height ~= BarHeight then
 				Bar.Height = BarHeight
-				Bar.Frame.Size = UDim2.fromOffset(2, BarHeight)
+				Bar.Frame.Size = UDim2.fromOffset(3, BarHeight)
 			end
-			if Bar.Art.Image ~= (HasArt and Cover or "") then
-				Bar.Art.Image = HasArt and Cover or ""
+			if Bar.Tint ~= Color then
+				Bar.Tint = Color
+				Bar.Frame.BackgroundColor3 = Color
 			end
-			if HasArt then
-				Bar.Art.ImageRectOffset = Sample(Bar.Sample[1], Bar.Sample[2])
-			end
-			Bar.Frame.BackgroundColor3 = Color
-			Bar.Frame.BackgroundTransparency = HasArt and 1 or 0
 		end
 	end
 
@@ -2349,8 +2460,9 @@ function DynamicIsland.New(Config)
 		Wave.Visible = ShowArt and (State.P or 0) < 0.6
 
 		local Toast = Mode == "toast"
-		PillIcon.Visible = Toast
-		PillText.Visible = Toast
+		T.Tile.Visible = Toast
+		T.Title.Visible = Toast
+		T.Desc.Visible = Toast
 
 		local Loading = Mode == "loading" and not State.Expanded
 		LoadTitle.Visible = Loading
@@ -2364,9 +2476,12 @@ function DynamicIsland.New(Config)
 		KeyReqIcon.Visible = KeyReq
 		KeyReqText.Visible = KeyReq
 
-		local Valid = Mode == "valid"
+		local Valid = Mode == "valid" or Mode == "loaded"
 		ValidIcon.Visible = Valid
 		ValidText.Visible = Valid
+		if Valid then
+			ValidText.Text = Mode == "loaded" and "Script Loaded" or "Key Valid"
+		end
 	end
 
 	local function LoadStep()
@@ -2388,8 +2503,8 @@ function DynamicIsland.New(Config)
 
 	--------------------------------------------------------------- public
 
-	-- The pill as a general surface: a short line with an icon, no music
-	-- required. Duration in seconds; the pill returns to now-playing on its
+	-- The island as a general surface: an icon, a title and a line, no music
+	-- required. Duration in seconds; the island returns to now-playing on its
 	-- own, or immediately through :Dismiss().
 	function DynamicIsland:Toast(Options)
 		if not self.Alive then
@@ -2405,11 +2520,14 @@ function DynamicIsland.New(Config)
 		end
 
 		local Source, Rect = Icon(Options.Icon or "note")
-		PillIcon.Image = Source
-		PillIcon.ImageRectOffset, PillIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
-		PillIcon.ImageColor3 = Options.Color or WHITE
-		PillText.Text = tostring(Options.Title or Options.Text or "")
-		PillText.TextColor3 = Options.Color or WHITE
+		T.Icon.Image = Source
+		T.Icon.ImageRectOffset, T.Icon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
+		T.Icon.ImageColor3 = Options.Color or WHITE
+		T.Title.Text = tostring(Options.Title or Options.Text or "")
+		T.Title.TextColor3 = Options.Color or WHITE
+		local Description = tostring(Options.Description or Options.Desc or "")
+		T.Desc.Text = Description
+		T.Title.Position = UDim2.fromOffset(64, Description ~= "" and 16 or 27)
 		PillStep()
 
 		if self.Config.OnToast then
@@ -2423,8 +2541,8 @@ function DynamicIsland.New(Config)
 		end
 		Mode, ToastUntil = "music", 0
 		self.Mode = Mode
-		PillIcon.ImageColor3 = WHITE
-		PillText.TextColor3 = WHITE
+		T.Icon.ImageColor3 = WHITE
+		T.Title.TextColor3 = WHITE
 		PillStep()
 	end
 
@@ -2858,6 +2976,12 @@ function DynamicIsland.New(Config)
 		if Mode == "toast" and Now >= ToastUntil then
 			State:Dismiss()
 		elseif Mode == "loading" and Now >= LoadUntil then
+			-- Loaded: the card collapses back to the pill and says so in
+			-- green before the key prompt (or now-playing) takes over.
+			Mode, LoadedUntil = "loaded", Now + (type(KeyCfg) == "table" and (tonumber(KeyCfg.LoadedFor) or 3) or 3)
+			State.Mode = Mode
+			PillStep()
+		elseif Mode == "loaded" and Now >= LoadedUntil then
 			if type(KeyCfg) == "table" then
 				State:ShowKey()
 			else

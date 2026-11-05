@@ -526,20 +526,30 @@ local function ResolveIconName(Icon)
 end
 
 function Creator.Icon(Icon, formatdefault)
+	local Empty = { ImageRectPosition = Vector2.new(0, 0), ImageRectSize = Vector2.new(0, 0) }
+	if type(Icon) == "string" and (string.match(Icon, "^rbxassetid://") or string.match(Icon, "^https?://")) then
+		return Icon, Empty
+	end
+
 	local IconData = Icons.Icon2(ResolveIconName(Icon), nil, formatdefault ~= false)
 
-	local Empty = { ImageRectPosition = Vector2.new(0, 0), ImageRectSize = Vector2.new(0, 0) }
 	if IconData == nil then
 		return "", Empty
 	end
 
 	-- Icon2 returns either { Image, Rect } or a single record with .Image.
-	-- Normalise so callers can always take two values.
+	-- Normalise so callers can always take two values and always read a rect.
 	local First, Second = IconData[1], IconData[2]
 	if type(First) == "string" then
 		return First, Second or Empty
 	end
 	if type(IconData) == "table" and type(IconData.Image) == "string" then
+		if not IconData.ImageRectSize then
+			IconData.ImageRectSize = Vector2.new(0, 0)
+		end
+		if not IconData.ImageRectPosition then
+			IconData.ImageRectPosition = Vector2.new(0, 0)
+		end
 		return IconData.Image, IconData
 	end
 	return "", Empty

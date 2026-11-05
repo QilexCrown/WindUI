@@ -1,6 +1,6 @@
 The DynamicIsland is the capsule at the top of the screen and the general surface for short-lived content: music is one mode it can show, a toast is another. Collapsed it is a black pill with the artwork on the left and a six-bar wave on the right. Click it and it springs into the full music card — header with the source and the ping, the now-playing block, the two chips, then the scrubber and the transport. Click the header again (or right-click the island) to close it.
 
-The pill takes its colour from the sleeve: the wave bars and the glow under the cards are single pixels of the artwork stretched flat, so a cover with white in the middle gets white bars and a white wash. Nothing is guessed and no palette is fixed — it is the cover's own colour, taken at render time. No artwork, white bars.
+The pill takes its colour from the sleeve: the six wave bars are plain solid bars tinted with the cover's dominant hue, and the glow under the cards is a single pixel of the artwork stretched flat. Nothing is guessed and no palette is fixed - it is the cover's own colour, taken at render time. No artwork, neutral white bars.
 
 The pill never moves. It is anchored to the top centre at `Top`, and expanding changes its size, not its position.
 
@@ -13,7 +13,7 @@ local Island = WindUI:DynamicIsland({
 })
 ```
 
-Collapsed it is 212 x 40 with 28 px artwork at (6, 6) and six 2 px bars on the right edge. Opened it is 476 x 204: the now-playing card is 288 x 96 at (14, 36) with 72 px artwork, the Shuffle and Library chips are two 152 x 44 rows on the right, and the 448 x 50 scrubber with both times and the three transport discs sits under them. The bars keep animating while the pill is collapsed.
+Collapsed it is 212 x 40 with 28 px artwork at (6, 6) and six 3 px bars on the right edge. Opened it is 476 x 204: the now-playing card is 288 x 96 at (14, 36) with 72 px artwork, the Shuffle and Library chips are two 152 x 44 rows on the right, and the 448 x 50 scrubber with both times and the three transport discs sits under them. The bars keep animating while the pill is collapsed.
 
 Drag the pill to move it, drag the header to move the open card.
 
@@ -112,19 +112,24 @@ local State = Island:GetState()
 
 ## Toast
 
-The pill is not music-only. `Toast` swaps the artwork and the wave for an icon and a line, keeps the same footprint, and hands the pill back to now-playing when the timer runs out. Clicking a toast dismisses it; a toast does not expand.
+The pill is not music-only. Every mode is an element on the same surface: music, toast, loading, key. `Toast` swaps the artwork and the wave for a small card - an icon tile, a title and a description - and hands the pill back to now-playing when the timer runs out. The toast card is 300 x 76, slightly smaller than the 340 x 88 mini player, and it does not expand.
 
 ```lua
-Island:Toast({ Title = "Copied to clipboard", Icon = "lucide:clipboard", Duration = 2 })
+Island:Toast({
+    Icon = "lucide:clipboard",
+    Title = "Copied to clipboard",
+    Description = "Paste it anywhere, it stays on the clipboard",
+    Duration = 2,
+})
 Island:Toast({ Title = "Player joined", Icon = "sfsymbols:personFill", Duration = 4 })
 Island:Dismiss()  -- back to now-playing right away
 ```
 
-`Icon` takes any name `Creator.Icon` understands, `Duration` is in seconds (default 3), and `Color` tints both the glyph and the line. The music keeps playing underneath.
+`Icon` takes any name `Creator.Icon` understands, `Description` is optional (the title centres itself when it is missing), `Duration` is in seconds (default 3), and `Color` tints the glyph and the title. `Text` and `Desc` are accepted as aliases so the old one-line toast still works. Clicking a toast dismisses it; the music keeps playing underneath.
 
 ## Loading
 
-`Loading` grows the island into a 340 x 88 card — the mini player's footprint — and fills it with the hub name, what is loading, a percentage in the corner, and a progress bar along the bottom. No artwork, no icon, black and white. Pass `Config.KeySystem` and the island flips itself to the key prompt when the timer runs out; without one it returns to now-playing.
+`Loading` grows the island into a 340 x 88 card — the mini player's footprint — and fills it with the hub name, what is loading, a percentage in the corner, and a progress bar along the bottom. No artwork, no icon, black and white. When the timer runs out the card collapses back to the pill and shows a green check with `Script Loaded` for `KeySystem.LoadedFor` seconds (default 1.8). After that the island flips to the key prompt when `Config.KeySystem` is set, or back to now-playing without one.
 
 ```lua
 Island:Loading(5, "Loading modules, ui, services...")
@@ -143,6 +148,7 @@ local Island = WindUI:DynamicIsland({
     KeySystem = {
         Key = "WIND",                       -- or a list, or KeyValidator, or API
         Delay = 5,                          -- loading seconds before the prompt
+        LoadedFor = 1.8,                    -- seconds "Script Loaded" stays on the pill
         LoadingTitle = "Ender Hub",
         Loading = "Loading modules, ui...",
         Title = "Key System",
