@@ -866,6 +866,17 @@ return function(Config)
 		}),
 	})
 
+	do
+		local Bg = Window.UIElements.Main:FindFirstChild("Background")
+		if Bg and typeof(Config.BackgroundGradient) == "ColorSequence" then
+			New("UIGradient", {
+				Parent = Bg,
+				Rotation = Config.BackgroundGradientRotation or 90,
+				Color = Config.BackgroundGradient,
+			})
+		end
+	end
+
 	Creator.AddSignal(Window.UIElements.Main.Main.Topbar.Left:GetPropertyChangedSignal("AbsoluteSize"), function()
 		local LeftWidth = 0
 		local RightWidth = Window.UIElements.Main.Main.Topbar.Right.UIListLayout.AbsoluteContentSize.X

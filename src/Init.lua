@@ -385,24 +385,6 @@ function WindUI:DynamicIsland(Config)
 	return require("./components/window/DynamicIsland").New(Config)
 end
 
--- Miniplayer: the separate music card. Nothing to do with the dynamic island -
--- it is its own widget, dragged anywhere. Floating it docks over the game;
--- pass Config.Parent (a tab, a section, any frame) and it docks inside the
--- window instead.
---
---   local Music = WindUI:Miniplayer({
---       Providers = { "files", "spotify", "demo" },
---       Folder = "Ender Hub/songs",
---   })
---
--- Config.Providers picks the sources: "files", "spotify", "sound", "demo", or a
--- bridge table { Id, Name, Url }.
-function WindUI:Miniplayer(Config)
-	Config = Config or {}
-	Config.WindUI = WindUI
-	return require("./components/window/Miniplayer").New(Config)
-end
-
 -- Icon packs: names carry their pack ("lucide:play", "sfsymbols:playFill",
 -- "sf:playFill"), and a bare name resolves against the current pack.
 function WindUI:SetIconPack(Pack)

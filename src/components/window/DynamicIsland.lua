@@ -296,7 +296,7 @@ function DynamicIsland.New(Config)
 	local Playing = false
 	local Title, Artist, Cover, Hint = "", "", "", ""
 	local ArtW, ArtH = 0, 0
-	local Mode = "music"
+	local Mode = "idle"
 	local ToastUntil = 0
 	local ValidUntil = 0
 	local LoadedUntil = 0
@@ -695,6 +695,38 @@ function DynamicIsland.New(Config)
 		ZIndex = 5,
 	})
 	self.ValidIcon, self.ValidText = ValidIcon, ValidText
+
+	-- Idle: the island never leaves the screen, so the resting capsule needs
+	-- a face of its own. Same slot as the key and valid pills: mark, wordmark.
+	local IdleIcon = New("ImageLabel", {
+		Parent = Root,
+		Name = "IdleIcon",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(14, 11),
+		Size = UDim2.fromOffset(18, 18),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = ACCENT,
+		Visible = false,
+		ZIndex = 5,
+	})
+	local IdleSource, IdleRect = Icon("lucide:sparkles")
+	IdleIcon.Image, IdleIcon.ImageRectOffset, IdleIcon.ImageRectSize =
+		IdleSource, IdleRect.ImageRectPosition, IdleRect.ImageRectSize
+	local IdleText = New("TextLabel", {
+		Parent = Root,
+		Name = "IdleText",
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 13,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Ender Hub",
+		Position = UDim2.fromOffset(38, 9),
+		Size = UDim2.fromOffset(PILL_W - 52, 22),
+		Visible = false,
+		ZIndex = 5,
+	})
+	self.IdleIcon, self.IdleText = IdleIcon, IdleText
 
 	--------------------------------------------------------------- cards
 
@@ -2490,6 +2522,10 @@ function DynamicIsland.New(Config)
 		if Valid then
 			ValidText.Text = Mode == "loaded" and "Script Loaded" or "Key Valid"
 		end
+
+		local Idle = Mode == "idle"
+		IdleIcon.Visible = Idle
+		IdleText.Visible = Idle
 	end
 
 	local function LoadStep()
@@ -2548,7 +2584,7 @@ function DynamicIsland.New(Config)
 		if Mode ~= "toast" then
 			return
 		end
-		Mode, ToastUntil = "music", 0
+		Mode, ToastUntil = "idle", 0
 		self.Mode = Mode
 		if Config.HideWhenDone then
 			SetHidden(true)
@@ -2655,7 +2691,7 @@ function DynamicIsland.New(Config)
 		if Mode ~= "valid" then
 			return
 		end
-		Mode = "music"
+		Mode = "idle"
 		self.Mode = Mode
 		if Config.HideWhenDone then
 			SetHidden(true)
@@ -2884,7 +2920,7 @@ function DynamicIsland.New(Config)
 		Pressing, Peeking = false, false
 		if Mode == "toast" then
 			State:Dismiss()
-		elseif Mode == "loading" then
+		elseif Mode == "loading" or Mode == "idle" then
 			return
 		elseif Mode == "valid" then
 			State:DismissKey()
@@ -2898,7 +2934,9 @@ function DynamicIsland.New(Config)
 	Hit.InputBegan:Connect(function(Input)
 		local Type_ = Input.UserInputType
 		if Type_ == Enum.UserInputType.MouseButton2 or Type_ == Enum.UserInputType.MouseButton3 then
-			State:Expand()
+			if Mode ~= "idle" then
+				State:Expand()
+			end
 		end
 		if (Type_ == Enum.UserInputType.MouseButton1 or Type_ == Enum.UserInputType.Touch) and not State.Expanded then
 			Pressing = true
@@ -3020,7 +3058,7 @@ function DynamicIsland.New(Config)
 			elseif type(KeyCfg) == "table" then
 				State:ShowKey()
 			else
-				Mode = "music"
+				Mode = "idle"
 				State.Mode = Mode
 				PillStep()
 			end
@@ -3105,7 +3143,11 @@ function DynamicIsland.New(Config)
 	end
 	table.insert(self.Signals, Root.DescendantAdded:Connect(FX.Claim))
 
-	Surface.Bind(self, Config)
+	-- Music is opt-in: an island created without a provider list is a pure
+	-- surface (loading, key, toast, idle). No demo folder scan runs behind it.
+	if type(Config.Providers) == "table" and #Config.Providers > 0 then
+		Surface.Bind(self, Config)
+	end
 	PaintState()
 	PaintPlay()
 
