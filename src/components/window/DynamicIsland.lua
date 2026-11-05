@@ -253,6 +253,47 @@ end
 -- construction
 --------------------------------------------------------------------------
 
+-- Idle face: the island never leaves the screen, so the resting capsule needs
+-- a mark and a wordmark in the same slot the key and valid pills use. Built in
+-- its own scope because New already sits at the register ceiling: four more
+-- locals there fail to compile once the module is bundled and loaded at -O0.
+local function NewIdleFace(Root)
+	local Face = {}
+
+	Face.Icon = New("ImageLabel", {
+		Parent = Root,
+		Name = "IdleIcon",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(14, 11),
+		Size = UDim2.fromOffset(18, 18),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = ACCENT,
+		Visible = false,
+		ZIndex = 5,
+	})
+	local Source, Rect = Icon("lucide:sparkles")
+	Face.Icon.Image = Source
+	Face.Icon.ImageRectOffset = Rect.ImageRectPosition
+	Face.Icon.ImageRectSize = Rect.ImageRectSize
+
+	Face.Text = New("TextLabel", {
+		Parent = Root,
+		Name = "IdleText",
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 13,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Ender Hub",
+		Position = UDim2.fromOffset(38, 9),
+		Size = UDim2.fromOffset(PILL_W - 52, 22),
+		Visible = false,
+		ZIndex = 5,
+	})
+
+	return Face
+end
+
 function DynamicIsland.New(Config)
 	Config = Config or {}
 
@@ -698,35 +739,8 @@ function DynamicIsland.New(Config)
 
 	-- Idle: the island never leaves the screen, so the resting capsule needs
 	-- a face of its own. Same slot as the key and valid pills: mark, wordmark.
-	local IdleIcon = New("ImageLabel", {
-		Parent = Root,
-		Name = "IdleIcon",
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(14, 11),
-		Size = UDim2.fromOffset(18, 18),
-		ScaleType = Enum.ScaleType.Fit,
-		ImageColor3 = ACCENT,
-		Visible = false,
-		ZIndex = 5,
-	})
-	local IdleSource, IdleRect = Icon("lucide:sparkles")
-	IdleIcon.Image, IdleIcon.ImageRectOffset, IdleIcon.ImageRectSize =
-		IdleSource, IdleRect.ImageRectPosition, IdleRect.ImageRectSize
-	local IdleText = New("TextLabel", {
-		Parent = Root,
-		Name = "IdleText",
-		BackgroundTransparency = 1,
-		FontFace = Bold,
-		TextSize = 13,
-		TextColor3 = WHITE,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = "Ender Hub",
-		Position = UDim2.fromOffset(38, 9),
-		Size = UDim2.fromOffset(PILL_W - 52, 22),
-		Visible = false,
-		ZIndex = 5,
-	})
-	self.IdleIcon, self.IdleText = IdleIcon, IdleText
+	local IdleUI = NewIdleFace(Root)
+	self.IdleIcon, self.IdleText = IdleUI.Icon, IdleUI.Text
 
 	--------------------------------------------------------------- cards
 
@@ -2524,8 +2538,8 @@ function DynamicIsland.New(Config)
 		end
 
 		local Idle = Mode == "idle"
-		IdleIcon.Visible = Idle
-		IdleText.Visible = Idle
+		IdleUI.Icon.Visible = Idle
+		IdleUI.Text.Visible = Idle
 	end
 
 	local function LoadStep()
