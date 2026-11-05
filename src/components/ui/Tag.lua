@@ -36,9 +36,12 @@ function Tag:New(TagConfig, Parent)
 		TextSize = TagModule.TextSize,
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
 		Text = TagModule.Title,
+		-- A tag with no Color used to evaluate to `false` here and the property
+		-- write threw, killing the whole window build on the version tag.
 		TextColor3 = typeof(TagModule.Color) == "Color3" and Creator.GetTextColorForHSB(TagModule.Color) or typeof(
 			TagModule.Color
-		) == "string" and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme))),
+		) == "string" and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme)))
+			or Color3.new(1, 1, 1),
 		LayoutOrder = 9999,
 	})
 

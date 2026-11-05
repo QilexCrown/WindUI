@@ -11522,9 +11522,12 @@ function Tag:New(TagConfig, Parent)
 		TextSize = TagModule.TextSize,
 		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
 		Text = TagModule.Title,
+		-- A tag with no Color used to evaluate to `false` here and the property
+		-- write threw, killing the whole window build on the version tag.
 		TextColor3 = typeof(TagModule.Color) == "Color3" and Creator.GetTextColorForHSB(TagModule.Color) or typeof(
 			TagModule.Color
-		) == "string" and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme))),
+		) == "string" and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme)))
+			or Color3.new(1, 1, 1),
 		LayoutOrder = 9999,
 	})
 
@@ -15338,11 +15341,6 @@ function DynamicIsland.New(Config)
 	local KeyCfg = Config.KeySystem
 	local Hidden, KeyGiven = false, false
 
-	local function SetHidden(Value)
-		Hidden = Value == true
-		Root.Visible = not Hidden
-	end
-
 	-- Roblox has no pixel reader for a texture, so colour is taken by
 	-- rendering: a 1 x 1 crop of the sleeve stretched flat is that pixel's
 	-- colour, whatever it happens to be. The header gives the size; without
@@ -15384,6 +15382,13 @@ function DynamicIsland.New(Config)
 		Parent = Host,
 	})
 	self.Root = Root
+
+	-- Declared after Root: a closure made before the local existed would read
+	-- the global of the same name and index nil on the first call.
+	local function SetHidden(Value)
+		Hidden = Value == true
+		Root.Visible = not Hidden
+	end
 
 	local Corner_ = Corner(Root, 20)
 	self.Corner = Corner_
@@ -34148,5 +34153,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-171-icons
+-- enderhub-windui-172-tag
 return __require("src/Init.lua")

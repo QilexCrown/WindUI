@@ -307,11 +307,6 @@ function DynamicIsland.New(Config)
 	local KeyCfg = Config.KeySystem
 	local Hidden, KeyGiven = false, false
 
-	local function SetHidden(Value)
-		Hidden = Value == true
-		Root.Visible = not Hidden
-	end
-
 	-- Roblox has no pixel reader for a texture, so colour is taken by
 	-- rendering: a 1 x 1 crop of the sleeve stretched flat is that pixel's
 	-- colour, whatever it happens to be. The header gives the size; without
@@ -353,6 +348,13 @@ function DynamicIsland.New(Config)
 		Parent = Host,
 	})
 	self.Root = Root
+
+	-- Declared after Root: a closure made before the local existed would read
+	-- the global of the same name and index nil on the first call.
+	local function SetHidden(Value)
+		Hidden = Value == true
+		Root.Visible = not Hidden
+	end
 
 	local Corner_ = Corner(Root, 20)
 	self.Corner = Corner_
