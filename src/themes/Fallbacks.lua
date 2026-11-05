@@ -18,6 +18,9 @@ return function(Creator)
 
 		WindowBackground = "Background",
 
+		SideBarBackground = "Dialog",
+		SideBarBackgroundTransparency = 0,
+
 		WindowShadow = "Black",
 		--WindowShadowTransparency = .7,
 

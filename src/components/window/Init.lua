@@ -57,6 +57,7 @@ return function(Config)
 		HideSearchBar = Config.HideSearchBar ~= false,
 		ScrollBarEnabled = Config.ScrollBarEnabled or false,
 		SideBarWidth = Config.SideBarWidth or 200,
+		SideBarVisible = true,
 		Acrylic = Config.Acrylic or false,
 		NewElements = Config.NewElements or false,
 		IgnoreAlerts = Config.IgnoreAlerts or false,
@@ -269,6 +270,34 @@ return function(Config)
 		Window.UIElements.SideBar,
 	})
 
+	Window.UIElements.SideBarBackdrop = New("Frame", {
+		Size = UDim2.new(0, Window.SideBarWidth, 1, 0),
+		BackgroundColor3 = Color3.fromHex("#F2F2F7"),
+		BackgroundTransparency = 0,
+		ThemeTag = {
+			BackgroundColor3 = "SideBarBackground",
+			BackgroundTransparency = "SideBarBackgroundTransparency",
+		},
+		Name = "SideBarBackdrop",
+		Visible = Window.Topbar.ButtonsType == "Mac",
+	}, {
+		New("UICorner", {
+			CornerRadius = UDim.new(0, Window.UICorner),
+		}),
+		-- square off the right edge where the sidebar meets the content pane
+		New("Frame", {
+			Size = UDim2.new(0, Window.UICorner, 1, 0),
+			Position = UDim2.new(1, -Window.UICorner, 0, 0),
+			BackgroundColor3 = Color3.fromHex("#F2F2F7"),
+			BackgroundTransparency = 0,
+			ThemeTag = {
+				BackgroundColor3 = "SideBarBackground",
+				BackgroundTransparency = "SideBarBackgroundTransparency",
+			},
+			Name = "SideBarEdge",
+		}),
+	})
+
 	if Window.ScrollBarEnabled then
 		CreateScrollSlider(
 			Window.UIElements.SideBar,
@@ -280,7 +309,7 @@ return function(Config)
 	end
 
 	Window.UIElements.MainBar = New("Frame", {
-		Size = UDim2.new(1, -Window.UIElements.SideBarContainer.AbsoluteSize.X, 1, -Window.Topbar.Height),
+		Size = UDim2.new(1, -Window.SideBarWidth, 1, -Window.Topbar.Height),
 		Position = UDim2.new(1, 0, 1, 0),
 		AnchorPoint = Vector2.new(1, 1),
 		BackgroundTransparency = 1,
@@ -349,7 +378,7 @@ return function(Config)
 		UserIcon = New("TextButton", {
 			Size = UDim2.new(
 				0,
-				Window.UIElements.SideBarContainer.AbsoluteSize.X - (Window.UIPadding / 2),
+				Window.SideBarWidth - (Window.UIPadding / 2),
 				0,
 				42 + Window.UIPadding
 			),
@@ -756,6 +785,7 @@ return function(Config)
 			New("UICorner", {
 				CornerRadius = UDim.new(0, Window.UICorner),
 			}),
+			Window.UIElements.SideBarBackdrop,
 			Window.UIElements.SideBarContainer,
 			Window.UIElements.MainBar,
 
@@ -778,6 +808,9 @@ return function(Config)
 				New("Frame", { -- Topbar Left Side
 					AutomaticSize = "X",
 					Size = UDim2.new(0, 0, 1, 0),
+					Position = Window.Topbar.ButtonsType == "Mac"
+							and UDim2.new(0, Window.SideBarWidth + Window.UIPadding, 0, 0)
+						or nil,
 					BackgroundTransparency = 1,
 					Name = "Left",
 				}, {
@@ -877,29 +910,43 @@ return function(Config)
 		end
 	end
 
-	Creator.AddSignal(Window.UIElements.Main.Main.Topbar.Left:GetPropertyChangedSignal("AbsoluteSize"), function()
-		local LeftWidth = 0
-		local RightWidth = Window.UIElements.Main.Main.Topbar.Right.UIListLayout.AbsoluteContentSize.X
-			/ Config.WindUI.UIScale
+	local function UpdateTopbarCenter()
+		local Topbar = Window.UIElements.Main.Main.Topbar
+		local UIScale = Config.WindUI.UIScale
+		local LeftWidth = Topbar.Left.AbsoluteSize.X / UIScale
 
-		LeftWidth = Window.UIElements.Main.Main.Topbar.Left.AbsoluteSize.X / Config.WindUI.UIScale
+		if Window.Topbar.ButtonsType == "Mac" then
+			local offset = (Window.SideBarVisible and Window.SideBarWidth or 0)
+				+ Window.UIPadding
+				+ LeftWidth
+				+ Window.UIPadding
+			Topbar.Center.Position = UDim2.new(0, offset, 0.5, 0)
+			Topbar.Center.Size = UDim2.new(1, -offset - Window.UIPadding, 1, 0)
+			return
+		end
+
+		local RightWidth = Topbar.Right.UIListLayout.AbsoluteContentSize.X / UIScale
 		if Window.Topbar.ButtonsType ~= "Default" then
 			LeftWidth = LeftWidth + RightWidth + Window.UIPadding - 4
 		end
 
-		Window.UIElements.Main.Main.Topbar.Center.Position =
-			UDim2.new(0, LeftWidth + (Window.UIPadding / Config.WindUI.UIScale), 0.5, 0)
-		Window.UIElements.Main.Main.Topbar.Center.Size = UDim2.new(
+		Topbar.Center.Position = UDim2.new(0, LeftWidth + (Window.UIPadding / UIScale), 0.5, 0)
+		Topbar.Center.Size = UDim2.new(
 			1,
 			-LeftWidth
-				- (Window.UIPadding / Config.WindUI.UIScale)
+				- (Window.UIPadding / UIScale)
 				- (Window.Topbar.ButtonsType == "Default" and RightWidth + Window.UIPadding or 0),
 			1,
 			0
 		)
-	end)
+	end
 
-	if Window.Topbar.ButtonsType ~= "Default" then
+	Creator.AddSignal(
+		Window.UIElements.Main.Main.Topbar.Left:GetPropertyChangedSignal("AbsoluteSize"),
+		UpdateTopbarCenter
+	)
+
+	if Window.Topbar.ButtonsType ~= "Default" and Window.Topbar.ButtonsType ~= "Mac" then
 		Creator.AddSignal(Window.UIElements.Main.Main.Topbar.Right:GetPropertyChangedSignal("AbsoluteSize"), function()
 			Window.UIElements.Main.Main.Topbar.Left.Position = UDim2.new(
 				0,
@@ -909,6 +956,8 @@ return function(Config)
 			)
 		end)
 	end
+
+	UpdateTopbarCenter()
 
 	function Window:CreateTopbarButton(Name, Icon, Callback, LayoutOrder, IconThemed, Color, IconSize)
 		local IconFrame = Creator.Image(
@@ -1052,6 +1101,104 @@ return function(Config)
 		end)
 
 		return Button
+	end
+
+	function Window:CreateTopbarTool(Name, Icon, Callback, LayoutOrder)
+		local IconFrame =
+			Creator.Image(Icon, Icon, 0, Window.Folder, "WindowTopbarIcon", true, true, "WindowTopbarButtonIcon")
+		IconFrame.Size = UDim2.new(0, 16, 0, 16)
+		IconFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+		IconFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+		IconFrame.ImageLabel.ImageTransparency = 0.35
+
+		local Button = New("TextButton", {
+			Size = UDim2.new(0, 24, 0, 24),
+			BackgroundTransparency = 1,
+			Text = "",
+			AutoButtonColor = false,
+			LayoutOrder = LayoutOrder or 997,
+			Parent = Window.UIElements.Main.Main.Topbar.Right,
+		}, {
+			IconFrame,
+			New("UIScale", {
+				Scale = 1,
+			}),
+		})
+
+		Window.TopBarButtons[100 - (LayoutOrder or 997)] = {
+			Name = Name,
+			Object = Button,
+		}
+
+		Creator.AddSignal(Button.MouseButton1Click, function()
+			if Callback then
+				Callback()
+			end
+		end)
+		Creator.AddSignal(Button.MouseEnter, function()
+			Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0 }):Play()
+		end)
+		Creator.AddSignal(Button.MouseLeave, function()
+			Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0.35 }):Play()
+		end)
+		Creator.AddSignal(Button.MouseButton1Down, function()
+			Tween(Button.UIScale, 0.2, { Scale = 0.9 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		end)
+		Creator.AddSignal(Button.InputEnded, function()
+			Tween(Button.UIScale, 0.2, { Scale = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut):Play()
+		end)
+
+		return Button
+	end
+
+	do
+		local function SetSidebarVisible(visible)
+			Window.SideBarVisible = visible
+			Window.UIElements.SideBarBackdrop.Visible = visible
+			Window.UIElements.SideBarContainer.Visible = visible
+			Window.UIElements.Main.Main.Topbar.Left.Position =
+				UDim2.new(0, (visible and Window.SideBarWidth or 0) + Window.UIPadding, 0, 0)
+			if UserIcon then
+				UserIcon.Visible = visible and Window.User.Enabled or false
+			end
+			Tween(Window.UIElements.MainBar, 0.25, {
+				Size = UDim2.new(1, visible and -Window.SideBarWidth or 0, 1, -Window.Topbar.Height),
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			UpdateTopbarCenter()
+		end
+
+		function Window:SetSidebarVisible(visible)
+			SetSidebarVisible(visible and true or false)
+		end
+
+		function Window:ToggleSidebar()
+			SetSidebarVisible(not Window.SideBarVisible)
+		end
+
+		if Window.Topbar.ButtonsType == "Mac" then
+			New("Frame", {
+				Size = UDim2.new(0, 10, 0, 0),
+				BackgroundTransparency = 1,
+				LayoutOrder = 1000,
+				Parent = Window.UIElements.Main.Main.Topbar.Right,
+			})
+
+			Window:CreateTopbarTool("ToggleSidebar", "panel-left", function()
+				Window:ToggleSidebar()
+			end, 1001)
+
+			Window:CreateTopbarTool("Undo", "undo-2", function()
+				if Window.OnUndo then
+					Window.OnUndo()
+				end
+			end, 1002)
+
+			Window:CreateTopbarTool("Redo", "redo-2", function()
+				if Window.OnRedo then
+					Window.OnRedo()
+				end
+			end, 1003)
+		end
 	end
 
 	function Window.Topbar:Button(ButtonConfig: {
@@ -1218,7 +1365,7 @@ return function(Config)
 		end,
 		(Window.Topbar.ButtonsType == "Default" and 998 or 999),
 		true,
-		Color3.fromHex("#60C762"),
+		Color3.fromHex("#28C840"),
 		Window.Topbar.ButtonsType == "Mac" and 9 or nil
 	)
 
@@ -1294,7 +1441,7 @@ return function(Config)
 		--         Duration = 5,
 		--     })
 		-- end
-	end, (Window.Topbar.ButtonsType == "Default" and 997 or 998), nil, Color3.fromHex("#F4C948"))
+	end, (Window.Topbar.ButtonsType == "Default" and 997 or 998), nil, Color3.fromHex("#FEBC2E"))
 
 	function Window:OnOpen(func)
 		Window.OnOpenCallback = func
@@ -1998,7 +2145,7 @@ return function(Config)
 				Window:Destroy()
 			end
 		end
-	end, (Window.Topbar.ButtonsType == "Default" and 999 or 997), nil, Color3.fromHex("#F4695F"))
+	end, (Window.Topbar.ButtonsType == "Default" and 999 or 997), nil, Color3.fromHex("#FF5F57"))
 
 	function Window:Tag(TagConfig)
 		if Window.UIElements.Main.Main.Topbar.Center.Visible == false then
