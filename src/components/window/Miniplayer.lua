@@ -71,7 +71,8 @@ local function Corner(Object, Radius_)
 end
 
 local function Glyph(Icon, Size, Color)
-	local Image, Rect = Creator.Icon(Icon)
+	local Data = Creator.Icon(Icon)
+	local Image, Rect = Data[1], Data[2]
 	return New("ImageLabel", {
 		Image = Image,
 		ImageRectOffset = Rect.ImageRectPosition,
@@ -479,7 +480,8 @@ function Miniplayer:RenderState(State)
 		self.Fill.Size = UDim2.new(0, 0, 1, 0)
 	end
 
-	local Icon, Rect = Creator.Icon(Playing and "sfsymbols:pauseFill" or "sfsymbols:playFill")
+	local Data = Creator.Icon(Playing and "sfsymbols:pauseFill" or "sfsymbols:playFill")
+	local Icon, Rect = Data[1], Data[2]
 	self.PlayIcon.Image = Icon
 	self.PlayIcon.ImageRectOffset, self.PlayIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
 

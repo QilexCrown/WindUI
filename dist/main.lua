@@ -12512,7 +12512,8 @@ local function Corner(Object, Radius_)
 end
 
 local function Glyph(Icon, Size, Color)
-	local Image, Rect = Creator.Icon(Icon)
+	local Data = Creator.Icon(Icon)
+	local Image, Rect = Data[1], Data[2]
 	return New("ImageLabel", {
 		Image = Image,
 		ImageRectOffset = Rect.ImageRectPosition,
@@ -12920,7 +12921,8 @@ function Miniplayer:RenderState(State)
 		self.Fill.Size = UDim2.new(0, 0, 1, 0)
 	end
 
-	local Icon, Rect = Creator.Icon(Playing and "sfsymbols:pauseFill" or "sfsymbols:playFill")
+	local Data = Creator.Icon(Playing and "sfsymbols:pauseFill" or "sfsymbols:playFill")
+	local Icon, Rect = Data[1], Data[2]
 	self.PlayIcon.Image = Icon
 	self.PlayIcon.ImageRectOffset, self.PlayIcon.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
 
@@ -15125,8 +15127,8 @@ local ICONS = {
 }
 
 local function Icon(IconName)
-	local Image, Rect = Creator.Icon(ICONS[IconName] or IconName)
-	return Image, Rect
+	local Data = Creator.Icon(ICONS[IconName] or IconName)
+	return Data[1], Data[2]
 end
 
 local function Corner(Object, Radius)
@@ -24232,34 +24234,47 @@ local function ResolveIconName(Icon)
 	return ResolveIconPack(Pack) .. ":" .. Name
 end
 
+-- Callers read this as a table: IconData[1] is the image, IconData[2] the rect
+-- record. Returning two values instead made every `local Data = Creator.Icon()`
+-- site index a string and killed the window build on its first icon.
 function Creator.Icon(Icon, formatdefault)
 	local Empty = { ImageRectPosition = Vector2.new(0, 0), ImageRectSize = Vector2.new(0, 0) }
+
+	local function Pack(Image, Rect)
+		Rect = Rect or Empty
+		if not Rect.ImageRectSize then
+			Rect.ImageRectSize = Vector2.new(0, 0)
+		end
+		if not Rect.ImageRectPosition then
+			Rect.ImageRectPosition = Vector2.new(0, 0)
+		end
+		return {
+			[1] = Image,
+			[2] = Rect,
+			Image = Image,
+			ImageRectSize = Rect.ImageRectSize,
+			ImageRectPosition = Rect.ImageRectPosition,
+		}
+	end
+
 	if type(Icon) == "string" and (string.match(Icon, "^rbxassetid://") or string.match(Icon, "^https?://")) then
-		return Icon, Empty
+		return Pack(Icon)
 	end
 
 	local IconData = Icons.Icon2(ResolveIconName(Icon), nil, formatdefault ~= false)
 
 	if IconData == nil then
-		return "", Empty
+		return Pack("")
 	end
 
-	-- Icon2 returns either { Image, Rect } or a single record with .Image.
-	-- Normalise so callers can always take two values and always read a rect.
 	local First, Second = IconData[1], IconData[2]
 	if type(First) == "string" then
-		return First, Second or Empty
+		return Pack(First, Second)
 	end
 	if type(IconData) == "table" and type(IconData.Image) == "string" then
-		if not IconData.ImageRectSize then
-			IconData.ImageRectSize = Vector2.new(0, 0)
-		end
-		if not IconData.ImageRectPosition then
-			IconData.ImageRectPosition = Vector2.new(0, 0)
-		end
-		return IconData.Image, IconData
+		return Pack(IconData.Image, IconData)
 	end
-	return "", Empty
+	return Pack("")
 end
 
 -- Switches the pack used by bare icon names ("play" instead of "lucide:play").

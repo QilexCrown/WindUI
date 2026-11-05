@@ -96,8 +96,8 @@ local ICONS = {
 }
 
 local function Icon(IconName)
-	local Image, Rect = Creator.Icon(ICONS[IconName] or IconName)
-	return Image, Rect
+	local Data = Creator.Icon(ICONS[IconName] or IconName)
+	return Data[1], Data[2]
 end
 
 local function Corner(Object, Radius)
