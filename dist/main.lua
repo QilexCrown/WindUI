@@ -666,7 +666,8 @@ return function(Config)
 
 	Window.UICorner = Window.Radius
 
-	Window.TopBarButtonIconSize = Window.TopBarButtonIconSize or (Window.Topbar.ButtonsType == "Mac" and 8 or 16)
+	Window.TopBarButtonIconSize = Window.TopBarButtonIconSize or (Window.Topbar.ButtonsType == "Mac" and 9 or 16)
+	Window.SidebarHeaderHeight = Window.SidebarHeaderHeight or 44
 
 	Window.ElementConfig = {
 		UIPadding = (Window.NewElements and 10 or 13),
@@ -772,7 +773,7 @@ return function(Config)
 			1,
 			Window.ScrollBarEnabled and -3 - (Window.UIPadding / 2) or 0,
 			1,
-			not Window.HideSearchBar and -39 - 6 or 0
+			not Window.HideSearchBar and -Window.SidebarHeaderHeight - 6 or 0
 		),
 		Position = UDim2.new(0, 0, 1, 0),
 		AnchorPoint = Vector2.new(0, 1),
@@ -825,7 +826,7 @@ return function(Config)
 		New("Frame", {
 			Name = "Content",
 			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 1, not Window.HideSearchBar and -39 - 6 - Window.UIPadding or -Window.UIPadding / 2),
+			Size = UDim2.new(1, 0, 1, not Window.HideSearchBar and -Window.SidebarHeaderHeight - 6 - Window.UIPadding or -Window.UIPadding / 2),
 			Position = UDim2.new(0, 0, 1, -Window.UIPadding / 2),
 			AnchorPoint = Vector2.new(0, 1),
 		}),
@@ -1401,7 +1402,7 @@ return function(Config)
 						New("UIListLayout", {
 							FillDirection = "Horizontal",
 							VerticalAlignment = "Center",
-							HorizontalAlignment = "Left",
+							HorizontalAlignment = Window.Topbar.ButtonsType == "Mac" and "Right" or "Left",
 							Padding = UDim.new(0, Window.UIPadding / 2),
 						}),
 					}),
@@ -1449,10 +1450,7 @@ return function(Config)
 		local LeftWidth = Topbar.Left.AbsoluteSize.X / UIScale
 
 		if Window.Topbar.ButtonsType == "Mac" then
-			local offset = (Window.SideBarVisible and Window.SideBarWidth or 0)
-				+ Window.UIPadding
-				+ LeftWidth
-				+ Window.UIPadding
+			local offset = (Window.SideBarVisible and Window.SideBarWidth or 0) + Window.UIPadding
 			Topbar.Center.Position = UDim2.new(0, offset, 0.5, 0)
 			Topbar.Center.Size = UDim2.new(1, -offset - Window.UIPadding, 1, 0)
 			return
@@ -1520,7 +1518,7 @@ return function(Config)
 			{
 				Size = Window.Topbar.ButtonsType == "Default"
 						and UDim2.new(0, Window.Topbar.Height - 16, 0, Window.Topbar.Height - 16)
-					or UDim2.new(0, 12, 0, 12),
+					or UDim2.new(0, 14, 0, 14),
 				LayoutOrder = LayoutOrder or 999,
 				--Parent = Window.Topbar.ButtonsType == "Default" and Window.UIElements.Main.Main.Topbar.Right or nil,
 				--Active = true,
@@ -1565,7 +1563,7 @@ return function(Config)
 		end
 
 		local ButtonContainer = New("Frame", {
-			Size = Window.Topbar.ButtonsType ~= "Default" and UDim2.new(0, 20, 0, 20)
+			Size = Window.Topbar.ButtonsType ~= "Default" and UDim2.new(0, 22, 0, 22)
 				or UDim2.new(0, Window.Topbar.Height - 16, 0, Window.Topbar.Height - 16),
 			BackgroundTransparency = 1,
 			Parent = Window.UIElements.Main.Main.Topbar.Right,
@@ -1649,13 +1647,13 @@ return function(Config)
 	function Window:CreateTopbarTool(Name, Icon, Callback, LayoutOrder)
 		local IconFrame =
 			Creator.Image(Icon, Icon, 0, Window.Folder, "WindowTopbarIcon", true, true, "WindowTopbarButtonIcon")
-		IconFrame.Size = UDim2.new(0, 16, 0, 16)
+		IconFrame.Size = UDim2.new(0, 18, 0, 18)
 		IconFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 		IconFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 		IconFrame.ImageLabel.ImageTransparency = 0.35
 
 		local Button = New("TextButton", {
-			Size = UDim2.new(0, 24, 0, 24),
+			Size = UDim2.new(0, 26, 0, 26),
 			BackgroundTransparency = 1,
 			Text = "",
 			AutoButtonColor = false,
@@ -1699,16 +1697,8 @@ return function(Config)
 		local function SetSidebarVisible(visible)
 			Window.SideBarVisible = visible
 			Window.UIElements.SideBarContainer.Visible = visible
-			-- Collapsing leaves the traffic lights and the toggle alone on the
-			-- bar, so title, search icon and tags go with the sidebar.
-			Window.UIElements.Main.Main.Topbar.Left.Visible = visible
-			Window.UIElements.Main.Main.Topbar.Center.Visible = visible
-			for _, name in ipairs({ "Undo", "Redo" }) do
-				local tool = Window.TopbarTools[name]
-				if tool then
-					tool.Visible = visible
-				end
-			end
+			-- The bar keeps every control and tag when the sidebar folds away;
+			-- only the panel (and its user card) goes.
 			if UserIcon then
 				UserIcon.Visible = visible and Window.User.Enabled or false
 			end
@@ -2904,11 +2894,57 @@ return function(Config)
 		end
 
 		if not Window.HideSearchBar then
-			local SearchLabel = CreateLabel("Search", "search", Window.UIElements.SideBarContainer, true)
-			SearchLabel.Size = UDim2.new(1, -Window.UIPadding / 2, 0, 39)
-			SearchLabel.Position = UDim2.new(0, Window.UIPadding / 2, 0, 0)
+			if Window.Topbar.ButtonsType == "Mac" then
+				-- Mac bars carry no title slot: the title block moves into the
+				-- sidebar header, under the traffic lights, beside the mark.
+				local Header = New("Frame", {
+					Size = UDim2.new(1, -Window.UIPadding, 0, Window.SidebarHeaderHeight),
+					Position = UDim2.new(0, Window.UIPadding / 2, 0, 0),
+					BackgroundTransparency = 1,
+					Name = "SidebarHeader",
+					Parent = Window.UIElements.SideBarContainer,
+				})
 
-			Creator.AddSignal(SearchLabel.MouseButton1Click, OpenSearch)
+				if Window.Icon then
+					local HeaderIcon =
+						Creator.Image(Window.Icon, Window.Title, 8, Window.Folder, "Window", false, false)
+					HeaderIcon.Size = UDim2.new(0, 28, 0, 28)
+					HeaderIcon.AnchorPoint = Vector2.new(0, 0.5)
+					HeaderIcon.Position = UDim2.new(0, 4, 0.5, 0)
+					HeaderIcon.Parent = Header
+				end
+
+				local TitleBlock = Window.UIElements.Main.Main.Topbar.Left.Title
+				if TitleBlock then
+					TitleBlock.Parent = Header
+					TitleBlock.AnchorPoint = Vector2.new(0, 0.5)
+					TitleBlock.Position = UDim2.new(0, 42, 0.5, 0)
+					WindowTitle.TextSize = 20
+					if WindowAuthor then
+						WindowAuthor.TextSize = 12
+					end
+				end
+
+				Window.UIElements.Main.Main.Topbar.Left.Visible = false
+
+				local SearchButton = Window.UIElements.SearchButton
+				if SearchButton then
+					SearchButton.Parent = Header
+					SearchButton.Size = UDim2.new(0, 22, 0, 22)
+					SearchButton.AnchorPoint = Vector2.new(1, 0.5)
+					SearchButton.Position = UDim2.new(1, -2, 0.5, 0)
+					local SearchIcon = SearchButton:FindFirstChildWhichIsA("Frame")
+					if SearchIcon then
+						SearchIcon.Size = UDim2.new(0, 16, 0, 16)
+					end
+				end
+			else
+				local SearchLabel = CreateLabel("Search", "search", Window.UIElements.SideBarContainer, true)
+				SearchLabel.Size = UDim2.new(1, -Window.UIPadding / 2, 0, Window.SidebarHeaderHeight)
+				SearchLabel.Position = UDim2.new(0, Window.UIPadding / 2, 0, 0)
+
+				Creator.AddSignal(SearchLabel.MouseButton1Click, OpenSearch)
+			end
 		end
 	end
 
@@ -33747,5 +33783,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome4
+-- enderhub-windui-mac-chrome5
 return __require("src/Init.lua")
