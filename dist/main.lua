@@ -1538,7 +1538,7 @@ return function(Config)
 		IconFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 		IconFrame.ImageLabel.ImageTransparency = Window.Topbar.ButtonsType == "Default" and 0 or 1
 
-		if Window.Topbar.ButtonsType ~= "Default" then
+		if Window.Topbar.ButtonsType ~= "Default" and Color then
 			IconFrame.ImageLabel.ImageColor3 = Creator.GetTextColorForHSB(Color)
 		end
 
@@ -33730,5 +33730,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome
+-- enderhub-windui-mac-chrome2
 return __require("src/Init.lua")
