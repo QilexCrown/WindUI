@@ -334,27 +334,34 @@ Island:Toast({ Title = "Player joined", Icon = "sfsymbols:personFill", Duration 
 Island:Dismiss()  -- back to now-playing right away</code></pre>
 <p><code>Icon</code> takes any name <code>Creator.Icon</code> understands, <code>Duration</code> is in seconds (default 3), and <code>Color</code> tints both the glyph and the line. The music keeps playing underneath.</p>
 <h2 id="loading">Loading<a class="anchor" href="#loading" aria-hidden="true">#</a></h2>
-<p><code>Loading</code> puts the pill into its loading state: no artwork, no icon, a label on the left, a percentage on the right, and a hairline along the bottom edge that fills for <code>Duration</code> seconds. Pass <code>Config.KeySystem</code> and the island flips itself to the key prompt when the timer runs out; without one it returns to now-playing.</p>
-<pre class="code" data-lang="lua"><code>Island:Loading(5, "Loading")
-Island:SetProgress(0.42)  -- drives the hairline and the percentage</code></pre>
-<p><code>SetProgress</code> pins the remaining time to the value shown, so a caller that reports real progress keeps the pill honest.</p>
+<p><code>Loading</code> grows the island into a 340 x 88 card — the mini player's footprint — and fills it with the hub name, what is loading, a percentage in the corner, and a progress bar along the bottom. No artwork, no icon, black and white. Pass <code>Config.KeySystem</code> and the island flips itself to the key prompt when the timer runs out; without one it returns to now-playing.</p>
+<pre class="code" data-lang="lua"><code>Island:Loading(5, "Loading modules, ui, services...")
+Island:SetProgress(0.42)  -- drives the bar and the percentage</code></pre>
+<p><code>SetProgress</code> pins the remaining time to the value shown, so a caller that reports real progress keeps the card honest. The title is <code>KeySystem.LoadingTitle</code> (default <code>Ender Hub</code>) and the line under it is the <code>Label</code> argument, falling back to <code>KeySystem.Loading</code>.</p>
 <h2 id="key-system">Key system<a class="anchor" href="#key-system" aria-hidden="true">#</a></h2>
-<p>The key prompt is a mode of the same capsule, not a dialog. While it is up the music sections fade out and the key card fades in at the same content origin, so the island never changes size between the two. Clicking the island collapses it; clicking the pill again brings the same key card back.</p>
+<p>The key prompt is a mode of the same capsule, not a dialog. While it is up the music sections fade out and the key card fades in on the same curve. The card carries the key tile and title top-left, live ping and mount time top-right, a field with the submit button inside it, a red error line with its alert glyph underneath, and three glass buttons: Get Key, Copy Key, Exit. Clicking the island collapses it to a <code>Key Required</code> pill with a white key glyph; clicking again brings the card back.</p>
 <pre class="code" data-lang="lua"><code>local Island = WindUI:DynamicIsland({
     Providers = { "files", "demo" },
     KeySystem = {
         Key = "WIND",                       -- or a list, or KeyValidator, or API
         Delay = 5,                          -- loading seconds before the prompt
+        LoadingTitle = "Ender Hub",
+        Loading = "Loading modules, ui...",
         Title = "Key System",
         Note = "Enter your key to unlock the interface.",
-        Invalid = "Invalid key.",
+        Placeholder = "Enter Your Key",
+        Invalid = "Invalid key.",           -- custom error line
+        Empty = "Enter a key first.",
         ValidFor = 4,                       -- seconds the green tick stays up
+        GetKey = "https://example.com/key", -- string is copied, function runs
+        Copy = nil,                         -- overrides what Copy Key copies
+        OnExit = function(island) end,      -- falls back to collapsing the card
         SaveKey = false,
         File = "Ender Hub/key.key",
         Callback = function(valid) end,
     },
 })</code></pre>
-<p>A valid key closes the card, puts <code>Key Valid</code> on the pill in green with a check, then hands the pill back to now-playing after <code>ValidFor</code> seconds. <code>SavedKey</code> skips the prompt when it already validates. Without <code>Config.KeySystem</code> the island is music and toasts only.</p>
+<p>A wrong key flashes the error in red with an alert icon and shakes the whole input row; the row settles back on its own. Get Key copies <code>GetKey</code> to the clipboard (or calls it), Copy Key copies the key, Exit runs <code>OnExit</code>. A valid key closes the card, puts <code>Key Valid</code> on the pill in green with a check, then hands the pill back to now-playing after <code>ValidFor</code> seconds. <code>SavedKey</code> skips the prompt when it already validates. Without <code>Config.KeySystem</code> the island is music and toasts only.</p>
 <h2 id="header">Header<a class="anchor" href="#header" aria-hidden="true">#</a></h2>
 <p>The right side of the header is live: <code>wifi</code> shows the current server ping in milliseconds, <code>clock</code> shows how long the island has been mounted. Both come off <code>Stats.Network</code> and the clock, nothing to wire up.</p>
 <h2 id="cover-art">Cover art<a class="anchor" href="#cover-art" aria-hidden="true">#</a></h2>

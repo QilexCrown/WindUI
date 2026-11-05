@@ -48,6 +48,10 @@ local HE, HC = 204, 40
 local PILL_W, PILL_H = 212, 40
 local BW = W - P * 2
 
+-- Loading is a card, not a capsule: the same footprint as the mini strip, so
+-- the label, the line under it and the bar all have room to breathe.
+local LOAD_W, LOAD_H = 340, 88
+
 -- The key prompt fills the card the player does: same width and height, so
 -- switching between the two never resizes the capsule and the card never
 -- carries a dead band where the music header used to be.
@@ -58,6 +62,7 @@ local WHITE = Color3.new(1, 1, 1)
 local SUBTLE = Color3.fromRGB(154, 156, 164)
 local ACCENT = Color3.fromRGB(110, 220, 170)
 local GREEN = Color3.fromRGB(52, 199, 89)
+local RED = Color3.fromRGB(255, 92, 92)
 
 -- The bench is monochrome: the only colour on screen comes from the artwork.
 local TINT = {
@@ -79,6 +84,11 @@ local ICONS = {
 	clock = "lucide:clock",
 	back = "sfsymbols:chevronLeft",
 	check = "lucide:circle-check",
+	key = "lucide:key",
+	alert = "lucide:circle-alert",
+	copy = "lucide:copy",
+	link = "lucide:external-link",
+	exit = "lucide:log-out",
 }
 
 local function Icon(IconName)
@@ -516,21 +526,35 @@ function DynamicIsland.New(Config)
 	})
 	self.PillIcon, self.PillText = PillIcon, PillText
 
-	-- Loading and key-valid are pill states like the toast: same footprint,
-	-- no artwork, no bars. Loading carries a label, a percentage and a
-	-- hairline that fills along the bottom edge; valid carries a green check.
+	-- Loading is its own card: hub name, what is loading, percentage, and a
+	-- bar along the bottom. No artwork, no icon.
+	local LoadTitle = New("TextLabel", {
+		Parent = Root,
+		Name = "LoadTitle",
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 15,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "Ender Hub",
+		Position = UDim2.fromOffset(18, 13),
+		Size = UDim2.fromOffset(LOAD_W - 36 - 74, 20),
+		Visible = false,
+		ZIndex = 5,
+	})
 	local LoadText = New("TextLabel", {
 		Parent = Root,
 		Name = "LoadText",
 		BackgroundTransparency = 1,
-		FontFace = Bold,
-		TextSize = 13,
-		TextColor3 = WHITE,
+		FontFace = Medium,
+		TextSize = 11,
+		TextColor3 = SUBTLE,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
-		Text = "Loading",
-		Position = UDim2.fromOffset(14, 9),
-		Size = UDim2.fromOffset(PILL_W - 82, 22),
+		Text = "Loading modules, ui...",
+		Position = UDim2.fromOffset(18, 35),
+		Size = UDim2.fromOffset(LOAD_W - 36, 16),
 		Visible = false,
 		ZIndex = 5,
 	})
@@ -544,8 +568,8 @@ function DynamicIsland.New(Config)
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Text = "0%",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.fromOffset(PILL_W - 14, 10),
-		Size = UDim2.fromOffset(56, 20),
+		Position = UDim2.fromOffset(LOAD_W - 18, 14),
+		Size = UDim2.fromOffset(60, 18),
 		Visible = false,
 		ZIndex = 5,
 	})
@@ -555,23 +579,56 @@ function DynamicIsland.New(Config)
 		BackgroundColor3 = WHITE,
 		BackgroundTransparency = 0.84,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(14, PILL_H - 8),
-		Size = UDim2.fromOffset(PILL_W - 28, 2),
+		Position = UDim2.fromOffset(18, LOAD_H - 22),
+		Size = UDim2.fromOffset(LOAD_W - 36, 4),
 		Visible = false,
 		ZIndex = 5,
 	})
-	Corner(LoadTrack, 1)
+	Corner(LoadTrack, 2)
 	local LoadFill = New("Frame", {
 		Parent = LoadTrack,
 		Name = "Fill",
 		BackgroundColor3 = WHITE,
 		BackgroundTransparency = 0.06,
 		BorderSizePixel = 0,
-		Size = UDim2.fromOffset(0, 2),
+		Size = UDim2.fromOffset(0, 4),
 		ZIndex = 6,
 	})
-	Corner(LoadFill, 1)
-	self.LoadText, self.LoadPercent, self.LoadFill = LoadText, LoadPercent, LoadFill
+	Corner(LoadFill, 2)
+	self.LoadTitle, self.LoadText, self.LoadPercent, self.LoadFill =
+		LoadTitle, LoadText, LoadPercent, LoadFill
+
+	-- Collapsed key mode: the pill says what is missing instead of showing
+	-- artwork. Hidden again the moment the card opens.
+	local KeyReqIcon = New("ImageLabel", {
+		Parent = Root,
+		Name = "KeyReqIcon",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(14, 11),
+		Size = UDim2.fromOffset(18, 18),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = WHITE,
+		Visible = false,
+		ZIndex = 5,
+	})
+	local KeyReqSource, KeyReqRect = Icon("key")
+	KeyReqIcon.Image, KeyReqIcon.ImageRectOffset, KeyReqIcon.ImageRectSize =
+		KeyReqSource, KeyReqRect.ImageRectPosition, KeyReqRect.ImageRectSize
+	local KeyReqText = New("TextLabel", {
+		Parent = Root,
+		Name = "KeyReqText",
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 13,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Key Required",
+		Position = UDim2.fromOffset(38, 9),
+		Size = UDim2.fromOffset(PILL_W - 52, 22),
+		Visible = false,
+		ZIndex = 5,
+	})
+	self.KeyReqIcon, self.KeyReqText = KeyReqIcon, KeyReqText
 
 	local ValidIcon = New("ImageLabel", {
 		Parent = Root,
@@ -1177,97 +1234,266 @@ function DynamicIsland.New(Config)
 	local FxKey = FX.Group(KeyPanel, FxRoot, 0)
 	self.FxKey = FxKey
 
+	-- Every key-card piece lives in one table: the island's New() is already
+	-- near the Luau local-register ceiling and each extra local costs a slot.
+	local K = {}
 	local KeyPad = P
-	local KeyTitle = Label(KeyPanel, Bold, 15, WHITE, KeyPad, 18, KEY_W - KeyPad * 2 - 120, 20)
-	KeyTitle.Text = "Key System"
+	local KeyInnerW = KEY_W - KeyPad * 2
+	K.Pad, K.InnerW = KeyPad, KeyInnerW
 
-	local KeyNote = New("TextLabel", {
+	local function PaintGlyph(Image, Name)
+		local Source, Rect = Icon(Name)
+		Image.Image = Source
+		Image.ImageRectOffset, Image.ImageRectSize = Rect.ImageRectPosition, Rect.ImageRectSize
+	end
+
+	-- Header: key tile on the left, name and note beside it, ping and load
+	-- time parked in the top-right corner.
+	local KeyTile = New("Frame", {
+		Parent = KeyPanel,
+		Name = "Tile",
+		BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.93,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(KeyPad, 14),
+		Size = UDim2.fromOffset(32, 32),
+		ZIndex = 8,
+	})
+	Corner(KeyTile, 10)
+	Stroke(KeyTile, 0.88).Color = WHITE
+	local KeyTileIcon = New("ImageLabel", {
+		Parent = KeyTile,
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(16, 16),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = WHITE,
+		ZIndex = 9,
+	})
+	PaintGlyph(KeyTileIcon, "key")
+
+	K.Title = Label(KeyPanel, Bold, 15, WHITE, 56, 16, 216, 20)
+	K.Title.Text = "Key System"
+
+	K.Note = New("TextLabel", {
 		Parent = KeyPanel,
 		Name = "Note",
 		BackgroundTransparency = 1,
 		FontFace = Medium,
-		TextSize = 11,
+		TextSize = 10,
 		TextColor3 = SUBTLE,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		TextWrapped = true,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Text = "",
-		Position = UDim2.fromOffset(KeyPad, 44),
-		Size = UDim2.fromOffset(KEY_W - KeyPad * 2 - 120, 30),
+		Position = UDim2.fromOffset(56, 37),
+		Size = UDim2.fromOffset(230, 14),
 		ZIndex = 8,
 	})
 
-	local KeyBox = New("Frame", {
+	K.Stat = New("TextLabel", {
 		Parent = KeyPanel,
+		Name = "Stat",
+		BackgroundTransparency = 1,
+		FontFace = Medium,
+		TextSize = 10,
+		TextColor3 = SUBTLE,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Text = "",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromOffset(KEY_W - KeyPad, 18),
+		Size = UDim2.fromOffset(180, 14),
+		ZIndex = 8,
+	})
+	self.KeyStat = K.Stat
+
+	-- Input row. The row itself is the thing that shakes; the field and the
+	-- submit button ride inside it so an error moves both together.
+	K.Row = New("Frame", {
+		Parent = KeyPanel,
+		Name = "Row",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(KeyPad, 58),
+		Size = UDim2.fromOffset(KeyInnerW, 42),
+		ZIndex = 7,
+	})
+	self.KeyRow = K.Row
+
+	local KeyBox = New("Frame", {
+		Parent = K.Row,
 		Name = "KeyBox",
 		BackgroundColor3 = WHITE,
 		BackgroundTransparency = 0.94,
 		BorderSizePixel = 0,
-		Position = UDim2.fromOffset(KeyPad, 86),
-		Size = UDim2.fromOffset(KEY_W - KeyPad * 2 - 126, 38),
+		Size = UDim2.fromOffset(KeyInnerW, 42),
 		ZIndex = 8,
 	})
-	Corner(KeyBox, 12)
-	local KeyRim = Stroke(KeyBox, 0.86)
-	KeyRim.Color = WHITE
+	Corner(KeyBox, 13)
+	Stroke(KeyBox, 0.86).Color = WHITE
 
-	local KeyInput = New("TextBox", {
+	K.Input = New("TextBox", {
 		Parent = KeyBox,
 		Name = "Input",
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(14, 0),
-		Size = UDim2.new(1, -28, 1, 0),
+		Size = UDim2.new(1, -14 - 104, 1, 0),
 		FontFace = Medium,
 		TextSize = 13,
 		TextColor3 = WHITE,
 		Text = "",
-		PlaceholderText = "Enter your key",
+		PlaceholderText = "Enter Your Key",
 		PlaceholderColor3 = SUBTLE,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Center,
 		ClearTextOnFocus = false,
 		ZIndex = 9,
 	})
-	self.KeyInput = KeyInput
+	self.KeyInput = K.Input
 
-	local KeySubmit = New("TextButton", {
-		Parent = KeyPanel,
+	-- The submit is inside the field, not beside it.
+	K.Submit = New("TextButton", {
+		Parent = KeyBox,
 		Name = "Submit",
 		BackgroundColor3 = WHITE,
 		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		Text = "",
 		AutoButtonColor = false,
-		Position = UDim2.fromOffset(KEY_W - KeyPad - 114, 86),
-		Size = UDim2.fromOffset(114, 38),
-		ZIndex = 8,
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -5, 0, 6),
+		Size = UDim2.fromOffset(96, 30),
+		ZIndex = 9,
 	})
-	Corner(KeySubmit, 12)
-	local KeySubmitText = New("TextLabel", {
-		Parent = KeySubmit,
+	Corner(K.Submit, 10)
+	New("TextLabel", {
+		Parent = K.Submit,
 		BackgroundTransparency = 1,
 		FontFace = Bold,
 		TextSize = 12,
 		TextColor3 = Color3.fromRGB(10, 10, 12),
 		Text = "Submit",
 		Size = UDim2.fromScale(1, 1),
-		ZIndex = 9,
+		ZIndex = 10,
 	})
+	self.KeySubmit = K.Submit
 
-	local KeyError = Label(KeyPanel, Medium, 11, WHITE, KeyPad, 132, KEY_W - KeyPad * 2, 16)
-	KeyError.Text = ""
+	-- Error line: red, with the alert glyph before it. Both are hidden until
+	-- there is something to say.
+	K.ErrIcon = New("ImageLabel", {
+		Parent = KeyPanel,
+		Name = "ErrIcon",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(KeyPad + 2, 108),
+		Size = UDim2.fromOffset(14, 14),
+		ScaleType = Enum.ScaleType.Fit,
+		ImageColor3 = RED,
+		Visible = false,
+		ZIndex = 8,
+	})
+	PaintGlyph(K.ErrIcon, "alert")
 
-	local KeyHint = Label(KeyPanel, Medium, 10, SUBTLE, KeyPad, 154, KEY_W - KeyPad * 2, 14)
-	KeyHint.Text = "Click the island to hide the key system"
+	K.Error = New("TextLabel", {
+		Parent = KeyPanel,
+		Name = "Error",
+		BackgroundTransparency = 1,
+		FontFace = Medium,
+		TextSize = 11,
+		TextColor3 = RED,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "",
+		Position = UDim2.fromOffset(KeyPad + 22, 106),
+		Size = UDim2.fromOffset(KeyInnerW - 22, 16),
+		Visible = false,
+		ZIndex = 8,
+	})
+	self.KeyError = K.Error
 
-	KeySubmit.MouseEnter:Connect(function()
-		Tween(KeySubmit, 0.18, { BackgroundTransparency = 0.12 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+	local function SetKeyError(Message)
+		local Text_ = Message and tostring(Message) or ""
+		K.Error.Text = Text_
+		K.Error.Visible = Text_ ~= ""
+		K.ErrIcon.Visible = Text_ ~= ""
+	end
+	self.SetKeyError = SetKeyError
+
+	-- The row shakes on a failed submit: a short damped sine on its X, run
+	-- from FrameStep while the card is open.
+	local KeyShakeUntil = 0
+	local function HintFlash(Text_)
+		K.Hint.Text = Text_
+		task.delay(2, function()
+			if State.Alive and Mode == "key" then
+				K.Hint.Text = "Click the island to hide the key system"
+			end
+		end)
+	end
+
+	-- Three glass buttons under the field. Copy is dead-simple: link for Get
+	-- Key, the key itself for Copy Key, a callback for Exit.
+	local function KeyButton(Name, X, Width_, Text_, IconName)
+		local Button = New("TextButton", {
+			Parent = KeyPanel,
+			Name = Name,
+			Text = "",
+			AutoButtonColor = false,
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 0.93,
+			BorderSizePixel = 0,
+			Position = UDim2.fromOffset(X, 128),
+			Size = UDim2.fromOffset(Width_, 34),
+			ZIndex = 8,
+		})
+		Corner(Button, 12)
+		Stroke(Button, 0.88).Color = WHITE
+		local Icon_ = New("ImageLabel", {
+			Parent = Button,
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(14, 10),
+			Size = UDim2.fromOffset(14, 14),
+			ScaleType = Enum.ScaleType.Fit,
+			ImageColor3 = WHITE,
+			ZIndex = 9,
+		})
+		PaintGlyph(Icon_, IconName)
+		New("TextLabel", {
+			Parent = Button,
+			BackgroundTransparency = 1,
+			FontFace = Bold,
+			TextSize = 11,
+			TextColor3 = WHITE,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = Text_,
+			Position = UDim2.fromOffset(36, 0),
+			Size = UDim2.new(1, -44, 1, 0),
+			ZIndex = 9,
+		})
+		Button.MouseEnter:Connect(function()
+			Tween(Button, 0.16, { BackgroundTransparency = 0.84 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		end)
+		Button.MouseLeave:Connect(function()
+			Tween(Button, 0.16, { BackgroundTransparency = 0.93 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		end)
+		return Button
+	end
+
+	local ButtonW = math.floor((KeyInnerW - 16) / 3)
+	K.Get = KeyButton("GetKey", KeyPad, ButtonW, "Get Key", "link")
+	K.Copy = KeyButton("CopyKey", KeyPad + ButtonW + 8, ButtonW, "Copy Key", "copy")
+	K.Exit = KeyButton("Exit", KeyPad + (ButtonW + 8) * 2, ButtonW, "Exit", "exit")
+
+	K.Hint = Label(KeyPanel, Medium, 10, SUBTLE, KeyPad, 174, KeyInnerW, 14)
+	K.Hint.Text = "Click the island to hide the key system"
+
+	K.Submit.MouseEnter:Connect(function()
+		Tween(K.Submit, 0.18, { BackgroundTransparency = 0.12 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 	end)
-	KeySubmit.MouseLeave:Connect(function()
-		Tween(KeySubmit, 0.18, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+	K.Submit.MouseLeave:Connect(function()
+		Tween(K.Submit, 0.18, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 	end)
-
 	-- One validator, three shapes: a function, a literal (or list), or the
 	-- same service table the standalone key system takes. Anything else is a
 	-- no, never an accidental yes.
@@ -1323,23 +1549,86 @@ function DynamicIsland.New(Config)
 		if Mode ~= "key" then
 			return
 		end
-		local Key = tostring(KeyInput.Text or "")
+		local Key = tostring(K.Input.Text or "")
 		if Key == "" then
-			KeyError.Text = "Enter a key first."
+			SetKeyError(KeyCfg.Empty or "Enter a key first.")
+			KeyShakeUntil = os.clock() + 0.45
 			return
 		end
 		local Ok, Valid = pcall(ValidKey, Key)
 		if Ok and Valid then
-			KeyError.Text = ""
+			SetKeyError("")
+			KeyShakeUntil = 0
+			K.Row.Position = UDim2.fromOffset(KeyPad, 58)
 			SaveKey(Key)
 			State:KeyValid()
 		else
-			KeyError.Text = tostring(KeyCfg.Invalid or "Invalid key.")
+			SetKeyError(KeyCfg.Invalid or "Invalid key.")
+			KeyShakeUntil = os.clock() + 0.45
 		end
 	end
 
-	KeySubmit.Activated:Connect(SubmitKey)
-	KeyInput.FocusLost:Connect(function(Enter)
+	local function Clip(Value)
+		if type(setclipboard) ~= "function" then
+			return false
+		end
+		return (pcall(setclipboard, tostring(Value)))
+	end
+
+	K.Get.Activated:Connect(function()
+		if type(KeyCfg.GetKey) == "function" then
+			local Ok, Err = pcall(KeyCfg.GetKey, State)
+			if not Ok then
+				SetKeyError(tostring(Err))
+			end
+			return
+		end
+		if type(KeyCfg.GetKey) == "string" and KeyCfg.GetKey ~= "" then
+			if Clip(KeyCfg.GetKey) then
+				HintFlash("Key link copied to clipboard.")
+			else
+				HintFlash(KeyCfg.GetKey)
+			end
+			return
+		end
+		HintFlash("No key link configured.")
+	end)
+
+	K.Copy.Activated:Connect(function()
+		local Value = type(KeyCfg.Copy) == "string" and KeyCfg.Copy
+			or (type(KeyCfg.Key) == "string" and KeyCfg.Key)
+			or (type(KeyCfg.Key) == "table" and type(KeyCfg.Key[1]) == "string" and KeyCfg.Key[1])
+			or nil
+		if not Value then
+			HintFlash("Nothing to copy.")
+			return
+		end
+		if Clip(Value) then
+			HintFlash("Key copied to clipboard.")
+		else
+			HintFlash("Clipboard unavailable.")
+		end
+	end)
+
+	K.Exit.Activated:Connect(function()
+		if type(KeyCfg.OnExit) == "function" then
+			local Ok, Err = pcall(KeyCfg.OnExit, State)
+			if not Ok then
+				SetKeyError(tostring(Err))
+			end
+			return
+		end
+		State:HideKey()
+	end)
+
+	K.Input:GetPropertyChangedSignal("Text"):Connect(function()
+		if (K.Error.Text or "") ~= "" then
+			SetKeyError("")
+		end
+	end)
+
+	K.Submit.Activated:Connect(SubmitKey)
+	K.Input.FocusLost:Connect(function(Enter)
 		if Enter then
 			SubmitKey()
 		end
@@ -1380,7 +1669,13 @@ function DynamicIsland.New(Config)
 	--------------------------------------------------------------- state
 
 	local function GoalSize()
-		return State.Expanded and { W + (State.SideOpen and SW or 0), HE } or { PILL_W, PILL_H }
+		if State.Expanded then
+			return { W + (State.SideOpen and SW or 0), HE }
+		end
+		if Mode == "loading" then
+			return { LOAD_W, LOAD_H }
+		end
+		return { PILL_W, PILL_H }
 	end
 
 	local function PointerOver(Margin)
@@ -1595,6 +1890,14 @@ function DynamicIsland.New(Config)
 			or (Up < 3600 and ((Up // 60) .. "m") or string.format("%dh %02dm", Up // 3600, (Up % 3600) // 60))
 		if UptimeText.Text ~= UpText then
 			UptimeText.Text = UpText
+		end
+
+		-- The key card's top-right corner: ping and how long the island has
+		-- been up, updated on the same one-second tick as the header.
+		local Elapsed = string.format("%.1fs", math.max(0, Now - State.Born))
+		local Stat = Ping ~= "" and (Ping .. "  ·  " .. Elapsed) or Elapsed
+		if K.Stat.Text ~= Stat then
+			K.Stat.Text = Stat
 		end
 	end
 
@@ -2049,10 +2352,17 @@ function DynamicIsland.New(Config)
 		PillIcon.Visible = Toast
 		PillText.Visible = Toast
 
-		local Loading = Mode == "loading"
+		local Loading = Mode == "loading" and not State.Expanded
+		LoadTitle.Visible = Loading
 		LoadText.Visible = Loading
 		LoadPercent.Visible = Loading
 		LoadTrack.Visible = Loading
+
+		-- Key mode, collapsed: the pill says what is missing. It steps aside
+		-- the moment the card opens.
+		local KeyReq = Mode == "key" and not State.Expanded
+		KeyReqIcon.Visible = KeyReq
+		KeyReqText.Visible = KeyReq
 
 		local Valid = Mode == "valid"
 		ValidIcon.Visible = Valid
@@ -2070,9 +2380,9 @@ function DynamicIsland.New(Config)
 		if LoadPercent.Text ~= Percent then
 			LoadPercent.Text = Percent
 		end
-		local BarW = math.floor((PILL_W - 28) * K + 0.5)
+		local BarW = math.floor((LOAD_W - 36) * K + 0.5)
 		if LoadFill.Size.X.Offset ~= BarW then
-			LoadFill.Size = UDim2.fromOffset(BarW, 2)
+			LoadFill.Size = UDim2.fromOffset(BarW, 4)
 		end
 	end
 
@@ -2118,9 +2428,9 @@ function DynamicIsland.New(Config)
 		PillStep()
 	end
 
-	-- Loading: no artwork, no icon. Label, percent and a hairline that fills
-	-- along the bottom edge for Duration seconds. The island flips itself to
-	-- the key prompt when the timer runs out.
+	-- Loading: the card-sized state. Hub name, what is loading, the percent,
+	-- and a bar along the bottom. The island flips itself to the key prompt
+	-- when the timer runs out.
 	function DynamicIsland:Loading(Duration, Label_)
 		if not self.Alive then
 			return
@@ -2130,9 +2440,10 @@ function DynamicIsland.New(Config)
 		end
 		LoadDuration = math.max(0.2, tonumber(Duration) or 5)
 		LoadUntil = os.clock() + LoadDuration
-		LoadText.Text = tostring(Label_ or "Loading")
+		LoadTitle.Text = tostring((type(KeyCfg) == "table" and KeyCfg.LoadingTitle) or "Ender Hub")
+		LoadText.Text = tostring(Label_ or (type(KeyCfg) == "table" and KeyCfg.Loading) or "Loading modules, ui...")
 		LoadPercent.Text = "0%"
-		LoadFill.Size = UDim2.fromOffset(0, 2)
+		LoadFill.Size = UDim2.fromOffset(0, 4)
 		Mode = "loading"
 		self.Mode = Mode
 		PillStep()
@@ -2145,7 +2456,7 @@ function DynamicIsland.New(Config)
 		local K = math.clamp(tonumber(Value) or 0, 0, 1)
 		LoadUntil = os.clock() + (1 - K) * math.max(0.2, LoadDuration)
 		LoadPercent.Text = math.floor(K * 100 + 0.5) .. "%"
-		LoadFill.Size = UDim2.fromOffset(math.floor((PILL_W - 28) * K + 0.5), 2)
+		LoadFill.Size = UDim2.fromOffset(math.floor((LOAD_W - 36) * K + 0.5), 4)
 	end
 
 	-- Key prompt: the card at the content origin. Expanding is the show, so
@@ -2156,10 +2467,13 @@ function DynamicIsland.New(Config)
 		end
 		Mode = "key"
 		self.Mode = Mode
-		KeyError.Text = ""
-		KeyNote.Text = tostring(KeyCfg.Note or "Enter your key to unlock the interface.")
-		KeyTitle.Text = tostring(KeyCfg.Title or "Key System")
-		KeyInput.Text = ""
+		SetKeyError("")
+		KeyShakeUntil = 0
+		K.Row.Position = UDim2.fromOffset(KeyPad, 58)
+		K.Note.Text = tostring(KeyCfg.Note or "Enter your key to unlock the interface.")
+		K.Title.Text = tostring(KeyCfg.Title or "Key System")
+		K.Input.PlaceholderText = tostring(KeyCfg.Placeholder or "Enter Your Key")
+		K.Input.Text = ""
 		PillStep()
 		self:Expand()
 	end
@@ -2184,8 +2498,8 @@ function DynamicIsland.New(Config)
 		if self.Expanded then
 			self:Collapse()
 		end
-		KeyError.Text = ""
-		KeyInput.Text = ""
+		SetKeyError("")
+		K.Input.Text = ""
 		PillStep()
 		if type(KeyCfg) == "table" and KeyCfg.Callback then
 			pcall(KeyCfg.Callback, true)
@@ -2211,6 +2525,7 @@ function DynamicIsland.New(Config)
 		self.Expanded = true
 		LeftAt = nil
 		Expand.goal, Expand.at = 1, os.clock()
+		PillStep()
 		PaintState()
 		PaintPlay()
 		if self.Config.OnExpand then
@@ -2225,6 +2540,7 @@ function DynamicIsland.New(Config)
 		self.Expanded = false
 		self.SideOpen = false
 		Expand.goal, Expand.at = 0, os.clock()
+		PillStep()
 		if self.Config.OnCollapse then
 			pcall(self.Config.OnCollapse, self)
 		end
@@ -2584,6 +2900,17 @@ function DynamicIsland.New(Config)
 			GlassStep(Delta)
 			SideStep(Delta)
 			LayoutStep()
+			if KeyShakeUntil > 0 then
+				local Left = KeyShakeUntil - Now
+				if Left <= 0 then
+					KeyShakeUntil = 0
+					K.Row.Position = UDim2.fromOffset(KeyPad, 58)
+				else
+					local T = 1 - Left / 0.45
+					local Offset = math.sin(T * math.pi * 9) * 7 * (1 - T)
+					K.Row.Position = UDim2.fromOffset(math.floor(KeyPad + Offset + 0.5), 58)
+				end
+			end
 			ChipStateStep()
 			ChipStep(Delta)
 			TopStep(Delta, Root.Size.X.Offset)
