@@ -15151,9 +15151,37 @@ function DynamicIsland.New(Config)
 			local Result = nil
 			pcall(function()
 				local Size = Image.Size
+				local FullW = math.max(1, math.floor(Size.X))
+				local FullH = math.max(1, math.floor(Size.Y))
+
+				-- The expanded player's wash is one pixel taken from the middle
+				-- of the sleeve and stretched, so that exact pixel is what the
+				-- bars have to match. Read it first, and only fall back to a
+				-- weighted patch average when the middle is transparent or mud.
+				local Centre = Image:ReadPixels(
+					Vector2.new(math.clamp(math.floor(FullW * 0.5), 0, FullW - 1),
+						math.clamp(math.floor(FullH * 0.5), 0, FullH - 1)),
+					Vector2.new(1, 1)
+				)
+				if typeof(Centre) == "buffer" and buffer.readu8(Centre, 3) / 255 > 0.35 then
+					local Pixel = Color3.new(
+						buffer.readu8(Centre, 0) / 255,
+						buffer.readu8(Centre, 1) / 255,
+						buffer.readu8(Centre, 2) / 255
+					)
+					local _, PS, PV = Pixel:ToHSV()
+					if PS > 0.05 and PV > 0.12 then
+						Result = Pixel
+					end
+				end
+
+				if Result then
+					return
+				end
+
 				local Span = 24
-				local ReadW = math.clamp(math.floor(Size.X), 1, Span)
-				local ReadH = math.clamp(math.floor(Size.Y), 1, Span)
+				local ReadW = math.clamp(FullW, 1, Span)
+				local ReadH = math.clamp(FullH, 1, Span)
 				local Origin = Vector2.new(math.floor((Size.X - ReadW) / 2), math.floor((Size.Y - ReadH) / 2))
 				local Pixels = Image:ReadPixels(Origin, Vector2.new(ReadW, ReadH))
 				if typeof(Pixels) ~= "buffer" then
@@ -15201,28 +15229,16 @@ function DynamicIsland.New(Config)
 		return Color3.fromHSV(Sum / 360, 0.52, 0.92)
 	end
 
-	function Sleeve.Paint(Color)
-		if not Color then
-			return Color3.fromRGB(228, 229, 236)
-		end
-		local H, S, V = Color:ToHSV()
-		if S < 0.06 then
-			return Color3.fromRGB(230, 231, 238)
-		end
-		return Color3.fromHSV(H, math.clamp(S, 0.22, 0.95), math.clamp(V, 0.85, 1))
-	end
-
-	-- Two-stop palette for the bars and the window wash. These are the same
-	-- colours the expanded player's wash shows: the sleeve's own hue and
-	-- brightness, nudged just enough to stay vivid on the dark island rather
-	-- than being brightened into pastel.
+	-- Two-stop palette for the bars and the window wash: the sleeve's own
+	-- colour, kept close to the pixel the expanded player stretches over its
+	-- cards, with only the floor needed to survive on a near-black island.
 	function Sleeve.Palette(Color)
 		if not Color then
-			Color = Color3.fromRGB(176, 178, 192)
+			return Color3.fromRGB(214, 216, 228), Color3.fromRGB(120, 122, 138)
 		end
 		local H, S, V = Color:ToHSV()
-		local Top = Color3.fromHSV(H, math.clamp(S, 0.32, 0.95), math.clamp(V, 0.62, 1))
-		local Bottom = Color3.fromHSV((H + 0.04) % 1, math.clamp(S * 1.05, 0.36, 1), math.clamp(V * 0.62, 0.2, 0.7))
+		local Top = Color3.fromHSV(H, math.clamp(S, 0.22, 1), math.clamp(V, 0.45, 1))
+		local Bottom = Color3.fromHSV((H + 0.03) % 1, math.clamp(S * 1.05, 0.24, 1), math.clamp(V * 0.55, 0.14, 0.58))
 		return Top, Bottom
 	end
 
@@ -15242,7 +15258,7 @@ function DynamicIsland.New(Config)
 		-- the palette left to right, each with its own top-down shade.
 		local TopTarget, BottomTarget = WHITE, WHITE
 		if HasTrack then
-			TopTarget, BottomTarget = Sleeve.Palette(Sleeve.Given or Sleeve.Tint or Sleeve.Fallback)
+			TopTarget, BottomTarget = Sleeve.Palette(Sleeve.Tint or Sleeve.Given or Sleeve.Fallback)
 		end
 		local Blend = math.min(1, 7 * Delta)
 		WaveTune.Top = WaveTune.Top:Lerp(TopTarget, Blend)
@@ -34462,5 +34478,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome9
+-- enderhub-windui-mac-chrome10
 return __require("src/Init.lua")
