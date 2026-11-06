@@ -555,8 +555,9 @@ function DynamicIsland.New(Config)
 		Position = UDim2.new(1, -14, 0, 20),
 		ZIndex = 4,
 	})
-	-- Solid bars, the shape the pill has always had. White body; WaveStep
-	-- paints the sleeve tint on top. No slice of the artwork is ever drawn here.
+	-- Solid bars, the shape the pill has always had. White body by default;
+	-- WaveStep spreads the sleeve palette across the row. No slice of the
+	-- artwork is ever drawn here.
 	for Index = 1, 6 do
 		local Bar = New("Frame", {
 			Parent = Wave,
@@ -571,8 +572,14 @@ function DynamicIsland.New(Config)
 			ZIndex = 5,
 		})
 		Corner(Bar, 1.5)
+		local BarGrad = New("UIGradient", {
+			Parent = Bar,
+			Rotation = 90,
+			Color = ColorSequence.new(WHITE, WHITE),
+		})
 		self.Bars[Index] = {
 			Frame = Bar,
+			Grad = BarGrad,
 			Current = 0,
 			Goal = 0,
 			Height = 4,
@@ -2278,10 +2285,25 @@ function DynamicIsland.New(Config)
 		return Color3.fromHSV(H, math.clamp(S, 0.22, 0.95), math.clamp(V, 0.85, 1))
 	end
 
+	-- Two-stop palette for the bars and the window wash. These are the same
+	-- colours the expanded player's wash shows: the sleeve's own hue and
+	-- brightness, nudged just enough to stay vivid on the dark island rather
+	-- than being brightened into pastel.
+	function Sleeve.Palette(Color)
+		if not Color then
+			Color = Color3.fromRGB(176, 178, 192)
+		end
+		local H, S, V = Color:ToHSV()
+		local Top = Color3.fromHSV(H, math.clamp(S, 0.32, 0.95), math.clamp(V, 0.62, 1))
+		local Bottom = Color3.fromHSV((H + 0.04) % 1, math.clamp(S * 1.05, 0.36, 1), math.clamp(V * 0.62, 0.2, 0.7))
+		return Top, Bottom
+	end
+
 	local WaveTune = {
 		Acc = 0,
 		Phase = 0,
-		Shown = Color3.new(1, 1, 1),
+		Top = Color3.new(1, 1, 1),
+		Bottom = Color3.new(1, 1, 1),
 		Pushed = false,
 		PushedColor = nil,
 	}
@@ -2289,14 +2311,16 @@ function DynamicIsland.New(Config)
 		WaveTune.Acc += Delta
 		WaveTune.Phase += Delta
 
-		-- White until a track exists; then the sleeve colour. Nothing but the
-		-- six solid bars carries that colour.
-		local Target = WHITE
+		-- White until a track exists, then the sleeve palette. The six bars span
+		-- the palette left to right, each with its own top-down shade.
+		local TopTarget, BottomTarget = WHITE, WHITE
 		if HasTrack then
-			Target = Sleeve.Paint(Sleeve.Given or Sleeve.Tint or Sleeve.Fallback)
+			TopTarget, BottomTarget = Sleeve.Palette(Sleeve.Given or Sleeve.Tint or Sleeve.Fallback)
 		end
-		WaveTune.Shown = WaveTune.Shown:Lerp(Target, math.min(1, 7 * Delta))
-		State.CoverColor = WaveTune.Shown
+		local Blend = math.min(1, 7 * Delta)
+		WaveTune.Top = WaveTune.Top:Lerp(TopTarget, Blend)
+		WaveTune.Bottom = WaveTune.Bottom:Lerp(BottomTarget, Blend)
+		State.CoverColor = WaveTune.Top
 
 		if WaveTune.Acc >= 0.085 then
 			WaveTune.Acc = 0
@@ -2312,7 +2336,8 @@ function DynamicIsland.New(Config)
 			end
 		end
 
-		for _, Bar in ipairs(State.Bars) do
+		local Count = #State.Bars
+		for Index, Bar in ipairs(State.Bars) do
 			Bar.Current = Fade(Bar.Current, Bar.Goal, Bar.Goal > Bar.Current and 26 or 12, Delta)
 			local BarHeight = math.floor(4 + 15 * Bar.Current + 0.5)
 			if Bar.Height ~= BarHeight then
@@ -2320,12 +2345,17 @@ function DynamicIsland.New(Config)
 				Bar.Frame.Size = UDim2.fromOffset(3, BarHeight)
 			end
 
-			local Last = Bar.Tint
+			-- Bars sample the palette left to right, so the row reads as one
+			-- gradient instead of six copies of the same colour.
+			local Step = Count > 1 and ((Index - 1) / (Count - 1)) or 0
+			local Base = WaveTune.Top:Lerp(WaveTune.Bottom, Step)
+			local Last = Bar.Base
 			local Moved = Last == nil
-				or (Last.R - WaveTune.Shown.R) ^ 2 + (Last.G - WaveTune.Shown.G) ^ 2 + (Last.B - WaveTune.Shown.B) ^ 2 > 0.0002
+				or (Last.R - Base.R) ^ 2 + (Last.G - Base.G) ^ 2 + (Last.B - Base.B) ^ 2 > 0.0002
 			if Moved then
-				Bar.Tint = WaveTune.Shown
-				Bar.Frame.BackgroundColor3 = WaveTune.Shown
+				Bar.Base = Base
+				Bar.Frame.BackgroundColor3 = Base
+				Bar.Grad.Color = ColorSequence.new(Base:Lerp(WHITE, 0.22), Base:Lerp(Color3.fromRGB(8, 8, 10), 0.18))
 			end
 		end
 
@@ -2333,7 +2363,10 @@ function DynamicIsland.New(Config)
 		-- and falls back to the theme gradient when it stops.
 		local Window = State.WindUI and State.WindUI.Window
 		if Window and type(Window.SetCoverTint) == "function" then
-			local Want = Playing and WaveTune.Shown or nil
+			-- Push the settled target, not the lerped bar colour: the window
+			-- crossfades on its own, and a colour that drifts every frame would
+			-- restart that fade continuously.
+			local Want = Playing and TopTarget or nil
 			local Moved = (not WaveTune.Pushed)
 				or (Want == nil) ~= (WaveTune.PushedColor == nil)
 				or (Want ~= nil and WaveTune.PushedColor ~= nil
@@ -2913,11 +2946,16 @@ function DynamicIsland.New(Config)
 		if self.Bars then
 			for _, Bar in ipairs(self.Bars) do
 				if Bar.Frame then
+					Bar.Base = nil
 					Bar.Frame.BackgroundColor3 = WHITE
-					Bar.Tint = nil
+					if Bar.Grad then
+						Bar.Grad.Color = ColorSequence.new(WHITE, WHITE)
+					end
 				end
 			end
 		end
+		WaveTune.Top, WaveTune.Bottom = WHITE, WHITE
+		WaveTune.Pushed, WaveTune.PushedColor = false, nil
 		State.CoverColor = nil
 		self.CoverColor = nil
 		TitleLabel.Text = "Nothing playing"

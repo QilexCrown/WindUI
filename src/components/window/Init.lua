@@ -883,29 +883,41 @@ return function(Config)
 		end
 	end
 
-	-- Sleeve wash. A second squircle sits above the base background and below
-	-- the content, carrying a two-stop gradient of the playing cover's colour.
-	-- Hidden until a provider hands one in; hiding it restores the theme.
+	-- Sleeve wash. Two squircles sit above the base background and below the
+	-- content, each carrying a two-stop gradient of the playing cover's colour.
+	-- Only one is live at a time; a track change paints the idle one and
+	-- crossfades the pair, so the window colour never pops in or out. The
+	-- transparency ramp keeps the wash to the top of the window and the low
+	-- image alpha keeps it from taking the theme over.
 	do
-		local Gradient = New("UIGradient", {
-			Rotation = 90,
-			Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
-		})
-		local Layer = Creator.NewRoundFrame(Window.UICorner, "Squircle", {
-			Name = "CoverTint",
-			Parent = Window.UIElements.Main,
-			Size = UDim2.fromScale(1, 1),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			ImageColor3 = Color3.new(1, 1, 1),
-			ImageTransparency = 1,
-			Visible = false,
-			ZIndex = 2,
-		}, {
-			Gradient,
-		})
-		Window.UIElements.CoverTint = Layer
-		Window.UIElements.CoverTintGradient = Gradient
+		local Layers = {}
+		for Index = 1, 2 do
+			local Gradient = New("UIGradient", {
+				Rotation = 90,
+				Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0),
+					NumberSequenceKeypoint.new(0.34, 0.1),
+					NumberSequenceKeypoint.new(0.72, 0.72),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
+			})
+			local Layer = Creator.NewRoundFrame(Window.UICorner, "Squircle", {
+				Name = Index == 1 and "CoverTintA" or "CoverTintB",
+				Parent = Window.UIElements.Main,
+				Size = UDim2.fromScale(1, 1),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				ImageColor3 = Color3.new(1, 1, 1),
+				ImageTransparency = 1,
+				Visible = false,
+				ZIndex = 2,
+			}, {
+				Gradient,
+			})
+			Layers[Index] = { Frame = Layer, Gradient = Gradient }
+		end
+		Window.UIElements.CoverTintLayers = Layers
 	end
 
 	-- Morph veil: the window folds into the island as one solid shape, so the
@@ -1373,41 +1385,71 @@ return function(Config)
 	end
 
 	local CoverToken = 0
+	local CoverLive = 0
 
 	-- Cover colour wash across the window. nil restores the theme background.
+	-- Colours arrive fully settled from the island; this side owns the fade.
 	function Window:SetCoverTint(Color)
-		local Layer = Window.UIElements.CoverTint
-		local Gradient = Window.UIElements.CoverTintGradient
-		if not Layer or not Gradient then
+		local Layers = Window.UIElements.CoverTintLayers
+		if not Layers then
 			return
 		end
 		CoverToken += 1
 		local Token = CoverToken
+
 		if Color == nil or typeof(Color) ~= "Color3" then
 			Window.CoverTint = nil
-			Tween(Layer, 0.35, {
-				ImageTransparency = 1,
-			}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
-			task.delay(0.4, function()
-				if Token == CoverToken and Window.CoverTint == nil and Layer.Parent then
-					Layer.Visible = false
+			CoverLive = 0
+			for Index, Record in ipairs(Layers) do
+				if Record.Frame.Visible then
+					Tween(Record.Frame, 0.45, {
+						ImageTransparency = 1,
+					}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+					task.delay(0.5, function()
+						if Token == CoverToken and CoverLive ~= Index and Record.Frame.Parent then
+							Record.Frame.Visible = false
+						end
+					end)
 				end
-			end)
+			end
 			return
 		end
+
+		-- Same hue as the sleeve, held near its own brightness: no pastel lift,
+		-- no black crush. The bottom stop is the deeper shade of that hue.
 		local H, S, V = Color:ToHSV()
 		local Top = Color3.fromHSV(
 			H,
-			math.clamp(math.max(S, 0.32), 0.32, 0.9),
-			math.clamp(math.max(V * 0.85, 0.35), 0.35, 0.85)
+			math.clamp(math.max(S, 0.3), 0.3, 0.9),
+			math.clamp(math.max(V, 0.48), 0.48, 0.94)
 		)
-		local Bottom = Color3.fromHSV(H, math.clamp(S * 0.85, 0.25, 0.85), math.clamp(V * 0.32, 0.07, 0.3))
+		local Bottom = Color3.fromHSV(H, math.clamp(S * 0.95, 0.26, 0.88), math.clamp(V * 0.55, 0.1, 0.38))
+
 		Window.CoverTint = Color
-		Gradient.Color = ColorSequence.new(Top, Bottom)
-		Layer.Visible = true
-		Tween(Layer, 0.45, {
-			ImageTransparency = 0.5,
-		}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+		local Target = CoverLive == 1 and 2 or 1
+		local Record = Layers[Target]
+		CoverLive = Target
+
+		Record.Gradient.Color = ColorSequence.new(Top, Bottom)
+		Record.Frame.ImageTransparency = 1
+		Record.Frame.Visible = true
+
+		for Index, Other in ipairs(Layers) do
+			if Index ~= Target and Other.Frame.Visible then
+				Tween(Other.Frame, 0.5, {
+					ImageTransparency = 1,
+				}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+				task.delay(0.55, function()
+					if CoverLive ~= Index and Other.Frame.Parent then
+						Other.Frame.Visible = false
+					end
+				end)
+			end
+		end
+
+		Tween(Record.Frame, 0.55, {
+			ImageTransparency = 0.86,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 	end
 
 	function Window:SetBackgroundTransparency(v)
