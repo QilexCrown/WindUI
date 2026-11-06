@@ -12829,6 +12829,7 @@ end)
 local UserInputService = cloneref(game:GetService("UserInputService"))
 local RunService = cloneref(game:GetService("RunService"))
 local Stats = cloneref(game:GetService("Stats"))
+local AssetService = cloneref(game:GetService("AssetService"))
 
 local Creator = require("src/modules/Creator.lua")
 local Surface = require("src/modules/MusicSurface.lua")
@@ -13171,6 +13172,10 @@ function DynamicIsland.New(Config)
 	local Expand = { a = 0, goal = 0, at = 0 }
 	local Accent = Config.Accent or ACCENT
 	local AccentLive = Accent
+	-- Sleeve colour for the bars. Given is pushed in by a provider that already
+	-- knows a dominant colour; Tint is read off the artwork pixels; Fallback is
+	-- the per-track hue used when the artwork cannot be read.
+	local Sleeve = { Cache = {}, Job = 0 }
 	local Beat, BeatTarget, BeatAcc = 0, 0, 0
 	local Position, PositionAt, Duration = 0, 0, 0
 	local Playing = false
@@ -13355,28 +13360,54 @@ function DynamicIsland.New(Config)
 		Position = UDim2.new(1, -14, 0, 20),
 		ZIndex = 4,
 	})
-	-- Plain solid bars. Colour comes from the cover tint in WaveStep, never from
-	-- a slice of the artwork. No artwork, neutral bars.
+	-- Six capsule bars. Each bar is a white pill carrying a gradient that starts
+	-- white at the peak and lands on the sleeve colour at the base; a wider halo
+	-- of the same colour sits behind it, so the pill gets a bloom on the black
+	-- shell without stamping a slice of the artwork anywhere. No artwork, no
+	-- tint: the bars stay white.
 	for Index = 1, 6 do
+		local Halo = New("Frame", {
+			Parent = Wave,
+			Name = "Halo",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromOffset((Index - 1) * 4.6 + 2.5, 11),
+			Size = UDim2.fromOffset(6, 10),
+			BackgroundColor3 = WHITE,
+			BackgroundTransparency = 0.82,
+			BorderSizePixel = 0,
+			ZIndex = 4,
+		})
+		Corner(Halo, 6)
+
 		local Bar = New("Frame", {
 			Parent = Wave,
 			Name = "Bar",
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromOffset((Index - 1) * 5 + 1.5, 11),
+			Position = UDim2.fromOffset((Index - 1) * 4.6 + 2.5, 11),
 			Size = UDim2.fromOffset(3, 4),
 			BackgroundColor3 = WHITE,
 			BackgroundTransparency = 0,
 			BorderSizePixel = 0,
-			ClipsDescendants = true,
 			ZIndex = 5,
 		})
-		Corner(Bar, 1.5)
+		Corner(Bar, 3)
+		local Grad = New("UIGradient", {
+			Parent = Bar,
+			Rotation = 90,
+			Color = ColorSequence.new(WHITE, WHITE),
+		})
+
+		-- Tall in the middle, short at the edges: the silhouette reads as one
+		-- wave instead of six unrelated sticks.
+		local Shift = math.abs(Index - 3.5) / 2.5
 		self.Bars[Index] = {
 			Frame = Bar,
+			Halo = Halo,
+			Grad = Grad,
 			Current = 0,
 			Goal = 0,
 			Height = 4,
-			Weight = 0.55 + 0.45 * ((Index * 37) % 10) / 10,
+			Weight = 1 - 0.42 * Shift,
 		}
 	end
 	self.Wave = Wave
@@ -14946,36 +14977,186 @@ function DynamicIsland.New(Config)
 
 	--------------------------------------------------------------- wave
 
-	local function WaveTint(Color)
-		local H, S, V = Color:ToHSV()
-		if S < 0.08 then
-			return Color3.fromRGB(226, 226, 232)
+	-- Sleeve holds the bar colour and the machinery that finds it. One table,
+	-- because this closure already sits at the Luau register ceiling.
+
+	-- Providers that already know a dominant colour hand it over as a Color3,
+	-- "#RRGGBB" or { R, G, B }. Everything else is read off the artwork.
+	function Sleeve.Parse(Value)
+		if typeof(Value) == "Color3" then
+			return Value
 		end
-		return Color3.fromHSV(H, S * 0.58, math.max(V, 0.95))
+		if type(Value) == "string" then
+			local Hex = Value:gsub("#", "")
+			if #Hex == 6 then
+				local Ok, R, G, B = pcall(function()
+					return tonumber(Hex:sub(1, 2), 16), tonumber(Hex:sub(3, 4), 16), tonumber(Hex:sub(5, 6), 16)
+				end)
+				if Ok and R and G and B then
+					return Color3.fromRGB(R, G, B)
+				end
+			end
+			return nil
+		end
+		if type(Value) == "table" then
+			local R = tonumber(Value.R or Value.r or Value[1])
+			local G = tonumber(Value.G or Value.g or Value[2])
+			local B = tonumber(Value.B or Value.b or Value[3])
+			if R and G and B then
+				if math.max(R, G, B) > 1 then
+					R, G, B = R / 255, G / 255, B / 255
+				end
+				return Color3.new(R, G, B)
+			end
+		end
+		return nil
 	end
 
-	local BarAcc = 0
+	-- Roblox has no pixel reader on a decoded texture, so the sleeve is decoded
+	-- into an EditableImage and a 24 x 24 patch out of the middle is averaged,
+	-- weighted towards saturated and bright pixels because a flat average of a
+	-- sleeve is usually grey mud. Two sources are tried: the asset id straight
+	-- up, then the same string as a URI, which is what streaming covers are.
+	-- Anything that fails falls through to the per-track fallback.
+	function Sleeve.Read(Source)
+		if Source == nil or Source == "" then
+			Sleeve.Tint = nil
+			return
+		end
+		local Cached = Sleeve.Cache[Source]
+		if Cached then
+			Sleeve.Tint = Cached
+			return
+		end
+
+		Sleeve.Job += 1
+		local Job = Sleeve.Job
+		task.spawn(function()
+			local Image = nil
+			local Ok = pcall(function()
+				Image = AssetService:CreateEditableImageAsync(Source)
+			end)
+			if (not Ok or not Image) and typeof(Content) == "table" and Content.fromUri ~= nil then
+				pcall(function()
+					Image = AssetService:CreateEditableImageAsync(Content.fromUri(Source))
+				end)
+			end
+			if not Image then
+				return
+			end
+
+			local Result = nil
+			pcall(function()
+				local Size = Image.Size
+				local Span = 24
+				local ReadW = math.clamp(math.floor(Size.X), 1, Span)
+				local ReadH = math.clamp(math.floor(Size.Y), 1, Span)
+				local Origin = Vector2.new(math.floor((Size.X - ReadW) / 2), math.floor((Size.Y - ReadH) / 2))
+				local Pixels = Image:ReadPixels(Origin, Vector2.new(ReadW, ReadH))
+				if typeof(Pixels) ~= "buffer" then
+					return
+				end
+
+				local R, G, B, Total = 0, 0, 0, 0
+				for Index = 0, ReadW * ReadH - 1 do
+					local At = Index * 4
+					local Alpha = buffer.readu8(Pixels, At + 3) / 255
+					if Alpha > 0.5 then
+						local CR = buffer.readu8(Pixels, At) / 255
+						local CG = buffer.readu8(Pixels, At + 1) / 255
+						local CB = buffer.readu8(Pixels, At + 2) / 255
+						local _, S, V = Color3.new(CR, CG, CB):ToHSV()
+						local Weight = Alpha * (0.15 + 0.85 * S) * (0.3 + 0.7 * V)
+						R += CR * Weight
+						G += CG * Weight
+						B += CB * Weight
+						Total += Weight
+					end
+				end
+				if Total > 0 then
+					Result = Color3.new(R / Total, G / Total, B / Total)
+				end
+			end)
+			pcall(function()
+				Image:Destroy()
+			end)
+
+			if Result and Job == Sleeve.Job then
+				Sleeve.Cache[Source] = Result
+				Sleeve.Tint = Result
+			end
+		end)
+	end
+
+	-- Artwork that cannot be read still gets a colour that belongs to the track
+	-- rather than one shared accent for the whole session.
+	function Sleeve.FromText(Text)
+		local Sum = 0
+		for Index = 1, #Text do
+			Sum = (Sum * 31 + string.byte(Text, Index)) % 360
+		end
+		return Color3.fromHSV(Sum / 360, 0.52, 0.92)
+	end
+
+	function Sleeve.Paint(Color)
+		if not Color then
+			return Color3.fromRGB(228, 229, 236)
+		end
+		local H, S, V = Color:ToHSV()
+		if S < 0.06 then
+			return Color3.fromRGB(230, 231, 238)
+		end
+		return Color3.fromHSV(H, math.clamp(S, 0.22, 0.95), math.clamp(V, 0.85, 1))
+	end
+
+	local WaveTune = { Acc = 0, Phase = 0, Shown = Color3.new(1, 1, 1) }
 	local function WaveStep(Delta)
-		BarAcc += Delta
-		if BarAcc >= 0.09 then
-			BarAcc = 0
-			for _, Bar in ipairs(State.Bars) do
-				local Random = 0.45 + 0.55 * math.random()
-				Bar.Goal = Playing and math.clamp(0.1 + 0.45 * Random + 0.6 * Beat * Bar.Weight * Random, 0, 1) or 0
+		WaveTune.Acc += Delta
+		WaveTune.Phase += Delta
+
+		local Tint = Sleeve.Paint(Sleeve.Given or Sleeve.Tint or Sleeve.Fallback or AccentLive)
+		WaveTune.Shown = WaveTune.Shown:Lerp(Tint, math.min(1, 7 * Delta))
+
+		if WaveTune.Acc >= 0.085 then
+			WaveTune.Acc = 0
+			for Index, Bar in ipairs(State.Bars) do
+				-- Sway keeps the six bars out of lockstep; the random term
+				-- keeps the pattern from repeating on a visible cycle.
+				local Sway = 0.5 + 0.5 * math.sin(WaveTune.Phase * (2.2 + Bar.Weight * 1.6) + Index * 1.1)
+				local Random = 0.42 + 0.58 * math.random()
+				local Drive = Sway * 0.55 + Random * 0.45
+				Bar.Goal = Playing
+					and math.clamp(0.08 + 0.68 * Drive * Bar.Weight + 0.36 * Beat * Bar.Weight, 0, 1)
+					or 0.08 + 0.1 * Bar.Weight
 			end
 		end
 
-		local Color = WaveTint(AccentLive)
 		for _, Bar in ipairs(State.Bars) do
-			Bar.Current = Fade(Bar.Current, Bar.Goal, Bar.Goal > Bar.Current and 28 or 10, Delta)
+			Bar.Current = Fade(Bar.Current, Bar.Goal, Bar.Goal > Bar.Current and 26 or 12, Delta)
 			local BarHeight = math.floor(4 + 15 * Bar.Current + 0.5)
 			if Bar.Height ~= BarHeight then
 				Bar.Height = BarHeight
 				Bar.Frame.Size = UDim2.fromOffset(3, BarHeight)
+				Bar.Halo.Size = UDim2.fromOffset(6, BarHeight + 6)
 			end
-			if Bar.Tint ~= Color then
-				Bar.Tint = Color
-				Bar.Frame.BackgroundColor3 = Color
+
+			local HaloTransparency = 0.82 - 0.2 * Bar.Current
+			if Bar.HaloTransparency ~= HaloTransparency then
+				Bar.HaloTransparency = HaloTransparency
+				Bar.Halo.BackgroundTransparency = HaloTransparency
+			end
+
+			local Last = Bar.Tint
+			local Moved = Last == nil
+				or (Last.R - WaveTune.Shown.R) ^ 2 + (Last.G - WaveTune.Shown.G) ^ 2 + (Last.B - WaveTune.Shown.B) ^ 2 > 0.0002
+			if Moved then
+				Bar.Tint = WaveTune.Shown
+				Bar.Halo.BackgroundColor3 = WaveTune.Shown
+				Bar.Grad.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, WHITE),
+					ColorSequenceKeypoint.new(0.45, WHITE:Lerp(WaveTune.Shown, 0.45)),
+					ColorSequenceKeypoint.new(1, WaveTune.Shown),
+				})
 			end
 		end
 	end
@@ -15531,6 +15712,8 @@ function DynamicIsland.New(Config)
 		self.Sources, self.SourceIndex, self.Provider, self.MusicState = {}, 1, nil, nil
 		Title, Artist, Cover, Hint = "", "", "", ""
 		HasTrack = false
+		Sleeve.Tint, Sleeve.Given, Sleeve.Fallback = nil, nil, nil
+		Sleeve.Job += 1
 		TitleLabel.Text = "Nothing playing"
 		ArtistLabel.Text = ""
 		CoverFrame.Image = ""
@@ -15833,7 +16016,13 @@ function DynamicIsland.New(Config)
 				CoverGrad.Enabled = true
 				CoverFrame.BackgroundTransparency = 0
 			end
+			Sleeve.Tint = nil
+			Sleeve.Job += 1
+			Sleeve.Read(Cover)
 		end
+
+		Sleeve.Fallback = Sleeve.FromText(Title .. "\0" .. Artist)
+		Sleeve.Given = Sleeve.Parse(State_.Tint or State_.Accent)
 
 		PaintPlay()
 		PaintState()
@@ -34102,5 +34291,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome6
+-- enderhub-windui-mac-chrome7
 return __require("src/Init.lua")
