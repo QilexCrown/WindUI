@@ -555,54 +555,28 @@ function DynamicIsland.New(Config)
 		Position = UDim2.new(1, -14, 0, 20),
 		ZIndex = 4,
 	})
-	-- Six capsule bars. Each bar is a white pill carrying a gradient that starts
-	-- white at the peak and lands on the sleeve colour at the base; a wider halo
-	-- of the same colour sits behind it, so the pill gets a bloom on the black
-	-- shell without stamping a slice of the artwork anywhere. No artwork, no
-	-- tint: the bars stay white.
+	-- Solid bars, the shape the pill has always had. White body; WaveStep
+	-- paints the sleeve tint on top. No slice of the artwork is ever drawn here.
 	for Index = 1, 6 do
-		local Halo = New("Frame", {
-			Parent = Wave,
-			Name = "Halo",
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromOffset((Index - 1) * 4.6 + 2.5, 11),
-			Size = UDim2.fromOffset(6, 10),
-			BackgroundColor3 = WHITE,
-			BackgroundTransparency = 0.82,
-			BorderSizePixel = 0,
-			ZIndex = 4,
-		})
-		Corner(Halo, 6)
-
 		local Bar = New("Frame", {
 			Parent = Wave,
 			Name = "Bar",
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromOffset((Index - 1) * 4.6 + 2.5, 11),
+			Position = UDim2.fromOffset((Index - 1) * 5 + 1.5, 11),
 			Size = UDim2.fromOffset(3, 4),
 			BackgroundColor3 = WHITE,
 			BackgroundTransparency = 0,
 			BorderSizePixel = 0,
+			ClipsDescendants = true,
 			ZIndex = 5,
 		})
-		Corner(Bar, 3)
-		local Grad = New("UIGradient", {
-			Parent = Bar,
-			Rotation = 90,
-			Color = ColorSequence.new(WHITE, WHITE),
-		})
-
-		-- Tall in the middle, short at the edges: the silhouette reads as one
-		-- wave instead of six unrelated sticks.
-		local Shift = math.abs(Index - 3.5) / 2.5
+		Corner(Bar, 1.5)
 		self.Bars[Index] = {
 			Frame = Bar,
-			Halo = Halo,
-			Grad = Grad,
 			Current = 0,
 			Goal = 0,
 			Height = 4,
-			Weight = 1 - 0.42 * Shift,
+			Weight = 0.55 + 0.45 * ((Index * 37) % 10) / 10,
 		}
 	end
 	self.Wave = Wave
@@ -2304,13 +2278,25 @@ function DynamicIsland.New(Config)
 		return Color3.fromHSV(H, math.clamp(S, 0.22, 0.95), math.clamp(V, 0.85, 1))
 	end
 
-	local WaveTune = { Acc = 0, Phase = 0, Shown = Color3.new(1, 1, 1) }
+	local WaveTune = {
+		Acc = 0,
+		Phase = 0,
+		Shown = Color3.new(1, 1, 1),
+		Pushed = false,
+		PushedColor = nil,
+	}
 	local function WaveStep(Delta)
 		WaveTune.Acc += Delta
 		WaveTune.Phase += Delta
 
-		local Tint = Sleeve.Paint(Sleeve.Given or Sleeve.Tint or Sleeve.Fallback or AccentLive)
-		WaveTune.Shown = WaveTune.Shown:Lerp(Tint, math.min(1, 7 * Delta))
+		-- White until a track exists; then the sleeve colour. Nothing but the
+		-- six solid bars carries that colour.
+		local Target = WHITE
+		if HasTrack then
+			Target = Sleeve.Paint(Sleeve.Given or Sleeve.Tint or Sleeve.Fallback)
+		end
+		WaveTune.Shown = WaveTune.Shown:Lerp(Target, math.min(1, 7 * Delta))
+		State.CoverColor = WaveTune.Shown
 
 		if WaveTune.Acc >= 0.085 then
 			WaveTune.Acc = 0
@@ -2332,13 +2318,6 @@ function DynamicIsland.New(Config)
 			if Bar.Height ~= BarHeight then
 				Bar.Height = BarHeight
 				Bar.Frame.Size = UDim2.fromOffset(3, BarHeight)
-				Bar.Halo.Size = UDim2.fromOffset(6, BarHeight + 6)
-			end
-
-			local HaloTransparency = 0.82 - 0.2 * Bar.Current
-			if Bar.HaloTransparency ~= HaloTransparency then
-				Bar.HaloTransparency = HaloTransparency
-				Bar.Halo.BackgroundTransparency = HaloTransparency
 			end
 
 			local Last = Bar.Tint
@@ -2346,12 +2325,27 @@ function DynamicIsland.New(Config)
 				or (Last.R - WaveTune.Shown.R) ^ 2 + (Last.G - WaveTune.Shown.G) ^ 2 + (Last.B - WaveTune.Shown.B) ^ 2 > 0.0002
 			if Moved then
 				Bar.Tint = WaveTune.Shown
-				Bar.Halo.BackgroundColor3 = WaveTune.Shown
-				Bar.Grad.Color = ColorSequence.new({
-					ColorSequenceKeypoint.new(0, WHITE),
-					ColorSequenceKeypoint.new(0.45, WHITE:Lerp(WaveTune.Shown, 0.45)),
-					ColorSequenceKeypoint.new(1, WaveTune.Shown),
-				})
+				Bar.Frame.BackgroundColor3 = WaveTune.Shown
+			end
+		end
+
+		-- The window background follows the cover while music actually plays
+		-- and falls back to the theme gradient when it stops.
+		local Window = State.WindUI and State.WindUI.Window
+		if Window and type(Window.SetCoverTint) == "function" then
+			local Want = Playing and WaveTune.Shown or nil
+			local Moved = (not WaveTune.Pushed)
+				or (Want == nil) ~= (WaveTune.PushedColor == nil)
+				or (Want ~= nil and WaveTune.PushedColor ~= nil
+					and ((Want.R - WaveTune.PushedColor.R) ^ 2
+						+ (Want.G - WaveTune.PushedColor.G) ^ 2
+						+ (Want.B - WaveTune.PushedColor.B) ^ 2) > 0.0004)
+			if Moved then
+				WaveTune.Pushed = true
+				WaveTune.PushedColor = Want
+				pcall(function()
+					Window:SetCoverTint(Want)
+				end)
 			end
 		end
 	end
@@ -2906,9 +2900,26 @@ function DynamicIsland.New(Config)
 		Surface.Release(self)
 		self.Sources, self.SourceIndex, self.Provider, self.MusicState = {}, 1, nil, nil
 		Title, Artist, Cover, Hint = "", "", "", ""
+		Playing = false
 		HasTrack = false
 		Sleeve.Tint, Sleeve.Given, Sleeve.Fallback = nil, nil, nil
 		Sleeve.Job += 1
+		local Window = self.WindUI and self.WindUI.Window
+		if Window and type(Window.SetCoverTint) == "function" then
+			pcall(function()
+				Window:SetCoverTint(nil)
+			end)
+		end
+		if self.Bars then
+			for _, Bar in ipairs(self.Bars) do
+				if Bar.Frame then
+					Bar.Frame.BackgroundColor3 = WHITE
+					Bar.Tint = nil
+				end
+			end
+		end
+		State.CoverColor = nil
+		self.CoverColor = nil
 		TitleLabel.Text = "Nothing playing"
 		ArtistLabel.Text = ""
 		CoverFrame.Image = ""

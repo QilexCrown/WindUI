@@ -883,6 +883,31 @@ return function(Config)
 		end
 	end
 
+	-- Sleeve wash. A second squircle sits above the base background and below
+	-- the content, carrying a two-stop gradient of the playing cover's colour.
+	-- Hidden until a provider hands one in; hiding it restores the theme.
+	do
+		local Gradient = New("UIGradient", {
+			Rotation = 90,
+			Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
+		})
+		local Layer = Creator.NewRoundFrame(Window.UICorner, "Squircle", {
+			Name = "CoverTint",
+			Parent = Window.UIElements.Main,
+			Size = UDim2.fromScale(1, 1),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			ImageColor3 = Color3.new(1, 1, 1),
+			ImageTransparency = 1,
+			Visible = false,
+			ZIndex = 2,
+		}, {
+			Gradient,
+		})
+		Window.UIElements.CoverTint = Layer
+		Window.UIElements.CoverTintGradient = Gradient
+	end
+
 	-- Morph veil: the window folds into the island as one solid shape, so the
 	-- layout never gets read mid-squash. It sits above every ZIndex the window
 	-- uses and only exists for the minimize/restore pair.
@@ -1347,6 +1372,44 @@ return function(Config)
 		Window.BackgroundImageTransparency = math.floor(v * 10 + 0.5) / 10
 	end
 
+	local CoverToken = 0
+
+	-- Cover colour wash across the window. nil restores the theme background.
+	function Window:SetCoverTint(Color)
+		local Layer = Window.UIElements.CoverTint
+		local Gradient = Window.UIElements.CoverTintGradient
+		if not Layer or not Gradient then
+			return
+		end
+		CoverToken += 1
+		local Token = CoverToken
+		if Color == nil or typeof(Color) ~= "Color3" then
+			Window.CoverTint = nil
+			Tween(Layer, 0.35, {
+				ImageTransparency = 1,
+			}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+			task.delay(0.4, function()
+				if Token == CoverToken and Window.CoverTint == nil and Layer.Parent then
+					Layer.Visible = false
+				end
+			end)
+			return
+		end
+		local H, S, V = Color:ToHSV()
+		local Top = Color3.fromHSV(
+			H,
+			math.clamp(math.max(S, 0.32), 0.32, 0.9),
+			math.clamp(math.max(V * 0.85, 0.35), 0.35, 0.85)
+		)
+		local Bottom = Color3.fromHSV(H, math.clamp(S * 0.85, 0.25, 0.85), math.clamp(V * 0.32, 0.07, 0.3))
+		Window.CoverTint = Color
+		Gradient.Color = ColorSequence.new(Top, Bottom)
+		Layer.Visible = true
+		Tween(Layer, 0.45, {
+			ImageTransparency = 0.5,
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+	end
+
 	function Window:SetBackgroundTransparency(v)
 		local rounded = math.floor(tonumber(v) * 10 + 0.5) / 10
 		Config.WindUI.TransparencyValue = rounded
@@ -1760,18 +1823,30 @@ return function(Config)
 		end
 		Config.WindUI:ToggleAcrylic(false)
 
-		MorphVeil.Visible = true
-		Tween(MorphVeil, 0.16, {
-			BackgroundTransparency = 0,
-		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		local Content = Main:FindFirstChild("Main")
 
-		Tween(Main, 0.42, {
-			Position = TargetPos,
-			Size = TargetSize,
-		}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+		MorphVeil.Visible = true
+		MorphVeil.BackgroundTransparency = 1
+		Tween(MorphVeil, 0.13, {
+			BackgroundTransparency = 0,
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+
+		-- Veil first, then squash: the layout is never read mid-reflow.
+		task.delay(0.1, function()
+			if not Window.Minimized or Window.Destroyed then
+				return
+			end
+			if Content then
+				Content.Visible = false
+			end
+			Tween(Main, 0.34, {
+				Position = TargetPos,
+				Size = TargetSize,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+		end)
 
 		local Island = Window.Island
-		task.delay(0.42, function()
+		task.delay(0.44, function()
 			if not Window.Minimized or Window.Destroyed then
 				return
 			end
@@ -1798,7 +1873,7 @@ return function(Config)
 		Main.ClipsDescendants = true
 		local Content = Main:FindFirstChild("Main")
 		if Content then
-			Content.Visible = true
+			Content.Visible = false
 		end
 
 		MorphVeil.Visible = true
@@ -1810,20 +1885,25 @@ return function(Config)
 			Main.Size = TargetSize
 		end
 
-		Tween(Main, 0.5, {
+		Tween(Main, 0.46, {
 			Position = Window.SavedPosition or Window.Position,
 			Size = Window.SavedSize or Window.Size,
 		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 
-		task.delay(0.24, function()
+		-- Content reappears only once the frame is near its final size, so the
+		-- growing shape is a clean panel instead of a reflowing page.
+		task.delay(0.32, function()
 			if Window.Minimized or Window.Destroyed then
 				return
 			end
-			Tween(MorphVeil, 0.26, {
+			if Content then
+				Content.Visible = true
+			end
+			Tween(MorphVeil, 0.2, {
 				BackgroundTransparency = 1,
 			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
-			task.delay(0.26, function()
-				if not Window.Minimized then
+			task.delay(0.22, function()
+				if not Window.Minimized and not Window.Destroyed then
 					MorphVeil.Visible = false
 					Main.ClipsDescendants = Window.SavedClips == true
 				end

@@ -1444,6 +1444,31 @@ return function(Config)
 		end
 	end
 
+	-- Sleeve wash. A second squircle sits above the base background and below
+	-- the content, carrying a two-stop gradient of the playing cover's colour.
+	-- Hidden until a provider hands one in; hiding it restores the theme.
+	do
+		local Gradient = New("UIGradient", {
+			Rotation = 90,
+			Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
+		})
+		local Layer = Creator.NewRoundFrame(Window.UICorner, "Squircle", {
+			Name = "CoverTint",
+			Parent = Window.UIElements.Main,
+			Size = UDim2.fromScale(1, 1),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			ImageColor3 = Color3.new(1, 1, 1),
+			ImageTransparency = 1,
+			Visible = false,
+			ZIndex = 2,
+		}, {
+			Gradient,
+		})
+		Window.UIElements.CoverTint = Layer
+		Window.UIElements.CoverTintGradient = Gradient
+	end
+
 	-- Morph veil: the window folds into the island as one solid shape, so the
 	-- layout never gets read mid-squash. It sits above every ZIndex the window
 	-- uses and only exists for the minimize/restore pair.
@@ -1908,6 +1933,44 @@ return function(Config)
 		Window.BackgroundImageTransparency = math.floor(v * 10 + 0.5) / 10
 	end
 
+	local CoverToken = 0
+
+	-- Cover colour wash across the window. nil restores the theme background.
+	function Window:SetCoverTint(Color)
+		local Layer = Window.UIElements.CoverTint
+		local Gradient = Window.UIElements.CoverTintGradient
+		if not Layer or not Gradient then
+			return
+		end
+		CoverToken += 1
+		local Token = CoverToken
+		if Color == nil or typeof(Color) ~= "Color3" then
+			Window.CoverTint = nil
+			Tween(Layer, 0.35, {
+				ImageTransparency = 1,
+			}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+			task.delay(0.4, function()
+				if Token == CoverToken and Window.CoverTint == nil and Layer.Parent then
+					Layer.Visible = false
+				end
+			end)
+			return
+		end
+		local H, S, V = Color:ToHSV()
+		local Top = Color3.fromHSV(
+			H,
+			math.clamp(math.max(S, 0.32), 0.32, 0.9),
+			math.clamp(math.max(V * 0.85, 0.35), 0.35, 0.85)
+		)
+		local Bottom = Color3.fromHSV(H, math.clamp(S * 0.85, 0.25, 0.85), math.clamp(V * 0.32, 0.07, 0.3))
+		Window.CoverTint = Color
+		Gradient.Color = ColorSequence.new(Top, Bottom)
+		Layer.Visible = true
+		Tween(Layer, 0.45, {
+			ImageTransparency = 0.5,
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+	end
+
 	function Window:SetBackgroundTransparency(v)
 		local rounded = math.floor(tonumber(v) * 10 + 0.5) / 10
 		Config.WindUI.TransparencyValue = rounded
@@ -2321,18 +2384,30 @@ return function(Config)
 		end
 		Config.WindUI:ToggleAcrylic(false)
 
-		MorphVeil.Visible = true
-		Tween(MorphVeil, 0.16, {
-			BackgroundTransparency = 0,
-		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		local Content = Main:FindFirstChild("Main")
 
-		Tween(Main, 0.42, {
-			Position = TargetPos,
-			Size = TargetSize,
-		}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+		MorphVeil.Visible = true
+		MorphVeil.BackgroundTransparency = 1
+		Tween(MorphVeil, 0.13, {
+			BackgroundTransparency = 0,
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+
+		-- Veil first, then squash: the layout is never read mid-reflow.
+		task.delay(0.1, function()
+			if not Window.Minimized or Window.Destroyed then
+				return
+			end
+			if Content then
+				Content.Visible = false
+			end
+			Tween(Main, 0.34, {
+				Position = TargetPos,
+				Size = TargetSize,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+		end)
 
 		local Island = Window.Island
-		task.delay(0.42, function()
+		task.delay(0.44, function()
 			if not Window.Minimized or Window.Destroyed then
 				return
 			end
@@ -2359,7 +2434,7 @@ return function(Config)
 		Main.ClipsDescendants = true
 		local Content = Main:FindFirstChild("Main")
 		if Content then
-			Content.Visible = true
+			Content.Visible = false
 		end
 
 		MorphVeil.Visible = true
@@ -2371,20 +2446,25 @@ return function(Config)
 			Main.Size = TargetSize
 		end
 
-		Tween(Main, 0.5, {
+		Tween(Main, 0.46, {
 			Position = Window.SavedPosition or Window.Position,
 			Size = Window.SavedSize or Window.Size,
 		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 
-		task.delay(0.24, function()
+		-- Content reappears only once the frame is near its final size, so the
+		-- growing shape is a clean panel instead of a reflowing page.
+		task.delay(0.32, function()
 			if Window.Minimized or Window.Destroyed then
 				return
 			end
-			Tween(MorphVeil, 0.26, {
+			if Content then
+				Content.Visible = true
+			end
+			Tween(MorphVeil, 0.2, {
 				BackgroundTransparency = 1,
 			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
-			task.delay(0.26, function()
-				if not Window.Minimized then
+			task.delay(0.22, function()
+				if not Window.Minimized and not Window.Destroyed then
 					MorphVeil.Visible = false
 					Main.ClipsDescendants = Window.SavedClips == true
 				end
@@ -13360,54 +13440,28 @@ function DynamicIsland.New(Config)
 		Position = UDim2.new(1, -14, 0, 20),
 		ZIndex = 4,
 	})
-	-- Six capsule bars. Each bar is a white pill carrying a gradient that starts
-	-- white at the peak and lands on the sleeve colour at the base; a wider halo
-	-- of the same colour sits behind it, so the pill gets a bloom on the black
-	-- shell without stamping a slice of the artwork anywhere. No artwork, no
-	-- tint: the bars stay white.
+	-- Solid bars, the shape the pill has always had. White body; WaveStep
+	-- paints the sleeve tint on top. No slice of the artwork is ever drawn here.
 	for Index = 1, 6 do
-		local Halo = New("Frame", {
-			Parent = Wave,
-			Name = "Halo",
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromOffset((Index - 1) * 4.6 + 2.5, 11),
-			Size = UDim2.fromOffset(6, 10),
-			BackgroundColor3 = WHITE,
-			BackgroundTransparency = 0.82,
-			BorderSizePixel = 0,
-			ZIndex = 4,
-		})
-		Corner(Halo, 6)
-
 		local Bar = New("Frame", {
 			Parent = Wave,
 			Name = "Bar",
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromOffset((Index - 1) * 4.6 + 2.5, 11),
+			Position = UDim2.fromOffset((Index - 1) * 5 + 1.5, 11),
 			Size = UDim2.fromOffset(3, 4),
 			BackgroundColor3 = WHITE,
 			BackgroundTransparency = 0,
 			BorderSizePixel = 0,
+			ClipsDescendants = true,
 			ZIndex = 5,
 		})
-		Corner(Bar, 3)
-		local Grad = New("UIGradient", {
-			Parent = Bar,
-			Rotation = 90,
-			Color = ColorSequence.new(WHITE, WHITE),
-		})
-
-		-- Tall in the middle, short at the edges: the silhouette reads as one
-		-- wave instead of six unrelated sticks.
-		local Shift = math.abs(Index - 3.5) / 2.5
+		Corner(Bar, 1.5)
 		self.Bars[Index] = {
 			Frame = Bar,
-			Halo = Halo,
-			Grad = Grad,
 			Current = 0,
 			Goal = 0,
 			Height = 4,
-			Weight = 1 - 0.42 * Shift,
+			Weight = 0.55 + 0.45 * ((Index * 37) % 10) / 10,
 		}
 	end
 	self.Wave = Wave
@@ -15109,13 +15163,25 @@ function DynamicIsland.New(Config)
 		return Color3.fromHSV(H, math.clamp(S, 0.22, 0.95), math.clamp(V, 0.85, 1))
 	end
 
-	local WaveTune = { Acc = 0, Phase = 0, Shown = Color3.new(1, 1, 1) }
+	local WaveTune = {
+		Acc = 0,
+		Phase = 0,
+		Shown = Color3.new(1, 1, 1),
+		Pushed = false,
+		PushedColor = nil,
+	}
 	local function WaveStep(Delta)
 		WaveTune.Acc += Delta
 		WaveTune.Phase += Delta
 
-		local Tint = Sleeve.Paint(Sleeve.Given or Sleeve.Tint or Sleeve.Fallback or AccentLive)
-		WaveTune.Shown = WaveTune.Shown:Lerp(Tint, math.min(1, 7 * Delta))
+		-- White until a track exists; then the sleeve colour. Nothing but the
+		-- six solid bars carries that colour.
+		local Target = WHITE
+		if HasTrack then
+			Target = Sleeve.Paint(Sleeve.Given or Sleeve.Tint or Sleeve.Fallback)
+		end
+		WaveTune.Shown = WaveTune.Shown:Lerp(Target, math.min(1, 7 * Delta))
+		State.CoverColor = WaveTune.Shown
 
 		if WaveTune.Acc >= 0.085 then
 			WaveTune.Acc = 0
@@ -15137,13 +15203,6 @@ function DynamicIsland.New(Config)
 			if Bar.Height ~= BarHeight then
 				Bar.Height = BarHeight
 				Bar.Frame.Size = UDim2.fromOffset(3, BarHeight)
-				Bar.Halo.Size = UDim2.fromOffset(6, BarHeight + 6)
-			end
-
-			local HaloTransparency = 0.82 - 0.2 * Bar.Current
-			if Bar.HaloTransparency ~= HaloTransparency then
-				Bar.HaloTransparency = HaloTransparency
-				Bar.Halo.BackgroundTransparency = HaloTransparency
 			end
 
 			local Last = Bar.Tint
@@ -15151,12 +15210,27 @@ function DynamicIsland.New(Config)
 				or (Last.R - WaveTune.Shown.R) ^ 2 + (Last.G - WaveTune.Shown.G) ^ 2 + (Last.B - WaveTune.Shown.B) ^ 2 > 0.0002
 			if Moved then
 				Bar.Tint = WaveTune.Shown
-				Bar.Halo.BackgroundColor3 = WaveTune.Shown
-				Bar.Grad.Color = ColorSequence.new({
-					ColorSequenceKeypoint.new(0, WHITE),
-					ColorSequenceKeypoint.new(0.45, WHITE:Lerp(WaveTune.Shown, 0.45)),
-					ColorSequenceKeypoint.new(1, WaveTune.Shown),
-				})
+				Bar.Frame.BackgroundColor3 = WaveTune.Shown
+			end
+		end
+
+		-- The window background follows the cover while music actually plays
+		-- and falls back to the theme gradient when it stops.
+		local Window = State.WindUI and State.WindUI.Window
+		if Window and type(Window.SetCoverTint) == "function" then
+			local Want = Playing and WaveTune.Shown or nil
+			local Moved = (not WaveTune.Pushed)
+				or (Want == nil) ~= (WaveTune.PushedColor == nil)
+				or (Want ~= nil and WaveTune.PushedColor ~= nil
+					and ((Want.R - WaveTune.PushedColor.R) ^ 2
+						+ (Want.G - WaveTune.PushedColor.G) ^ 2
+						+ (Want.B - WaveTune.PushedColor.B) ^ 2) > 0.0004)
+			if Moved then
+				WaveTune.Pushed = true
+				WaveTune.PushedColor = Want
+				pcall(function()
+					Window:SetCoverTint(Want)
+				end)
 			end
 		end
 	end
@@ -15711,9 +15785,26 @@ function DynamicIsland.New(Config)
 		Surface.Release(self)
 		self.Sources, self.SourceIndex, self.Provider, self.MusicState = {}, 1, nil, nil
 		Title, Artist, Cover, Hint = "", "", "", ""
+		Playing = false
 		HasTrack = false
 		Sleeve.Tint, Sleeve.Given, Sleeve.Fallback = nil, nil, nil
 		Sleeve.Job += 1
+		local Window = self.WindUI and self.WindUI.Window
+		if Window and type(Window.SetCoverTint) == "function" then
+			pcall(function()
+				Window:SetCoverTint(nil)
+			end)
+		end
+		if self.Bars then
+			for _, Bar in ipairs(self.Bars) do
+				if Bar.Frame then
+					Bar.Frame.BackgroundColor3 = WHITE
+					Bar.Tint = nil
+				end
+			end
+		end
+		State.CoverColor = nil
+		self.CoverColor = nil
 		TitleLabel.Text = "Nothing playing"
 		ArtistLabel.Text = ""
 		CoverFrame.Image = ""
@@ -34291,5 +34382,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome7
+-- enderhub-windui-mac-chrome8
 return __require("src/Init.lua")
