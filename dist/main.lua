@@ -1444,6 +1444,26 @@ return function(Config)
 		end
 	end
 
+	-- Morph veil: the window folds into the island as one solid shape, so the
+	-- layout never gets read mid-squash. It sits above every ZIndex the window
+	-- uses and only exists for the minimize/restore pair.
+	local MorphVeil = New("Frame", {
+		Parent = Window.UIElements.Main,
+		Name = "MorphVeil",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 4000,
+		ThemeTag = {
+			BackgroundColor3 = "WindowBackground",
+		},
+	}, {
+		New("UICorner", {
+			CornerRadius = UDim.new(0, Window.UICorner),
+		}),
+	})
+
 	local function UpdateTopbarCenter()
 		local Topbar = Window.UIElements.Main.Main.Topbar
 		local UIScale = Config.WindUI.UIScale
@@ -1958,7 +1978,9 @@ return function(Config)
 	end)
 
 	Window:CreateTopbarButton("Minimize", "minus", function()
-		if Window.Close then
+		if Window.Minimize then
+			Window:Minimize()
+		elseif Window.Close then
 			Window:Close()
 		end
 		-- task.spawn(function()
@@ -2027,6 +2049,12 @@ return function(Config)
 
 			task.wait(0.06)
 			Window.Closed = false
+			if Window.Minimized then
+				Window.Minimized = false
+				MorphVeil.Visible = false
+				Window.UIElements.Main.ClipsDescendants = Window.SavedClips == true
+				Window.UIElements.Main.Position = Window.SavedPosition or Window.Position
+			end
 
 			Window.UIElements.Main.Size = UDim2.new(Window.Size.X.Scale, Window.Size.X.Offset, 0, 100)
 
@@ -2229,11 +2257,156 @@ return function(Config)
 
 		return Close
 	end
+
+	-- The capsule a minimized window folds into. Set once the island exists;
+	-- without one, minimize falls back to the old collapse.
+	function Window:SetIsland(Island)
+		Window.Island = type(Island) == "table" and Island or nil
+	end
+
+	-- Centre and footprint of the island in window-frame space. Positions are
+	-- layout offsets, so a non-1 UIScale is divided back out.
+	local function IslandTarget()
+		local Island = Window.Island
+		local Main = Window.UIElements.Main
+		local Root = type(Island) == "table" and Island.Root or nil
+		if not Main or typeof(Root) ~= "Instance" then
+			return nil
+		end
+		local Size = Root.AbsoluteSize
+		if Size.X <= 0 or Size.Y <= 0 then
+			return nil
+		end
+		local Center = Root.AbsolutePosition + Size * 0.5
+		local Parent = Main.Parent
+		local ParentPos = Vector2.zero
+		if Parent and Parent:IsA("GuiObject") then
+			ParentPos = Parent.AbsolutePosition
+		end
+		local Scale = tonumber(Config.WindUI.UIScale) or 1
+		if Scale <= 0 then
+			Scale = 1
+		end
+		return UDim2.fromOffset((Center.X - ParentPos.X) / Scale, (Center.Y - ParentPos.Y) / Scale),
+			UDim2.fromOffset(Size.X / Scale, Size.Y / Scale)
+	end
+
+	-- Mac-style minimize: the whole frame shrinks and slides into the island,
+	-- then the pill pings. The veil keeps the layout from being read mid-squash.
+	function Window:Minimize()
+		if Window.Destroyed or Window.Minimized or Window.Closed then
+			return
+		end
+
+		local Main = Window.UIElements.Main
+		local TargetPos, TargetSize = IslandTarget()
+		if not TargetPos then
+			Window:Close()
+			return
+		end
+
+		Window.Minimized = true
+		Window.Closed = true
+		Window.CanDropdown = false
+		Window.CanResize = false
+		Window.SavedPosition = Main.Position
+		Window.SavedSize = Main.Size
+		Window.SavedClips = Main.ClipsDescendants
+		Main.ClipsDescendants = true
+
+		if WindowDragModule then
+			pcall(function()
+				WindowDragModule:Set(false)
+			end)
+		end
+		Config.WindUI:ToggleAcrylic(false)
+
+		MorphVeil.Visible = true
+		Tween(MorphVeil, 0.16, {
+			BackgroundTransparency = 0,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+		Tween(Main, 0.42, {
+			Position = TargetPos,
+			Size = TargetSize,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+
+		local Island = Window.Island
+		task.delay(0.42, function()
+			if not Window.Minimized or Window.Destroyed then
+				return
+			end
+			Main.Visible = false
+			if type(Island) == "table" and type(Island.Ping) == "function" then
+				pcall(Island.Ping, Island)
+			end
+		end)
+	end
+
+	-- Reverse of minimize: the frame grows back out of the island and the veil
+	-- lifts once the layout is at its final size.
+	function Window:Restore()
+		if Window.Destroyed or not Window.Minimized then
+			return
+		end
+
+		local Main = Window.UIElements.Main
+		local TargetPos, TargetSize = IslandTarget()
+
+		Window.Minimized = false
+		Window.Closed = false
+		Main.Visible = true
+		Main.ClipsDescendants = true
+		local Content = Main:FindFirstChild("Main")
+		if Content then
+			Content.Visible = true
+		end
+
+		MorphVeil.Visible = true
+		MorphVeil.BackgroundTransparency = 0
+		Config.WindUI:ToggleAcrylic(true)
+
+		if TargetPos then
+			Main.Position = TargetPos
+			Main.Size = TargetSize
+		end
+
+		Tween(Main, 0.5, {
+			Position = Window.SavedPosition or Window.Position,
+			Size = Window.SavedSize or Window.Size,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+		task.delay(0.24, function()
+			if Window.Minimized or Window.Destroyed then
+				return
+			end
+			Tween(MorphVeil, 0.26, {
+				BackgroundTransparency = 1,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			task.delay(0.26, function()
+				if not Window.Minimized then
+					MorphVeil.Visible = false
+					Main.ClipsDescendants = Window.SavedClips == true
+				end
+			end)
+		end)
+
+		if WindowDragModule and not Window.IsFullscreen then
+			WindowDragModule:Set(true)
+		end
+		if Window.Resizable then
+			Window.CanResize = true
+		end
+		Window.CanDropdown = true
+	end
+
 	function Window:Destroy()
 		return Window:Close():Destroy()
 	end
 	function Window:Toggle()
-		if Window.Closed then
+		if Window.Minimized then
+			Window:Restore()
+		elseif Window.Closed then
 			Window:Open()
 		else
 			Window:Close()
@@ -12923,6 +13096,40 @@ local function NewIdleFace(Root)
 		ZIndex = 5,
 	})
 
+	-- Mini player: the same capsule, but it names the track while a provider
+	-- is bound. Two lines keep the artist out of the title's way.
+	Face.MiniTitle = New("TextLabel", {
+		Parent = Root,
+		Name = "MiniTitle",
+		BackgroundTransparency = 1,
+		FontFace = Bold,
+		TextSize = 11,
+		TextColor3 = WHITE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "Nothing playing",
+		Position = UDim2.fromOffset(42, 6),
+		Size = UDim2.fromOffset(PILL_W - 76, 15),
+		Visible = false,
+		ZIndex = 5,
+	})
+
+	Face.MiniArtist = New("TextLabel", {
+		Parent = Root,
+		Name = "MiniArtist",
+		BackgroundTransparency = 1,
+		FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
+		TextSize = 10,
+		TextColor3 = SUBTLE,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "",
+		Position = UDim2.fromOffset(42, 21),
+		Size = UDim2.fromOffset(PILL_W - 76, 13),
+		Visible = false,
+		ZIndex = 5,
+	})
+
 	return Face
 end
 
@@ -13088,6 +13295,7 @@ function DynamicIsland.New(Config)
 	})
 	local OutlineCorner = Corner(Outline, 20)
 	self.OutlineCorner = OutlineCorner
+	self.Outline = Outline
 	local Edge = Stroke(Outline)
 	Gradient(Edge, 90, Sequence({ 0, 0.8 }, { 0.5, 0.93 }, { 1, 0.89 }))
 
@@ -13373,6 +13581,7 @@ function DynamicIsland.New(Config)
 	-- a face of its own. Same slot as the key and valid pills: mark, wordmark.
 	local IdleUI = NewIdleFace(Root)
 	self.IdleIcon, self.IdleText = IdleUI.Icon, IdleUI.Text
+	self.MiniTitle, self.MiniArtist = IdleUI.MiniTitle, IdleUI.MiniArtist
 
 	--------------------------------------------------------------- cards
 
@@ -14487,6 +14696,10 @@ function DynamicIsland.New(Config)
 				GoalW, GoalH = GoalW - 8, GoalH - 2
 			elseif Peeking then
 				GoalW, GoalH = GoalW + 16, GoalH + 4
+			elseif Now < (State.PingUntil or 0) then
+				-- A ping is one spring out and back: the capsule acknowledges a
+				-- window that just folded into it.
+				GoalW, GoalH = GoalW + 26, GoalH + 6
 			end
 		end
 		Width.g, Height.g = GoalW, GoalH
@@ -14522,7 +14735,7 @@ function DynamicIsland.New(Config)
 			math.floor(Lerp(CurrentW - 14, P + AW - 14, P_) + 0.5),
 			math.floor(Lerp(CurrentH / 2, 54, P_) + 0.5)
 		)
-		Wave.Visible = P_ < 0.6 and Mode == "music" and HasTrack
+		Wave.Visible = P_ < 0.6 and (Mode == "music" or (Mode == "idle" and State.MusicBound == true)) and HasTrack
 
 		local Radius = math.floor(math.min(CurrentH / 2, Lerp(20, 30, P_)) + 0.5)
 		Corner_.CornerRadius = UDim.new(0, Radius)
@@ -15140,10 +15353,15 @@ function DynamicIsland.New(Config)
 	-- One owner for pill visibility. Shape only repaints when the capsule
 	-- changes size, so every mode edge has to land here instead.
 	local function PillStep()
-		local Music = Mode == "music"
+		-- Music face: a bound provider makes the resting pill a mini player,
+		-- track or not. Without one, the idle face is the hub's own mark.
+		local Music = Mode == "music" or (Mode == "idle" and State.MusicBound == true)
 		local ShowArt = Music and HasTrack
 		CoverFrame.Visible = ShowArt
 		Wave.Visible = ShowArt and (State.P or 0) < 0.6
+		local Mini = ShowArt and not State.Expanded
+		IdleUI.MiniTitle.Visible = Mini
+		IdleUI.MiniArtist.Visible = Mini
 
 		local Toast = Mode == "toast"
 		T.Tile.Visible = Toast
@@ -15169,7 +15387,7 @@ function DynamicIsland.New(Config)
 			ValidText.Text = Mode == "loaded" and "Script Loaded" or "Key Valid"
 		end
 
-		local Idle = Mode == "idle"
+		local Idle = Mode == "idle" and not HasTrack
 		IdleUI.Icon.Visible = Idle
 		IdleUI.Text.Visible = Idle
 	end
@@ -15237,6 +15455,92 @@ function DynamicIsland.New(Config)
 		end
 		T.Icon.ImageColor3 = WHITE
 		T.Title.TextColor3 = WHITE
+		PillStep()
+	end
+
+	-- The resting face. A hub passes its own mark and name so the capsule reads
+	-- as the open button rather than a music widget with nothing to play.
+	function DynamicIsland:SetIdle(Icon_, Text_)
+		if not self.Alive then
+			return
+		end
+		if type(Icon_) == "string" and Icon_ ~= "" then
+			IdleUI.Icon.Image = Icon_
+			IdleUI.Icon.ImageRectOffset = Vector2.zero
+			IdleUI.Icon.ImageRectSize = Vector2.zero
+			IdleUI.Icon.ImageColor3 = WHITE
+		end
+		if type(Text_) == "string" and Text_ ~= "" then
+			IdleUI.Text.Text = Text_
+		end
+		if self.Expanded then
+			self:Collapse()
+		end
+		Mode, ToastUntil, LoadedUntil = "idle", 0, 0
+		self.Mode = Mode
+		PillStep()
+	end
+
+	-- The outline is a glass rim for a floating widget. A hub that uses the
+	-- capsule as its open button wants the flat island look instead.
+	function DynamicIsland:SetOutline(Value)
+		if self.Outline then
+			self.Outline.Visible = Value ~= false
+		end
+	end
+
+	-- Called when the capsule is tapped with no card to open: the hub uses it to
+	-- restore a window that folded into the pill.
+	function DynamicIsland:SetOnTap(Callback)
+		self.OnTap = type(Callback) == "function" and Callback or nil
+	end
+
+	-- One spring out and back, no state change. Fired when a window lands.
+	function DynamicIsland:Ping()
+		State.PingUntil = os.clock() + 0.32
+	end
+
+	-- Music is opt-in. Binding swaps the idle face for the mini player and
+	-- starts the provider poll; unbinding puts the hub mark back.
+	function DynamicIsland:BindMusic(Providers, Folder)
+		if not self.Alive or self.MusicBound then
+			return
+		end
+		local List = Providers
+		if type(List) ~= "table" or #List == 0 then
+			List = { "files", "demo" }
+		end
+		self.MusicBound = true
+		Surface.Bind(self, {
+			Providers = List,
+			Folder = Folder or Config.Folder or "Ender Hub/songs",
+			WindUI = self.WindUI,
+		})
+		PillStep()
+	end
+
+	function DynamicIsland:UnbindMusic()
+		if not self.Alive or not self.MusicBound then
+			return
+		end
+		self.MusicBound = false
+		if self.Expanded then
+			self:Collapse()
+		end
+		Surface.Release(self)
+		self.Sources, self.SourceIndex, self.Provider, self.MusicState = {}, 1, nil, nil
+		Title, Artist, Cover, Hint = "", "", "", ""
+		HasTrack = false
+		TitleLabel.Text = "Nothing playing"
+		ArtistLabel.Text = ""
+		CoverFrame.Image = ""
+		CoverFrame.BackgroundTransparency = 0
+		Mark.Visible = true
+		CoverGrad.Enabled = true
+		if self.MiniTitle then
+			self.MiniTitle.Text = "Nothing playing"
+			self.MiniArtist.Text = ""
+		end
 		PillStep()
 	end
 
@@ -15501,6 +15805,10 @@ function DynamicIsland.New(Config)
 		if ArtistLabel.Text ~= Artist then
 			ArtistLabel.Text = Artist
 		end
+		if self.MiniTitle then
+			self.MiniTitle.Text = Title
+			self.MiniArtist.Text = Artist ~= "" and Artist or Hint
+		end
 
 		ArtW = tonumber(State_.CoverW) or 0
 		ArtH = tonumber(State_.CoverH) or 0
@@ -15536,6 +15844,9 @@ function DynamicIsland.New(Config)
 		if ArtistLabel then
 			ArtistLabel.Text = Hint
 		end
+		if self.MiniArtist then
+			self.MiniArtist.Text = Hint
+		end
 	end
 
 	function DynamicIsland:Destroy()
@@ -15566,7 +15877,14 @@ function DynamicIsland.New(Config)
 		Pressing, Peeking = false, false
 		if Mode == "toast" then
 			State:Dismiss()
-		elseif Mode == "loading" or Mode == "idle" then
+		elseif Mode == "idle" then
+			-- No card to open: the hub owns the tap. Music, when bound, still
+			-- opens the player through the same hook.
+			if State.OnTap then
+				pcall(State.OnTap, State)
+			end
+			return
+		elseif Mode == "loading" then
 			return
 		elseif Mode == "valid" then
 			State:DismissKey()
@@ -15792,6 +16110,7 @@ function DynamicIsland.New(Config)
 	-- Music is opt-in: an island created without a provider list is a pure
 	-- surface (loading, key, toast, idle). No demo folder scan runs behind it.
 	if type(Config.Providers) == "table" and #Config.Providers > 0 then
+		self.MusicBound = true
 		Surface.Bind(self, Config)
 	end
 	PaintState()
@@ -15913,7 +16232,7 @@ function Surface.Bind(Object, Config)
 	end
 
 	task.spawn(function()
-		while Object.Alive do
+		while Object.Alive and Object.MusicBound ~= false do
 			local Active = Object.Provider
 			if Active and Active.Poll then
 				local Ok = pcall(function()
@@ -33783,5 +34102,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome5
+-- enderhub-windui-mac-chrome6
 return __require("src/Init.lua")

@@ -883,6 +883,26 @@ return function(Config)
 		end
 	end
 
+	-- Morph veil: the window folds into the island as one solid shape, so the
+	-- layout never gets read mid-squash. It sits above every ZIndex the window
+	-- uses and only exists for the minimize/restore pair.
+	local MorphVeil = New("Frame", {
+		Parent = Window.UIElements.Main,
+		Name = "MorphVeil",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 4000,
+		ThemeTag = {
+			BackgroundColor3 = "WindowBackground",
+		},
+	}, {
+		New("UICorner", {
+			CornerRadius = UDim.new(0, Window.UICorner),
+		}),
+	})
+
 	local function UpdateTopbarCenter()
 		local Topbar = Window.UIElements.Main.Main.Topbar
 		local UIScale = Config.WindUI.UIScale
@@ -1397,7 +1417,9 @@ return function(Config)
 	end)
 
 	Window:CreateTopbarButton("Minimize", "minus", function()
-		if Window.Close then
+		if Window.Minimize then
+			Window:Minimize()
+		elseif Window.Close then
 			Window:Close()
 		end
 		-- task.spawn(function()
@@ -1466,6 +1488,12 @@ return function(Config)
 
 			task.wait(0.06)
 			Window.Closed = false
+			if Window.Minimized then
+				Window.Minimized = false
+				MorphVeil.Visible = false
+				Window.UIElements.Main.ClipsDescendants = Window.SavedClips == true
+				Window.UIElements.Main.Position = Window.SavedPosition or Window.Position
+			end
 
 			Window.UIElements.Main.Size = UDim2.new(Window.Size.X.Scale, Window.Size.X.Offset, 0, 100)
 
@@ -1668,11 +1696,156 @@ return function(Config)
 
 		return Close
 	end
+
+	-- The capsule a minimized window folds into. Set once the island exists;
+	-- without one, minimize falls back to the old collapse.
+	function Window:SetIsland(Island)
+		Window.Island = type(Island) == "table" and Island or nil
+	end
+
+	-- Centre and footprint of the island in window-frame space. Positions are
+	-- layout offsets, so a non-1 UIScale is divided back out.
+	local function IslandTarget()
+		local Island = Window.Island
+		local Main = Window.UIElements.Main
+		local Root = type(Island) == "table" and Island.Root or nil
+		if not Main or typeof(Root) ~= "Instance" then
+			return nil
+		end
+		local Size = Root.AbsoluteSize
+		if Size.X <= 0 or Size.Y <= 0 then
+			return nil
+		end
+		local Center = Root.AbsolutePosition + Size * 0.5
+		local Parent = Main.Parent
+		local ParentPos = Vector2.zero
+		if Parent and Parent:IsA("GuiObject") then
+			ParentPos = Parent.AbsolutePosition
+		end
+		local Scale = tonumber(Config.WindUI.UIScale) or 1
+		if Scale <= 0 then
+			Scale = 1
+		end
+		return UDim2.fromOffset((Center.X - ParentPos.X) / Scale, (Center.Y - ParentPos.Y) / Scale),
+			UDim2.fromOffset(Size.X / Scale, Size.Y / Scale)
+	end
+
+	-- Mac-style minimize: the whole frame shrinks and slides into the island,
+	-- then the pill pings. The veil keeps the layout from being read mid-squash.
+	function Window:Minimize()
+		if Window.Destroyed or Window.Minimized or Window.Closed then
+			return
+		end
+
+		local Main = Window.UIElements.Main
+		local TargetPos, TargetSize = IslandTarget()
+		if not TargetPos then
+			Window:Close()
+			return
+		end
+
+		Window.Minimized = true
+		Window.Closed = true
+		Window.CanDropdown = false
+		Window.CanResize = false
+		Window.SavedPosition = Main.Position
+		Window.SavedSize = Main.Size
+		Window.SavedClips = Main.ClipsDescendants
+		Main.ClipsDescendants = true
+
+		if WindowDragModule then
+			pcall(function()
+				WindowDragModule:Set(false)
+			end)
+		end
+		Config.WindUI:ToggleAcrylic(false)
+
+		MorphVeil.Visible = true
+		Tween(MorphVeil, 0.16, {
+			BackgroundTransparency = 0,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+		Tween(Main, 0.42, {
+			Position = TargetPos,
+			Size = TargetSize,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+
+		local Island = Window.Island
+		task.delay(0.42, function()
+			if not Window.Minimized or Window.Destroyed then
+				return
+			end
+			Main.Visible = false
+			if type(Island) == "table" and type(Island.Ping) == "function" then
+				pcall(Island.Ping, Island)
+			end
+		end)
+	end
+
+	-- Reverse of minimize: the frame grows back out of the island and the veil
+	-- lifts once the layout is at its final size.
+	function Window:Restore()
+		if Window.Destroyed or not Window.Minimized then
+			return
+		end
+
+		local Main = Window.UIElements.Main
+		local TargetPos, TargetSize = IslandTarget()
+
+		Window.Minimized = false
+		Window.Closed = false
+		Main.Visible = true
+		Main.ClipsDescendants = true
+		local Content = Main:FindFirstChild("Main")
+		if Content then
+			Content.Visible = true
+		end
+
+		MorphVeil.Visible = true
+		MorphVeil.BackgroundTransparency = 0
+		Config.WindUI:ToggleAcrylic(true)
+
+		if TargetPos then
+			Main.Position = TargetPos
+			Main.Size = TargetSize
+		end
+
+		Tween(Main, 0.5, {
+			Position = Window.SavedPosition or Window.Position,
+			Size = Window.SavedSize or Window.Size,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+		task.delay(0.24, function()
+			if Window.Minimized or Window.Destroyed then
+				return
+			end
+			Tween(MorphVeil, 0.26, {
+				BackgroundTransparency = 1,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			task.delay(0.26, function()
+				if not Window.Minimized then
+					MorphVeil.Visible = false
+					Main.ClipsDescendants = Window.SavedClips == true
+				end
+			end)
+		end)
+
+		if WindowDragModule and not Window.IsFullscreen then
+			WindowDragModule:Set(true)
+		end
+		if Window.Resizable then
+			Window.CanResize = true
+		end
+		Window.CanDropdown = true
+	end
+
 	function Window:Destroy()
 		return Window:Close():Destroy()
 	end
 	function Window:Toggle()
-		if Window.Closed then
+		if Window.Minimized then
+			Window:Restore()
+		elseif Window.Closed then
 			Window:Open()
 		else
 			Window:Close()

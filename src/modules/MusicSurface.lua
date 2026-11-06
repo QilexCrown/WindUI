@@ -91,7 +91,7 @@ function Surface.Bind(Object, Config)
 	end
 
 	task.spawn(function()
-		while Object.Alive do
+		while Object.Alive and Object.MusicBound ~= false do
 			local Active = Object.Provider
 			if Active and Active.Poll then
 				local Ok = pcall(function()
