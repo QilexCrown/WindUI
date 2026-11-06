@@ -884,36 +884,44 @@ return function(Config)
 	end
 
 	-- Sleeve wash. Two squircles sit above the base background and below the
-	-- content, each carrying a two-stop gradient of the playing cover's colour.
-	-- Only one is live at a time; a track change paints the idle one and
-	-- crossfades the pair, so the window colour never pops in or out. The
+	-- content. Each is a single pixel of the playing sleeve stretched flat -
+	-- the exact pixel the expanded player's cards wash with - so the window
+	-- colour can never drift from the artwork. Only one is live at a time; a
+	-- track change paints the idle one and crossfades the pair. The
 	-- transparency ramp keeps the wash to the top of the window and the low
 	-- image alpha keeps it from taking the theme over.
 	do
 		local Layers = {}
 		for Index = 1, 2 do
+			local Layer = New("ImageLabel", {
+				Name = Index == 1 and "CoverTintA" or "CoverTintB",
+				Parent = Window.UIElements.Main,
+				Size = UDim2.fromScale(1, 1),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				Image = "",
+				ImageRectSize = Vector2.new(1, 1),
+				ImageTransparency = 1,
+				ScaleType = Enum.ScaleType.Stretch,
+				Visible = false,
+				ZIndex = 2,
+			})
+			New("UICorner", {
+				Parent = Layer,
+				CornerRadius = UDim.new(0, Window.UICorner),
+			})
 			local Gradient = New("UIGradient", {
+				Parent = Layer,
 				Rotation = 90,
-				Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
+				Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(158, 158, 158)),
 				Transparency = NumberSequence.new({
 					NumberSequenceKeypoint.new(0, 0),
 					NumberSequenceKeypoint.new(0.34, 0.1),
 					NumberSequenceKeypoint.new(0.72, 0.72),
 					NumberSequenceKeypoint.new(1, 1),
 				}),
-			})
-			local Layer = Creator.NewRoundFrame(Window.UICorner, "Squircle", {
-				Name = Index == 1 and "CoverTintA" or "CoverTintB",
-				Parent = Window.UIElements.Main,
-				Size = UDim2.fromScale(1, 1),
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				ImageColor3 = Color3.new(1, 1, 1),
-				ImageTransparency = 1,
-				Visible = false,
-				ZIndex = 2,
-			}, {
-				Gradient,
 			})
 			Layers[Index] = { Frame = Layer, Gradient = Gradient }
 		end
@@ -1387,9 +1395,10 @@ return function(Config)
 	local CoverToken = 0
 	local CoverLive = 0
 
-	-- Cover colour wash across the window. nil restores the theme background.
-	-- Colours arrive fully settled from the island; this side owns the fade.
-	function Window:SetCoverTint(Color)
+	-- Sleeve wash across the window. Takes the artwork and the pixel rect the
+	-- island reads (a 1 x 1 crop), so both surfaces show the same colour. nil
+	-- restores the theme background.
+	function Window:SetCoverTint(Image, Rect)
 		local Layers = Window.UIElements.CoverTintLayers
 		if not Layers then
 			return
@@ -1397,7 +1406,7 @@ return function(Config)
 		CoverToken += 1
 		local Token = CoverToken
 
-		if Color == nil or typeof(Color) ~= "Color3" then
+		if Image == nil or Image == "" then
 			Window.CoverTint = nil
 			CoverLive = 0
 			for Index, Record in ipairs(Layers) do
@@ -1415,23 +1424,18 @@ return function(Config)
 			return
 		end
 
-		-- Same hue as the sleeve, held near its own brightness: no pastel lift,
-		-- no black crush. The bottom stop is the deeper shade of that hue.
-		local H, S, V = Color:ToHSV()
-		local Top = Color3.fromHSV(
-			H,
-			math.clamp(math.max(S, 0.3), 0.3, 0.9),
-			math.clamp(math.max(V, 0.48), 0.48, 0.94)
-		)
-		local Bottom = Color3.fromHSV(H, math.clamp(S * 0.95, 0.26, 0.88), math.clamp(V * 0.55, 0.1, 0.38))
-
-		Window.CoverTint = Color
+		Window.CoverTint = Image
 		local Target = CoverLive == 1 and 2 or 1
 		local Record = Layers[Target]
 		CoverLive = Target
 
-		Record.Gradient.Color = ColorSequence.new(Top, Bottom)
-		Record.Frame.ImageTransparency = 1
+		Record.Frame.Image = Image
+		Record.Frame.ImageRectOffset = Rect or Vector2.zero
+		-- A layer still fading out keeps its current alpha, so a fast skip
+		-- blends into the new sleeve instead of flashing through black.
+		if not Record.Frame.Visible then
+			Record.Frame.ImageTransparency = 1
+		end
 		Record.Frame.Visible = true
 
 		for Index, Other in ipairs(Layers) do
