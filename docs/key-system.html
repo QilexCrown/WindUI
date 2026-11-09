@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Key System — WindUI docs</title>
+<meta name="description" content="WindUI interface library documentation." />
+<link rel="icon" href="./logo.png" />
+<style>
+:root {
+  --bg: #08080a;
+  --panel: #101013;
+  --panel-2: #16161a;
+  --stroke: rgba(255,255,255,0.08);
+  --stroke-2: rgba(255,255,255,0.14);
+  --text: #f4f4f5;
+  --muted: #9b9ba4;
+  --dim: #6b6b75;
+  --code: #0c0c0f;
+  --accent: #e4e4e7;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: #ededf0; text-decoration: none; }
+a:hover { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
+code {
+  font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+  font-size: 12.5px; background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.05);
+  padding: 1px 6px; border-radius: 6px; color: #f0f0f2; white-space: nowrap;
+}
+pre.code {
+  background: var(--code); border: 1px solid var(--stroke); border-radius: 14px;
+  padding: 18px 20px; overflow: auto; margin: 0 0 22px; position: relative;
+}
+pre.code code {
+  background: none; border: 0; padding: 0; font-size: 12.5px;
+  line-height: 1.7; white-space: pre; color: #e6e6ea;
+}
+pre.code::before {
+  content: attr(data-lang); position: absolute; top: 10px; right: 16px;
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #4b4b55;
+}
+
+/* top bar */
+header.top {
+  position: sticky; top: 0; z-index: 30;
+  backdrop-filter: blur(18px);
+  background: rgba(8,8,10,0.86);
+  border-bottom: 1px solid var(--stroke);
+}
+.top-inner { display: flex; align-items: center; gap: 18px; height: 60px; padding: 0 26px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: 0.01em; }
+.brand img { width: 26px; height: 26px; border-radius: 8px; }
+.brand span { font-size: 15px; }
+.brand .tag {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #0b0b0d; background: #e4e4e7; border-radius: 6px; padding: 2px 6px;
+}
+.top-links { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.top-links a {
+  font-size: 12.5px; color: var(--muted); padding: 6px 10px; border-radius: 8px;
+  border: 1px solid transparent;
+}
+.top-links a:hover { color: var(--text); background: rgba(255,255,255,0.05); text-decoration: none; }
+.top-links a.ghost { border-color: var(--stroke); }
+
+/* shell */
+.shell { display: grid; grid-template-columns: 268px minmax(0, 1fr); min-height: calc(100vh - 60px); }
+aside.side {
+  border-right: 1px solid var(--stroke);
+  padding: 22px 18px 60px;
+  position: sticky; top: 60px; align-self: start;
+  height: calc(100vh - 60px); overflow-y: auto;
+  scrollbar-width: thin;
+}
+.search {
+  width: 100%; margin-bottom: 18px; padding: 9px 12px;
+  background: var(--panel); border: 1px solid var(--stroke); border-radius: 10px;
+  color: var(--text); font-size: 13px; font-family: inherit; outline: none;
+}
+.search:focus { border-color: var(--stroke-2); }
+.search::placeholder { color: var(--dim); }
+nav.side .group {
+  color: var(--dim); text-transform: uppercase; letter-spacing: 0.11em;
+  font-size: 10px; font-weight: 600; margin: 18px 0 6px 10px;
+}
+nav.side .group:first-of-type { margin-top: 0; }
+nav.side a {
+  display: block; padding: 6px 10px; border-radius: 8px;
+  color: var(--muted); font-size: 13.5px; line-height: 1.5;
+}
+nav.side a:hover { color: var(--text); background: rgba(255,255,255,0.04); text-decoration: none; }
+nav.side a.active { color: #fff; background: rgba(255,255,255,0.07); font-weight: 500; }
+nav.side a.deprecated::after { content: "deprecated"; margin-left: 6px; font-size: 9.5px; color: #7c7c86; }
+
+main { min-width: 0; padding: 46px 52px 90px; max-width: 980px; }
+article h1 {
+  font-size: 38px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.025em; font-weight: 650;
+}
+article .lead { font-size: 16px; color: var(--muted); margin: 0 0 30px; max-width: 70ch; }
+article h2 {
+  font-size: 22px; margin: 44px 0 12px; letter-spacing: -0.012em;
+  padding-top: 16px; border-top: 1px solid var(--stroke); scroll-margin-top: 80px;
+}
+article h3 { font-size: 16px; margin: 28px 0 8px; color: #fafafa; scroll-margin-top: 80px; }
+article h4 {
+  font-size: 12px; margin: 22px 0 8px; color: var(--dim);
+  text-transform: uppercase; letter-spacing: 0.09em;
+}
+article a.anchor { opacity: 0; margin-left: 8px; color: var(--dim); font-weight: 400; }
+article h2:hover a.anchor, article h3:hover a.anchor { opacity: 1; }
+article p { margin: 0 0 15px; color: #d3d3d9; }
+article ul, article ol { margin: 0 0 18px; padding-left: 22px; color: #d3d3d9; }
+article li { margin: 5px 0; }
+article li > code { font-size: 12px; }
+article strong { color: #fff; font-weight: 600; }
+article blockquote {
+  margin: 0 0 20px; padding: 12px 16px; border-left: 2px solid #3f3f48;
+  background: rgba(255,255,255,0.03); border-radius: 0 10px 10px 0; color: #cfcfd6;
+}
+article blockquote p { margin: 0; }
+article hr { border: none; border-top: 1px solid var(--stroke); margin: 34px 0; }
+.table-wrap { overflow-x: auto; margin: 0 0 24px; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th {
+  text-align: left; font-weight: 600; color: #fff; padding: 9px 13px;
+  background: var(--panel-2); border-bottom: 1px solid var(--stroke); white-space: nowrap;
+}
+th:first-child { border-top-left-radius: 10px; }
+th:last-child { border-top-right-radius: 10px; }
+td { padding: 9px 13px; border-bottom: 1px solid rgba(255,255,255,0.045); color: #cfcfd6; vertical-align: top; }
+td code { white-space: normal; word-break: break-word; }
+tr:hover td { background: rgba(255,255,255,0.018); }
+
+.pager {
+  display: flex; gap: 12px; justify-content: space-between;
+  margin-top: 54px; padding-top: 22px; border-top: 1px solid var(--stroke);
+}
+.pager a {
+  flex: 1; border: 1px solid var(--stroke); border-radius: 12px;
+  padding: 12px 16px; background: var(--panel);
+}
+.pager a:hover { border-color: var(--stroke-2); text-decoration: none; }
+.pager a.next { text-align: right; }
+.pager small { display: block; color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.09em; }
+.pager span { font-size: 14px; color: var(--text); }
+
+/* landing */
+.landing { max-width: 1040px; }
+.hero { padding: 34px 0 18px; }
+.hero .eyebrow {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px;
+  color: var(--muted); border: 1px solid var(--stroke); border-radius: 999px;
+  padding: 4px 12px; margin-bottom: 20px; letter-spacing: 0.02em;
+}
+.hero .dot { width: 5px; height: 5px; border-radius: 50%; background: #4ade80; }
+.hero h1 { font-size: 50px; line-height: 1.06; letter-spacing: -0.035em; margin: 0 0 18px; max-width: 15ch; }
+.hero p { font-size: 17px; color: var(--muted); max-width: 62ch; margin: 0 0 26px; }
+.cta { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px;
+  border-radius: 11px; border: 1px solid var(--stroke); font-size: 14px;
+  font-weight: 500; background: var(--panel); color: var(--text);
+}
+.btn:hover { border-color: var(--stroke-2); background: var(--panel-2); text-decoration: none; }
+.btn.primary { background: #f4f4f5; color: #08080a; border-color: #f4f4f5; font-weight: 600; }
+.btn.primary:hover { background: #fff; }
+.section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 56px 0 14px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.card {
+  display: block; border: 1px solid var(--stroke); border-radius: 14px; padding: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.028), rgba(255,255,255,0.006));
+}
+.card:hover { border-color: var(--stroke-2); text-decoration: none; }
+.card h3 { margin: 0 0 5px; font-size: 15px; color: #fff; font-weight: 600; }
+.card p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.55; }
+footer.site {
+  border-top: 1px solid var(--stroke); padding: 22px 52px 46px;
+  color: var(--dim); font-size: 12.5px; display: flex; gap: 16px; flex-wrap: wrap;
+}
+footer.site a { color: var(--muted); }
+
+@media (max-width: 940px) {
+  .shell { grid-template-columns: 1fr; }
+  aside.side {
+    position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--stroke);
+    padding: 16px 18px; max-height: 320px;
+  }
+  main { padding: 30px 20px 70px; }
+  .hero h1 { font-size: 36px; }
+  footer.site { padding: 20px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="./index.html">
+      <img src="./logo.png" alt="" />
+      <span>WindUI</span>
+      <em class="tag">fork</em>
+    </a>
+    <div class="top-links">
+      <a class="ghost" href="https://github.com/QilexCrown/WindUI">GitHub</a>
+      <a class="ghost" href="https://discord.gg/ojailbreaks">Discord</a>
+      <a class="ghost" href="https://raw.githubusercontent.com/QilexCrown/WindUI/main/dist/main.lua">dist/main.lua</a>
+    </div>
+  </div>
+</header>
+<div class="shell">
+<aside class="side">
+  <input class="search" id="nav-search" placeholder="Search docs…" autocomplete="off" />
+  <nav class="side" id="nav"><p class="group">Getting Started</p>
+<a href="./about.html">About WindUI</a>
+<a href="./loadstring.html">Loadstring</a>
+<a href="./themes.html">Themes</a>
+<p class="group">UI</p>
+<a href="./window.html">Window</a>
+<a href="./key-system.html" class="active">Key System</a>
+<a href="./tab.html">Tab</a>
+<a href="./dialog.html">Dialog</a>
+<a href="./popup.html">Popup</a>
+<a href="./notification.html">Notification</a>
+<a href="./dynamic-island.html">Dynamic Island</a>
+<a href="./miniplayer.html">Miniplayer</a>
+<a href="./tag.html">Tag</a>
+<a href="./tab-section.html">Tab Section</a>
+<p class="group">Elements</p>
+<a href="./section.html">Section</a>
+<a href="./button.html">Button</a>
+<a href="./toggle.html">Toggle</a>
+<a href="./slider.html">Slider</a>
+<a href="./input.html">Input</a>
+<a href="./dropdown.html">Dropdown</a>
+<a href="./paragraph.html">Paragraph</a>
+<a href="./keybind.html">Keybind</a>
+<a href="./colorpicker.html">Colorpicker</a>
+<a href="./code.html">Code</a>
+<a href="./divider.html">Divider</a>
+<a href="./space.html">Space</a>
+<a href="./image.html">Image</a>
+<a href="./group.html" data-deprecated="1">Group</a>
+<a href="./hstack-vstack.html">HStack & VStack</a>
+<a href="./progressbar.html">ProgressBar</a>
+<p class="group">Advanced</p>
+<a href="./configs.html">Configs</a>
+<a href="./icons.html">Icons</a>
+<a href="./fork.html">Fork</a></nav>
+</aside>
+<main>
+<article>
+<h1>Key System</h1>
+<p class="lead">Implement access control with key validation.</p>
+<p>An opt-in replacement for the stock WindUI key dialog. Everything on the card — layout, thumbnail, header, note, input, footer, status line and every button — is driven from one table.</p>
+<ul><li><strong>Opt-in only.</strong> Passing <code>KeySystem.Layout</code> switches to the modern screen. No <code>Layout</code>, no change: the stock dialog renders exactly as it always has.</li><li><strong>Reversible.</strong> Delete the four-line dispatch at the top of <code>src/components/KeySystem.lua</code> (or just stop passing <code>Layout</code>) and the stock key system is back, untouched. Deleting <code>src/components/KeySystemModern.lua</code> as well leaves no trace.</li><li><strong>Theme-first.</strong> Every colour resolves through <code>ThemeTag</code>, so the card follows the user's active theme. The default accent is the theme's <code>Button</code> key — grey on Dark, not blue. Only <code>Layout.Accent</code> overrides that.</li><li><strong>Instant open.</strong> The card is the first thing mounted, with no intro animation. <code>Layout.Splash</code> adds the optional icon/title intro back in.</li><li><strong>Nothing is fixed.</strong> Thumbnail, header icon, buttons, note, footer and each block's position are all config fields. A block can be nudged with <code>Offset</code> without breaking the flow.</li></ul>
+<pre class="code" data-lang="lua"><code>function KeySystem.new(Config, Filename, func, keyValidator)
+    if type(Config.KeySystem.Layout) == "table" then
+        return require("./KeySystemModern").new(Config, Filename, func, keyValidator)
+    end
+    -- ... stock path</code></pre>
+<h2 id="quick-start">Quick start<a class="anchor" href="#quick-start" aria-hidden="true">#</a></h2>
+<pre class="code" data-lang="lua"><code>local WindUI = loadstring(game:HttpGet("..."))()
+
+WindUI:CreateWindow({
+    Title = "Premium Tool",
+    Author = "you",
+    Folder = "PremiumTool",
+    Icon = "sparkles",
+    KeySystem = {
+        Title = "Access Required",
+        Note = "Get your key at discord.gg/example - one key per account.",
+        KeyValidator = function(key)
+            return key == "TEST-KEY"
+        end,
+        SaveKey = false,
+        URL = "https://discord.gg/example",
+        Layout = {
+            Accent = "Button",
+            Radius = 24,
+            Padding = 24,
+            Gap = 12,
+            BodyWidth = 620,
+            Header = {
+                Kicker = "Secure Access",
+                Title = "Access Required",
+                Icon = "key",
+                Tag = {
+                    Title = "v2.5",
+                    Color = WindUI:Gradient({
+                        ["0"] = { Color = Color3.fromHex("#6B8E23"), Transparency = 0 },
+                        ["100"] = { Color = Color3.fromHex("#2F4F4F"), Transparency = 0 },
+                    }, { Rotation = 45 }),
+                },
+            },
+            Input = {
+                Placeholder = "XXXX-XXXX-XXXX",
+                Label = "License key",
+                SubmitFill = WindUI:Gradient({
+                    ["0"] = { Color = Color3.fromHex("#6B8E23"), Transparency = 0 },
+                    ["100"] = { Color = Color3.fromHex("#2F4F4F"), Transparency = 0 },
+                }, { Rotation = 45 }),
+            },
+            Footer = { Align = "Left", Text = "example.com" },
+            Status = {
+                Success = "Key accepted - loading",
+                Duration = 20,
+                Errors = {
+                    already_used = "This key is already used.",
+                    expired = "This key has expired.",
+                    revoked = "This key has been revoked.",
+                },
+            },
+            -- Footer defaults to Get Key / Copy key / Exit; passing Buttons
+            -- replaces that cluster outright.
+            Buttons = {
+                {
+                    ID = "Copy",
+                    Title = "Copy key",
+                    Icon = "copy",
+                    Slot = "Footer",
+                    Style = "Secondary",
+                    Action = "CopyKey",
+                },
+            },
+        },
+    },
+})</code></pre>
+<h2 id="stock-keys-still-work">Stock keys still work<a class="anchor" href="#stock-keys-still-work" aria-hidden="true">#</a></h2>
+<p>The modern screen reads the regular key-system config first, so an existing setup needs no new fields:</p>
+<div class="table-wrap"><table><thead><tr><th>Key</th><th>Effect</th></tr></thead><tbody><tr><td><code>Title</code></td><td>Fallback card title</td></tr><tr><td><code>Note</code></td><td>Note under the header (<code><strong>bold</strong></code> works)</td></tr><tr><td><code>Key</code> / <code>KeyValidator</code> / <code>API</code></td><td>Validation, unchanged</td></tr><tr><td><code>SaveKey</code></td><td>Saved-key flow, unchanged</td></tr><tr><td><code>URL</code></td><td>Adds the built-in "Get Key" button and the top-right link icon</td></tr><tr><td><code>Thumbnail.Image</code> / <code>Thumbnail.Title</code> / <code>Thumbnail.Width</code></td><td>Fallback thumbnail</td></tr></tbody></table></div>
+<h2 id="error-reasons">Error reasons<a class="anchor" href="#error-reasons" aria-hidden="true">#</a></h2>
+<p>A validator can hand back a reason as the second value and the card maps it to a message. <code>Layout.Status.Errors</code> overrides or extends the built-in set:</p>
+<pre class="code" data-lang="lua"><code>KeyValidator = function(key)
+    local res = HttpGet("check?key=" .. key)
+    if res.ok then return true end
+    return false, res.reason    -- "already_used" | "expired" | "revoked" | ...
+end
+
+Layout = {
+    Status = {
+        Errors = {
+            already_used = "This key is already used.",
+            expired      = "This key has expired.",
+            revoked      = "This key has been revoked.",
+            banned       = "This key is banned.",
+            wrong_account = "This key belongs to a different account.",
+            limit        = "Key limit reached, try again later.",
+        },
+    },
+}</code></pre>
+<p>Built-in reasons: <code>invalid</code>, <code>already_used</code>, <code>expired</code>, <code>revoked</code>, <code>banned</code>, <code>wrong_account</code>, <code>limit</code>. Any other string returned as the reason is shown as-is.</p>
+<h2 id="layout"><code>Layout</code><a class="anchor" href="#layout" aria-hidden="true">#</a></h2>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Accent</code></td><td><code>string</code> | <code>Color3</code></td><td><code>"Button"</code></td><td>Theme key or a raw colour. Defaults to the theme's <code>Button</code> colour so the card matches whatever theme is loaded</td></tr><tr><td><code>Width</code></td><td><code>number</code></td><td>auto</td><td>Card width. Auto = padding + thumbnail + gap + body + padding</td></tr><tr><td><code>BodyWidth</code></td><td><code>number</code></td><td><code>620</code></td><td>Width of the text column. Wide and short by default</td></tr><tr><td><code>Radius</code></td><td><code>number</code></td><td><code>24</code></td><td>Card corner radius</td></tr><tr><td><code>Padding</code></td><td><code>number</code></td><td><code>24</code></td><td>Inner padding</td></tr><tr><td><code>Gap</code></td><td><code>number</code></td><td><code>12</code></td><td>Vertical gap between blocks, and thumbnail-to-body gap</td></tr><tr><td><code>Offsets</code></td><td><code>table</code></td><td>—</td><td>Per-block nudges, see <a href="#moving-elements">Moving elements</a></td></tr><tr><td><code>Shadow</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> drops the drop shadow</td></tr><tr><td><code>ShadowTransparency</code></td><td><code>number</code></td><td><code>0.5</code></td><td></td></tr><tr><td><code>Glow</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Opt-in accent glow behind the card and inside the top-left corner</td></tr><tr><td><code>GlowTransparency</code></td><td><code>number</code></td><td><code>0.76</code></td><td></td></tr><tr><td><code>ShowNote</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> hides the note</td></tr><tr><td><code>NoteStyle</code></td><td><code>string</code></td><td><code>"Plain"</code></td><td><code>"Plain"</code> or <code>"Box"</code> (boxed panel)</td></tr><tr><td><code>NoteSize</code></td><td><code>number</code></td><td><code>12</code></td><td></td></tr><tr><td><code>Buttons</code></td><td><code>table</code></td><td><code>Get key</code>, <code>Copy key</code>, <code>Exit</code></td><td>Array of button entries, see below. Replaces the default cluster</td></tr><tr><td><code>ShowURL</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> hides the auto link button</td></tr><tr><td><code>URLTitle</code></td><td><code>string</code></td><td><code>"Get Key"</code></td><td>Label of the auto link button</td></tr><tr><td><code>URLIcon</code></td><td><code>string</code> | <code>false</code></td><td><code>"key"</code></td><td></td></tr><tr><td><code>URLOrder</code></td><td><code>number</code></td><td><code>10</code></td><td>Sort order of the auto link button</td></tr><tr><td><code>URLStyle</code></td><td><code>string</code></td><td><code>"Secondary"</code></td><td></td></tr><tr><td><code>URLSlot</code></td><td><code>string</code></td><td><code>"Footer"</code></td><td></td></tr><tr><td><code>URLAction</code></td><td><code>string</code></td><td><code>"OpenURL"</code></td><td><code>"OpenURL"</code> opens <code>KeySystem.URL</code>, <code>"CopyURL"</code> copies it</td></tr><tr><td><code>ShowServices</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> hides auto buttons for <code>KeySystem.API</code> services</td></tr><tr><td><code>ServicesSlot</code></td><td><code>string</code></td><td><code>"Footer"</code></td><td></td></tr><tr><td><code>Shake</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> disables the invalid-key animation</td></tr><tr><td><code>Splash</code></td><td><code>true</code> | <code>table</code></td><td>off</td><td>Opt-in icon + title intro. Left out, the card opens immediately</td></tr><tr><td><code>ErrorAnimation</code></td><td><code>table</code></td><td>on</td><td>Wrong-key shake and red ring flash</td></tr><tr><td><code>EnterToSubmit</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> ignores Enter in the input</td></tr><tr><td><code>Notify</code></td><td><code>boolean</code></td><td><code>true</code></td><td>Toast fallback when <code>Status.Show == false</code></td></tr><tr><td><code>Debug</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Publishes the controller to <code>getgenv().WindUIKeySystem</code> / <code>WindUIKeySystems</code></td></tr></tbody></table></div>
+<h2 id="splash">Splash<a class="anchor" href="#splash" aria-hidden="true">#</a></h2>
+<p>Off by default: the card mounts as the first thing on screen, no intro, no hold. Pass <code>Layout.Splash = true</code> (or a table) when you want the icon-and-title intro — the session icon centred, the window title underneath, then the card.</p>
+<pre class="code" data-lang="lua"><code>Layout = {
+    Splash = {
+        -- all optional; defaults shown
+        Show = true,
+        Duration = 5,          -- seconds
+        Gap = 18,              -- icon-to-title gap
+        IconSize = 110,
+        TitleSize = 24,
+        Breathe = true,        -- slow icon pulse while waiting
+        -- Icon = "sparkles",  -- defaults to CreateWindow's Icon
+        -- Title = "Ender",   -- defaults to CreateWindow's Title
+        -- IconColor = Color3.new(1, 1, 1),
+    },
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Show</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>Show = false</code> disables an already-enabled splash</td></tr><tr><td><code>Duration</code></td><td><code>number</code></td><td><code>5</code></td><td>Hold time before the card is revealed</td></tr><tr><td><code>Gap</code></td><td><code>number</code></td><td><code>18</code></td><td>Space between the icon and the title</td></tr><tr><td><code>IconSize</code></td><td><code>number</code></td><td><code>110</code></td><td>Edge length of the icon</td></tr><tr><td><code>TitleSize</code></td><td><code>number</code></td><td><code>24</code></td><td></td></tr><tr><td><code>Icon</code></td><td><code>string</code></td><td>window <code>Icon</code></td><td>Lucide name, <code>rbxassetid://</code>, or URL</td></tr><tr><td><code>Title</code></td><td><code>string</code></td><td>window <code>Title</code></td><td></td></tr><tr><td><code>IconColor</code></td><td><code>Color3</code></td><td>theme <code>Icon</code></td><td></td></tr><tr><td><code>Breathe</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> freezes the pulse</td></tr></tbody></table></div>
+<p>The splash is a <code>CanvasGroup</code> named <code>Splash</code>; <code>controller.SkipSplash()</code> cuts the wait, and <code>controller.Reveal()</code> does it with the fade. Both are safe to call when the splash is off — <code>Reveal()</code> is what the card fires on mount.</p>
+<h2 id="error-animation">Error animation<a class="anchor" href="#error-animation" aria-hidden="true">#</a></h2>
+<p>A rejected key shakes the card and flashes a red ring on the input field. Both are independent and both are on by default.</p>
+<pre class="code" data-lang="lua"><code>Layout = {
+    ErrorAnimation = {
+        Shake = true,       -- decaying side-to-side on the whole card
+        Flash = true,       -- red ErrorRing on the field
+        Amplitude = 10,     -- peak offset in pixels
+        Duration = 0.45,    -- seconds
+    },
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Shake</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>Layout.Shake = false</code> also disables it</td></tr><tr><td><code>Flash</code></td><td><code>boolean</code></td><td><code>true</code></td><td></td></tr><tr><td><code>Amplitude</code></td><td><code>number</code></td><td><code>10</code></td><td>Peak horizontal offset</td></tr><tr><td><code>Duration</code></td><td><code>number</code></td><td><code>0.45</code></td><td>Whole animation, ends back at rest</td></tr></tbody></table></div>
+<p>The shake rides the card, not the field: the field lives under a <code>UIListLayout</code>, so parent-level motion is the only offset that does not fight the layout.</p>
+<h2 id="moving-elements">Moving elements<a class="anchor" href="#moving-elements" aria-hidden="true">#</a></h2>
+<p>Every block can be nudged without breaking the flow. The nudge is visual only — the block draws shifted, its neighbours keep their slots.</p>
+<pre class="code" data-lang="lua"><code>Layout = {
+    Header    = { Offset = { 0, -2 } },
+    Input     = { Offset = { 0, 14 } },   -- default is { 0, 8 }
+    Footer    = { Offset = { 0, 4 } },
+    Thumbnail = { Offset = { -8, 0 } },
+    Offsets   = {
+        Note   = { 0, 6 },
+        Status = { 0, -2 },
+    },
+}</code></pre>
+<p><code>Offset</code> accepts <code>{ X, Y }</code> or <code>{ X = 0, Y = 6 }</code>. <code>Thumbnail.Offset</code> moves the panel inside the row; <code>Layout.Thumbnail.Position</code> still decides which side it lives on.</p>
+<h2 id="layout-loadingpill"><code>Layout.LoadingPill</code><a class="anchor" href="#layout-loadingpill" aria-hidden="true">#</a></h2>
+<p>The busy pill replaces the status line while a key is being validated. It is on by default; the spinner only animates while it is visible.</p>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Show</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> falls back to the inline "Checking…" submit label</td></tr><tr><td><code>Text</code></td><td><code>string</code></td><td><code>"Checking key…"</code></td><td></td></tr><tr><td><code>Height</code></td><td><code>number</code></td><td><code>24</code></td><td>Also sets the status row height</td></tr><tr><td><code>TextSize</code></td><td><code>number</code></td><td><code>12</code></td><td></td></tr><tr><td><code>Style</code></td><td><code>string</code></td><td><code>"Soft"</code></td><td><code>Soft</code> (theme pill), <code>Solid</code> (accent pill), <code>Ghost</code></td></tr><tr><td><code>Icon</code></td><td><code>string</code></td><td><code>"loader"</code></td><td>Lucide name, spins at 30 fps</td></tr></tbody></table></div>
+<h2 id="layout-thumbnail"><code>Layout.Thumbnail</code><a class="anchor" href="#layout-thumbnail" aria-hidden="true">#</a></h2>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Enabled</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> removes the panel entirely</td></tr><tr><td><code>Position</code></td><td><code>string</code></td><td><code>"None"</code></td><td><code>"None"</code>, <code>"Left"</code>, <code>"Right"</code>, <code>"Top"</code></td></tr><tr><td><code>Size</code></td><td><code>number</code></td><td><code>236</code></td><td>Panel width for <code>Left</code> / <code>Right</code></td></tr><tr><td><code>Height</code></td><td><code>number</code></td><td><code>176</code></td><td>Panel height for <code>Top</code></td></tr><tr><td><code>Image</code></td><td><code>string</code></td><td>stock</td><td>Asset id or <code>rbxthumb://</code> (no panel unless <code>Position</code> is set)</td></tr><tr><td><code>Title</code></td><td><code>string</code></td><td>stock</td><td></td></tr><tr><td><code>Subtitle</code></td><td><code>string</code></td><td>—</td><td></td></tr><tr><td><code>Badge</code></td><td><code>boolean</code> | <code>string</code></td><td>—</td><td><code>true</code> renders <code>"Premium"</code>, a string renders itself</td></tr><tr><td><code>Radius</code></td><td><code>number</code></td><td><code>Radius - 8</code></td><td></td></tr><tr><td><code>ScaleType</code></td><td><code>string</code></td><td><code>"Crop"</code></td><td>Any <code>ImageLabel.ScaleType</code></td></tr><tr><td><code>Transparency</code></td><td><code>number</code></td><td><code>0</code></td><td></td></tr><tr><td><code>Gradient</code></td><td><code>number</code></td><td><code>0.82</code></td><td>Bottom scrim strength for the caption</td></tr><tr><td><code>TitleSize</code></td><td><code>number</code></td><td><code>20</code></td><td></td></tr><tr><td><code>SubtitleSize</code></td><td><code>number</code></td><td><code>12</code></td><td></td></tr></tbody></table></div>
+<h2 id="layout-header"><code>Layout.Header</code><a class="anchor" href="#layout-header" aria-hidden="true">#</a></h2>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Icon</code></td><td><code>string</code> | <code>false</code></td><td><code>"key"</code></td><td>Lucide name, any icon in WindUI's set</td></tr><tr><td><code>IconBackground</code></td><td><code>boolean</code></td><td><code>false</code></td><td><code>true</code> draws the accent chip behind the icon; <code>false</code> is a bare theme-coloured icon</td></tr><tr><td><code>IconSize</code></td><td><code>number</code></td><td><code>36</code></td><td>Accent chip size (only used when <code>IconBackground = true</code>)</td></tr><tr><td><code>IconRadius</code></td><td><code>number</code></td><td><code>13</code></td><td></td></tr><tr><td><code>ChipIconSize</code></td><td><code>number</code></td><td><code>22</code></td><td>Icon size inside the chip; bare icon defaults to <code>26</code></td></tr><tr><td><code>ShowIcon</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> removes the chip</td></tr><tr><td><code>Kicker</code></td><td><code>string</code></td><td>—</td><td>Small uppercase line above the title</td></tr><tr><td><code>Badge</code></td><td><code>boolean</code> | <code>string</code></td><td>—</td><td>Pill inside the kicker row</td></tr><tr><td><code>Tag</code></td><td><code>table</code></td><td>—</td><td><code>{ Title, Color, Icon, Height, TextSize }</code>. <code>Color</code> takes a <code>Color3</code>, theme key or <code>WindUI:Gradient</code>; renders inline beside the title</td></tr><tr><td><code>Link</code></td><td><code>boolean</code></td><td><code>true</code></td><td>Top-right icon that opens <code>KeySystem.URL</code></td></tr><tr><td><code>LinkIcon</code></td><td><code>string</code></td><td><code>"external-link"</code></td><td></td></tr><tr><td><code>Title</code></td><td><code>string</code></td><td><code>KeySystem.Title</code></td><td></td></tr><tr><td><code>Subtitle</code></td><td><code>string</code> | <code>false</code></td><td><code>"License is required to use the script"</code></td><td><code>false</code> removes the line</td></tr><tr><td><code>TitleSize</code></td><td><code>number</code></td><td><code>20</code></td><td></td></tr><tr><td><code>SubtitleSize</code></td><td><code>number</code></td><td><code>13</code></td><td></td></tr><tr><td><code>Close</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> removes the corner close button</td></tr></tbody></table></div>
+<h2 id="layout-input"><code>Layout.Input</code><a class="anchor" href="#layout-input" aria-hidden="true">#</a></h2>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Placeholder</code></td><td><code>string</code></td><td><code>"Enter Key"</code></td><td></td></tr><tr><td><code>Label</code></td><td><code>string</code> | <code>false</code></td><td><code>"License key"</code></td><td>Small description line above the field</td></tr><tr><td><code>LabelSize</code></td><td><code>number</code></td><td><code>11</code></td><td></td></tr><tr><td><code>Height</code></td><td><code>number</code></td><td><code>46</code></td><td></td></tr><tr><td><code>Radius</code></td><td><code>number</code></td><td><code>12</code></td><td></td></tr><tr><td><code>TextSize</code></td><td><code>number</code></td><td><code>16</code></td><td></td></tr><tr><td><code>Icon</code></td><td><code>string</code> | <code>false</code></td><td><code>"key"</code></td><td>Leading icon</td></tr><tr><td><code>IconSize</code></td><td><code>number</code></td><td><code>20</code></td><td></td></tr><tr><td><code>Submit</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> moves submit to the footer</td></tr><tr><td><code>SubmitText</code></td><td><code>string</code></td><td><code>"Submit"</code></td><td></td></tr><tr><td><code>SubmitBusyText</code></td><td><code>string</code></td><td><code>"Checking…"</code></td><td>Shown while validating</td></tr><tr><td><code>SubmitIcon</code></td><td><code>string</code> | <code>false</code></td><td><code>"arrow-right"</code></td><td></td></tr><tr><td><code>SubmitStyle</code></td><td><code>string</code></td><td><code>"Solid"</code></td><td></td></tr><tr><td><code>SubmitFill</code></td><td><code>Color3</code> | <code>string</code> | gradient</td><td>—</td><td>Custom submit colour. <code>WindUI:Gradient({...})</code> works; theme key or <code>Color3</code> also accepted</td></tr><tr><td><code>SubmitWidth</code></td><td><code>number</code></td><td><code>110</code></td><td></td></tr><tr><td><code>SubmitHeight</code></td><td><code>number</code></td><td><code>36</code></td><td></td></tr><tr><td><code>SubmitRadius</code></td><td><code>number</code></td><td>—</td><td></td></tr><tr><td><code>ClearButton</code></td><td><code>boolean</code></td><td><code>true</code></td><td>The inline <code>x</code></td></tr><tr><td><code>Clearance</code></td><td><code>number</code></td><td><code>15</code></td><td>Padding around the icon cluster</td></tr><tr><td><code>AutoFocus</code></td><td><code>boolean</code></td><td><code>true</code></td><td></td></tr></tbody></table></div>
+<h2 id="layout-footer"><code>Layout.Footer</code><a class="anchor" href="#layout-footer" aria-hidden="true">#</a></h2>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Text</code></td><td><code>string</code></td><td>—</td><td>Small caption under the buttons</td></tr><tr><td><code>TextSize</code></td><td><code>number</code></td><td><code>12</code></td><td></td></tr><tr><td><code>Align</code></td><td><code>string</code></td><td><code>"Left"</code></td><td><code>"Left"</code>, <code>"Center"</code>, <code>"Right"</code></td></tr><tr><td><code>Divider</code></td><td><code>boolean</code></td><td><code>true</code></td><td>The hairline above the footer</td></tr><tr><td><code>Gap</code></td><td><code>number</code></td><td><code>12</code></td><td></td></tr><tr><td><code>Show</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> hides the whole footer</td></tr></tbody></table></div>
+<h2 id="layout-status"><code>Layout.Status</code><a class="anchor" href="#layout-status" aria-hidden="true">#</a></h2>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr></thead><tbody><tr><td><code>Show</code></td><td><code>boolean</code></td><td><code>true</code></td><td><code>false</code> uses a <code>WindUI:Notify</code> toast instead</td></tr><tr><td><code>Error</code></td><td><code>string</code></td><td><code>"Invalid key."</code></td><td></td></tr><tr><td><code>Empty</code></td><td><code>string</code></td><td><code>"Enter a key to continue."</code></td><td></td></tr><tr><td><code>Success</code></td><td><code>string</code></td><td><code>"Key accepted. Loading…"</code></td><td></td></tr><tr><td><code>Duration</code></td><td><code>number</code></td><td><code>3.2</code></td><td>Seconds before the line fades</td></tr><tr><td><code>Errors</code></td><td><code>table</code></td><td>built-in</td><td>Reason code → message map, see <a href="#error-reasons">Error reasons</a></td></tr><tr><td><code>TextSize</code></td><td><code>number</code></td><td><code>13</code></td><td></td></tr></tbody></table></div>
+<h2 id="layout-buttons"><code>Layout.Buttons</code><a class="anchor" href="#layout-buttons" aria-hidden="true">#</a></h2>
+<p>Each entry is one button. Order inside a slot is <code>Order</code>, then declaration order.</p>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>ID</code></td><td><code>string</code></td><td>Exposed as <code>controller.Buttons[ID]</code></td></tr><tr><td><code>Title</code></td><td><code>string</code></td><td>Label; omit with <code>IconOnly</code> for a square button</td></tr><tr><td><code>Name</code></td><td><code>string</code></td><td>Instance name, defaults to <code>Title</code> → <code>ID</code></td></tr><tr><td><code>Icon</code></td><td><code>string</code></td><td>Lucide name</td></tr><tr><td><code>IconSize</code></td><td><code>number</code></td><td></td></tr><tr><td><code>IconOnly</code></td><td><code>boolean</code></td><td>Square icon button</td></tr><tr><td><code>Slot</code></td><td><code>string</code></td><td><code>Header</code>, <code>Input</code>, <code>Body</code>, <code>Thumbnail</code>, <code>Footer</code>, <code>Hidden</code></td></tr><tr><td><code>Order</code></td><td><code>number</code></td><td>Sort inside the slot</td></tr><tr><td><code>Style</code> / <code>Variant</code></td><td><code>string</code></td><td><code>Solid</code>, <code>Soft</code>, <code>Ghost</code>, <code>White</code> (<code>Primary</code> → Solid, <code>Secondary</code> → Soft, <code>Tertiary</code> → Ghost)</td></tr><tr><td><code>FillColor</code></td><td><code>Color3</code> | <code>string</code> | gradient</td><td>Overrides the fill for any style; gradient tables work</td></tr><tr><td><code>Width</code></td><td><code>number</code></td><td></td></tr><tr><td><code>Height</code></td><td><code>number</code></td><td>Slot defaults: header 32, input 36, thumbnail 34, footer 38</td></tr><tr><td><code>Radius</code></td><td><code>number</code></td><td></td></tr><tr><td><code>Disabled</code></td><td><code>boolean</code></td><td>Dimmed, ignores clicks</td></tr><tr><td><code>Action</code></td><td><code>string</code></td><td><code>Submit</code>, <code>Exit</code>, <code>OpenURL</code>, <code>CopyURL</code>, <code>CopyKey</code>, <code>CopyText</code></td></tr><tr><td><code>Text</code></td><td><code>string</code></td><td>Payload for <code>CopyText</code></td></tr><tr><td><code>URL</code></td><td><code>string</code></td><td>Payload for <code>OpenURL</code> / <code>CopyURL</code>, defaults to <code>KeySystem.URL</code></td></tr><tr><td><code>Callback</code></td><td><code>function(controller)</code></td><td>Overrides <code>Action</code></td></tr></tbody></table></div>
+<p><strong>Slots</strong></p>
+<ul><li><code>Header</code> — right side of the title row, before the close button.</li><li><code>Input</code> — inside the key field, right of the clear button.</li><li><code>Body</code> — full-width row under the status line.</li><li><code>Thumbnail</code> — inside the thumbnail panel, bottom aligned.</li><li><code>Footer</code> — footer row.</li><li><code>Hidden</code> — never rendered, still reachable through <code>controller.Buttons</code>.</li></ul>
+<h2 id="controller">Controller<a class="anchor" href="#controller" aria-hidden="true">#</a></h2>
+<pre class="code" data-lang="lua"><code>local controller = getgenv().WindUIKeySystem -- requires Layout.Debug = true
+controller.Submit()               -- run validation with the current text
+controller.SetKey("XXXX")         -- set the field's text
+controller.SetStatus("error", "Nope")
+controller.SetBusy(true)
+controller.Shake()
+controller.Close()
+
+controller.Buttons.Discord        -- TextButton
+controller.Input                  -- TextBox
+controller.Frame                  -- CanvasGroup card
+controller.Mount                  -- full-screen Frame</code></pre>
+<div class="pager">
+<a href="./window.html"><small>Previous</small><span>Window</span></a>
+<a class="next" href="./tab.html"><small>Next</small><span>Tab</span></a>
+</div>
+</article>
+</main>
+</div>
+<footer class="site">
+  <span>WindUI fork — MIT licensed.</span>
+  <a href="https://github.com/QilexCrown/WindUI">QilexCrown/WindUI</a>
+  <a href="https://raw.githubusercontent.com/QilexCrown/WindUI/main/dist/main.lua">dist/main.lua</a>
+</footer>
+<script>
+(function () {
+  var input = document.getElementById("nav-search");
+  var nav = document.getElementById("nav");
+  if (!input || !nav) return;
+  input.addEventListener("input", function () {
+    var q = input.value.trim().toLowerCase();
+    nav.querySelectorAll("a").forEach(function (link) {
+      var hit = !q || link.textContent.toLowerCase().indexOf(q) !== -1;
+      link.style.display = hit ? "" : "none";
+    });
+    nav.querySelectorAll(".group").forEach(function (group) {
+      var visible = false;
+      var node = group.nextElementSibling;
+      while (node && node.tagName === "A") {
+        if (node.style.display !== "none") visible = true;
+        node = node.nextElementSibling;
+      }
+      group.style.display = visible ? "" : "none";
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,3140 @@
+-- /* src/components/Window/Init.lua */
+
+local cloneref = (cloneref or clonereference or function(instance)
+	return instance
+end)
+
+local UserInputService = cloneref(game:GetService("UserInputService"))
+local RunService = cloneref(game:GetService("RunService"))
+local Players = cloneref(game:GetService("Players"))
+
+local CurrentCamera = workspace.CurrentCamera
+
+local Acrylic = require("../../utils/Acrylic/Init")
+
+local Creator = require("../../modules/Creator")
+local New = Creator.New
+local Tween = Creator.Tween
+
+--local UIComponents = require("../Components/UI.lua")
+local CreateLabel = require("../ui/Label").New
+local CreateButton = require("../ui/Button").New
+local CreateScrollSlider = require("../ui/ScrollSlider").New
+local Tag = require("../ui/Tag")
+
+local ConfigManager = require("../../config/Init")
+
+local Notified = false
+
+return function(Config)
+	local Window = {
+		Title = Config.Title or "UI Library",
+		Author = Config.Author,
+		Icon = Config.Icon,
+		IconSize = Config.IconSize or 22,
+		IconThemed = Config.IconThemed,
+		IconRadius = Config.IconRadius or 0,
+		Folder = Config.Folder,
+		Resizable = Config.Resizable ~= false,
+		Background = Config.Background,
+		BackgroundImageTransparency = Config.BackgroundImageTransparency or 0,
+		ShadowTransparency = Config.ShadowTransparency or 0.6,
+		User = Config.User or {},
+		Footer = Config.Footer or {},
+		Topbar = Config.Topbar or { Height = 52, ButtonsType = "Default" }, -- Default or Mac
+
+		Size = Config.Size,
+
+		MinSize = Config.MinSize or Vector2.new(560, 350),
+		MaxSize = Config.MaxSize or Vector2.new(850, 560),
+
+		TopBarButtonIconSize = Config.TopBarButtonIconSize,
+
+		ToggleKey = Config.ToggleKey,
+		ElementsRadius = Config.ElementsRadius,
+		Radius = Config.Radius or 16,
+		Transparent = Config.Transparent or false,
+		HideSearchBar = Config.HideSearchBar ~= false,
+		ScrollBarEnabled = Config.ScrollBarEnabled or false,
+		SideBarWidth = Config.SideBarWidth or 200,
+		SideBarVisible = true,
+		Acrylic = Config.Acrylic or false,
+		NewElements = Config.NewElements or false,
+		IgnoreAlerts = Config.IgnoreAlerts or false,
+		HidePanelBackground = Config.HidePanelBackground or false,
+		AutoScale = Config.AutoScale ~= false,
+		OpenButton = Config.OpenButton,
+		DragFrameSize = 160,
+
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		UICorner = 16, -- Window.Radius (16)
+		UIPadding = 14,
+		UIElements = {},
+		CanDropdown = true,
+		Closed = false,
+		Parent = Config.Parent,
+		Destroyed = false,
+		IsFullscreen = false,
+		CanResize = Config.Resizable ~= false,
+		IsOpenButtonEnabled = true,
+
+		CurrentConfig = nil,
+		ConfigManager = nil,
+		AcrylicPaint = nil,
+		CurrentTab = nil,
+		TabModule = nil,
+
+		OnOpenCallback = nil,
+		OnCloseCallback = nil,
+		OnDestroyCallback = nil,
+
+		IsPC = false,
+
+		Gap = 5,
+
+		TopBarButtons = {},
+		TopbarTools = {},
+		AllElements = {},
+
+		ElementConfig = {},
+
+		PendingFlags = {},
+
+		IsToggleDragging = false,
+	}
+
+	Window.UICorner = Window.Radius
+
+	Window.TopBarButtonIconSize = Window.TopBarButtonIconSize or (Window.Topbar.ButtonsType == "Mac" and 9 or 16)
+	Window.SidebarHeaderHeight = Window.SidebarHeaderHeight or 44
+
+	Window.ElementConfig = {
+		UIPadding = (Window.NewElements and 10 or 13),
+		UICorner = Window.ElementsRadius or (Window.NewElements and 23 or 16),
+	}
+
+	local WindowSize = Window.Size or UDim2.new(0, 580, 0, 460)
+	Window.Size = UDim2.new(
+		WindowSize.X.Scale,
+		math.clamp(WindowSize.X.Offset, Window.MinSize.X, Window.MaxSize.X),
+		WindowSize.Y.Scale,
+		math.clamp(WindowSize.Y.Offset, Window.MinSize.Y, Window.MaxSize.Y)
+	)
+
+	if Window.Topbar == {} then
+		Window.Topbar = { Height = 52, ButtonsType = "Default" }
+	end
+
+	if not RunService:IsStudio() and Window.Folder and writefile then
+		if not isfolder("WindUI/" .. Window.Folder) then
+			makefolder("WindUI/" .. Window.Folder)
+		end
+		if not isfolder("WindUI/" .. Window.Folder .. "/assets") then
+			makefolder("WindUI/" .. Window.Folder .. "/assets")
+		end
+		if not isfolder(Window.Folder) then
+			makefolder(Window.Folder)
+		end
+		if not isfolder(Window.Folder .. "/assets") then
+			makefolder(Window.Folder .. "/assets")
+		end
+	end
+
+	local UICorner = New("UICorner", {
+		CornerRadius = UDim.new(0, Window.UICorner),
+	})
+
+	if Window.Folder then
+		Window.ConfigManager = ConfigManager:Init(Window)
+	end
+
+	if Window.Acrylic then
+		local AcrylicPaint, BlurModule = Acrylic.AcrylicPaint({ UseAcrylic = Window.Acrylic })
+
+		Window.AcrylicPaint = AcrylicPaint
+	end
+
+	local ResizeHandle = New("Frame", {
+		Size = UDim2.new(0, 32, 0, 32),
+		Position = UDim2.new(1, 0, 1, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		ZIndex = 99,
+		Active = true,
+	}, {
+		New("ImageLabel", {
+			Size = UDim2.new(0, 48 * 2, 0, 48 * 2),
+			BackgroundTransparency = 1,
+			Image = "rbxassetid://120997033468887",
+			Position = UDim2.new(0.5, -16, 0.5, -16),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			ImageTransparency = 1, -- .8; .35
+		}),
+	})
+	local FullScreenIconData = Creator.Icon("expand")
+	local FullScreenIcon = Creator.NewRoundFrame(Window.UICorner, "Squircle", {
+		Size = UDim2.new(1, 0, 1, 0),
+		ImageTransparency = 1, -- .65
+		ImageColor3 = Color3.new(0, 0, 0),
+		ZIndex = 98,
+		Active = false, -- true
+	}, {
+		New("ImageLabel", {
+			Size = UDim2.new(0, 70, 0, 70),
+			Image = FullScreenIconData and FullScreenIconData[1],
+			ImageRectOffset = FullScreenIconData and FullScreenIconData[2] and FullScreenIconData[2].ImageRectPosition,
+			ImageRectSize = FullScreenIconData and FullScreenIconData[2] and FullScreenIconData[2].ImageRectSize,
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			ImageTransparency = 1,
+		}),
+	})
+
+	local FullScreenBlur = Creator.NewRoundFrame(Window.UICorner, "Squircle", {
+		Size = UDim2.new(1, 0, 1, 0),
+		ImageTransparency = 1, -- .65
+		ImageColor3 = Color3.new(0, 0, 0),
+		ZIndex = 999,
+		Active = false, -- true
+	})
+
+	-- local TabHighlight = Creator.NewRoundFrame(Window.UICorner-(Window.UIPadding/2), "Squircle", {
+	--     Size = UDim2.new(1,0,0,0),
+	--     ImageTransparency = .95,
+	--     ThemeTag = {
+	--         ImageColor3 = "Text",
+	--     }
+	-- })
+
+	Window.UIElements.SideBar = New("ScrollingFrame", {
+		Size = UDim2.new(
+			1,
+			Window.ScrollBarEnabled and -3 - (Window.UIPadding / 2) or 0,
+			1,
+			not Window.HideSearchBar and -Window.SidebarHeaderHeight - 6 or 0
+		),
+		Position = UDim2.new(0, 0, 1, 0),
+		AnchorPoint = Vector2.new(0, 1),
+		BackgroundTransparency = 1,
+		ScrollBarThickness = 0,
+		ElasticBehavior = "Never",
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = "Y",
+		ScrollingDirection = "Y",
+		ClipsDescendants = true,
+		VerticalScrollBarPosition = "Left",
+	}, {
+		New("Frame", {
+			BackgroundTransparency = 1,
+			AutomaticSize = "Y",
+			Size = UDim2.new(1, 0, 0, 0),
+			Name = "Frame",
+		}, {
+			New("UIPadding", {
+				--PaddingTop = UDim.new(0,Window.UIPadding/2),
+				--PaddingLeft = UDim.new(0,4+(Window.UIPadding/2)),
+				--PaddingRight = UDim.new(0,4+(Window.UIPadding/2)),
+				PaddingBottom = UDim.new(0, Window.UIPadding / 2),
+			}),
+			New("UIListLayout", {
+				SortOrder = "LayoutOrder",
+				Padding = UDim.new(0, Window.Gap),
+			}),
+		}),
+		New("UIPadding", {
+			--PaddingTop = UDim.new(0,4),
+			PaddingLeft = UDim.new(0, Window.UIPadding / 2),
+			PaddingRight = UDim.new(0, Window.UIPadding / 2),
+			PaddingBottom = UDim.new(0, Window.UIPadding / 2),
+		}),
+		--TabHighlight
+	})
+
+	Window.UIElements.SideBarContainer = New("Frame", {
+		Size = UDim2.new(
+			0,
+			Window.SideBarWidth,
+			1,
+			Window.User.Enabled and -Window.Topbar.Height - 42 - (Window.UIPadding * 2) or -Window.Topbar.Height
+		),
+		Position = UDim2.new(0, 0, 0, Window.Topbar.Height),
+		BackgroundTransparency = 1,
+		Visible = true,
+	}, {
+		New("Frame", {
+			Name = "Content",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, not Window.HideSearchBar and -Window.SidebarHeaderHeight - 6 - Window.UIPadding or -Window.UIPadding / 2),
+			Position = UDim2.new(0, 0, 1, -Window.UIPadding / 2),
+			AnchorPoint = Vector2.new(0, 1),
+		}),
+		Window.UIElements.SideBar,
+	})
+
+	if Window.ScrollBarEnabled then
+		CreateScrollSlider(
+			Window.UIElements.SideBar,
+			Window.UIElements.SideBarContainer.Content,
+			Window,
+			3,
+			Config.WindUI
+		)
+	end
+
+	Window.UIElements.MainBar = New("Frame", {
+		Size = UDim2.new(1, -Window.SideBarWidth, 1, -Window.Topbar.Height),
+		Position = UDim2.new(1, 0, 1, 0),
+		AnchorPoint = Vector2.new(1, 1),
+		BackgroundTransparency = 1,
+	}, {
+		Creator.NewRoundFrame(Window.UICorner - (Window.UIPadding / 2), "Squircle", {
+			Size = UDim2.new(1, 0, 1, 0),
+			ThemeTag = {
+				ImageColor3 = "PanelBackground",
+				ImageTransparency = "PanelBackgroundTransparency",
+			},
+			-- ImageColor3 = Color3.new(1,1,1),
+			-- ImageTransparency = .95,
+			ZIndex = 3,
+			Name = "Background",
+			Visible = not Window.HidePanelBackground,
+		}),
+		New("UIPadding", {
+			--PaddingTop = UDim.new(0,Window.UIPadding/2),
+			PaddingLeft = UDim.new(0, Window.UIPadding / 2),
+			PaddingRight = UDim.new(0, Window.UIPadding / 2),
+			PaddingBottom = UDim.new(0, Window.UIPadding / 2),
+		}),
+	})
+
+	local Blur = New("ImageLabel", { -- Shadow
+		Image = "rbxassetid://8992230677",
+		ThemeTag = {
+			ImageColor3 = "WindowShadow",
+			--ImageTransparency = "WindowShadowTransparency",
+		},
+		ImageTransparency = 1, -- .7
+		Size = UDim2.new(1, 100, 1, 100),
+		Position = UDim2.new(0, -100 / 2, 0, -100 / 2),
+		ScaleType = "Slice",
+		SliceCenter = Rect.new(99, 99, 99, 99),
+		BackgroundTransparency = 1,
+		ZIndex = -999999999999999,
+		Name = "Blur",
+	})
+
+	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+		Window.IsPC = false
+	elseif UserInputService.KeyboardEnabled then
+		Window.IsPC = true
+	else
+		Window.IsPC = nil
+	end
+
+	--Window.IsPC = true
+
+	-- local OpenButtonContainer = nil
+	-- local OpenButton = nil
+	-- local OpenButtonIcon = nil
+
+	local UserIcon
+	if Window.User then
+		local function GetUserThumb()
+			local ImageId, _ = Players:GetUserThumbnailAsync(
+				Window.User.Anonymous and 1 or Players.LocalPlayer.UserId,
+				Enum.ThumbnailType.HeadShot,
+				Enum.ThumbnailSize.Size420x420
+			)
+			return ImageId
+		end
+
+		UserIcon = New("TextButton", {
+			Size = UDim2.new(
+				0,
+				Window.SideBarWidth - (Window.UIPadding / 2),
+				0,
+				42 + Window.UIPadding
+			),
+			Position = UDim2.new(0, Window.UIPadding / 2, 1, -(Window.UIPadding / 2)),
+			AnchorPoint = Vector2.new(0, 1),
+			BackgroundTransparency = 1,
+			Visible = Window.User.Enabled or false,
+		}, {
+			Creator.NewRoundFrame(Window.UICorner - (Window.UIPadding / 2), "SquircleOutline", {
+				Size = UDim2.new(1, 0, 1, 0),
+				ThemeTag = {
+					ImageColor3 = "Text",
+				},
+				ImageTransparency = 1, -- .85
+				Name = "Outline",
+			}, {
+				New("UIGradient", {
+					Rotation = 78,
+					Color = ColorSequence.new({
+						ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 255, 255)),
+						ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+						ColorSequenceKeypoint.new(1.0, Color3.fromRGB(255, 255, 255)),
+					}),
+					Transparency = NumberSequence.new({
+						NumberSequenceKeypoint.new(0.0, 0.1),
+						NumberSequenceKeypoint.new(0.5, 1),
+						NumberSequenceKeypoint.new(1.0, 0.1),
+					}),
+				}),
+			}),
+			Creator.NewRoundFrame(Window.UICorner - (Window.UIPadding / 2), "Squircle", {
+				Size = UDim2.new(1, 0, 1, 0),
+				ThemeTag = {
+					ImageColor3 = "Text",
+				},
+				ImageTransparency = 1, -- .95
+				Name = "UserIcon",
+			}, {
+				New("ImageLabel", {
+					Image = GetUserThumb(),
+					BackgroundTransparency = 1,
+					Size = UDim2.new(0, 42, 0, 42),
+					ThemeTag = {
+						BackgroundColor3 = "Text",
+					},
+					BackgroundTransparency = 0.93,
+				}, {
+					New("UICorner", {
+						CornerRadius = UDim.new(1, 0),
+					}),
+				}),
+				New("Frame", {
+					AutomaticSize = "XY",
+					BackgroundTransparency = 1,
+				}, {
+					New("TextLabel", {
+						Text = Window.User.Anonymous and "Anonymous" or Players.LocalPlayer.DisplayName,
+						TextSize = 17,
+						ThemeTag = {
+							TextColor3 = "Text",
+						},
+						FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
+						AutomaticSize = "Y",
+						BackgroundTransparency = 1,
+						Size = UDim2.new(1, -(42 / 2) - 6, 0, 0),
+						TextTruncate = "AtEnd",
+						TextXAlignment = "Left",
+						Name = "DisplayName",
+					}),
+					New("TextLabel", {
+						Text = Window.User.Anonymous and "anonymous" or Players.LocalPlayer.Name,
+						TextSize = 15,
+						TextTransparency = 0.6,
+						ThemeTag = {
+							TextColor3 = "Text",
+						},
+						FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
+						AutomaticSize = "Y",
+						BackgroundTransparency = 1,
+						Size = UDim2.new(1, -(42 / 2) - 6, 0, 0),
+						TextTruncate = "AtEnd",
+						TextXAlignment = "Left",
+						Name = "UserName",
+					}),
+					New("UIListLayout", {
+						Padding = UDim.new(0, 4),
+						HorizontalAlignment = "Left",
+					}),
+				}),
+				New("UIListLayout", {
+					Padding = UDim.new(0, Window.UIPadding),
+					FillDirection = "Horizontal",
+					VerticalAlignment = "Center",
+				}),
+				New("UIPadding", {
+					PaddingLeft = UDim.new(0, Window.UIPadding / 2),
+					PaddingRight = UDim.new(0, Window.UIPadding / 2),
+				}),
+			}),
+		})
+
+		function Window.User:Enable()
+			Window.User.Enabled = true
+			Tween(
+				Window.UIElements.SideBarContainer,
+				0.25,
+				{ Size = UDim2.new(0, Window.SideBarWidth, 1, -Window.Topbar.Height - 42 - (Window.UIPadding * 2)) },
+				Enum.EasingStyle.Quint,
+				Enum.EasingDirection.Out
+			):Play()
+			UserIcon.Visible = true
+		end
+		function Window.User:Disable()
+			Window.User.Enabled = false
+			Tween(
+				Window.UIElements.SideBarContainer,
+				0.25,
+				{ Size = UDim2.new(0, Window.SideBarWidth, 1, -Window.Topbar.Height) },
+				Enum.EasingStyle.Quint,
+				Enum.EasingDirection.Out
+			):Play()
+			UserIcon.Visible = false
+		end
+		function Window.User:SetAnonymous(v)
+			if v ~= false then
+				v = true
+			end
+			Window.User.Anonymous = v
+			UserIcon.UserIcon.ImageLabel.Image = GetUserThumb()
+			UserIcon.UserIcon.Frame.DisplayName.Text = v and "Anonymous" or Players.LocalPlayer.DisplayName
+			UserIcon.UserIcon.Frame.UserName.Text = v and "anonymous" or Players.LocalPlayer.Name
+		end
+
+		if Window.User.Enabled then
+			Window.User:Enable()
+		else
+			Window.User:Disable()
+		end
+
+		if Window.User.Callback then
+			Creator.AddSignal(UserIcon.MouseButton1Click, function()
+				Window.User.Callback()
+			end)
+			Creator.AddSignal(UserIcon.MouseEnter, function()
+				Tween(UserIcon.UserIcon, 0.04, { ImageTransparency = 0.95 }):Play()
+				Tween(UserIcon.Outline, 0.04, { ImageTransparency = 0.85 }):Play()
+			end)
+			Creator.AddSignal(UserIcon.InputEnded, function()
+				Tween(UserIcon.UserIcon, 0.04, { ImageTransparency = 1 }):Play()
+				Tween(UserIcon.Outline, 0.04, { ImageTransparency = 1 }):Play()
+			end)
+		end
+	end
+
+	local Outline1
+	local Outline2
+
+	local IsVideoBG = false
+	local BGImage = nil
+
+	local BGVideo = typeof(Window.Background) == "string" and string.match(Window.Background, "^video:(.+)") or nil
+
+	local BGHttpImage = typeof(Window.Background) == "string"
+			and not BGVideo
+			and string.match(Window.Background, "^https?://.+")
+		or nil
+
+	local BGRobloxImage = typeof(Window.Background) == "string"
+			and not BGVideo
+			and string.match(Window.Background, "^rbxassetid://%d+")
+		or nil
+
+	local function GetImageExtension(url)
+		if not url or typeof(url) ~= "string" then
+			return ".png"
+		end
+		local cleanUrl = url:match("^([^?#]+)") or url
+		local ext = cleanUrl:match("%.(%w+)$")
+		if ext then
+			ext = ext:lower()
+			if ext == "jpg" or ext == "jpeg" or ext == "png" or ext == "webp" then
+				return "." .. ext
+			end
+		end
+		return ".png"
+	end
+
+	--print(GetImageExtension(BGImageUrl))
+
+	if typeof(Window.Background) == "string" and BGVideo then
+		IsVideoBG = true
+
+		if string.find(BGVideo, "http") then
+			local videoPath = (Window.Folder or "Temp") .. "/assets/." .. Creator.SanitizeFilename(BGVideo) .. ".webm"
+			if not isfile(videoPath) then
+				local success, result = pcall(function()
+					-- local response = Creator.Request({
+					-- 	Url = BGVideo,
+					-- 	Method = "GET",
+					-- 	Headers = { ["User-Agent"] = "Roblox/Exploit" },
+					-- })
+					local response = game.HttpGet and game:HttpGet(BGVideo)
+						or Creator.Request({
+							Url = BGVideo,
+							Method = "GET",
+							Headers = { ["User-Agent"] = "Roblox/Exploit" },
+						}).Body
+					--print(response)
+					writefile(videoPath, response)
+				end)
+				if not success then
+					warn("[ WindUI.Window.Background ] Failed to download video: " .. tostring(result))
+				end
+			end
+
+			local success, customAsset = pcall(function()
+				return getcustomasset(videoPath)
+			end)
+			if not success then
+				warn("[ WindUI.Window.Background ] Failed to load custom asset: " .. tostring(customAsset))
+			end
+			warn("[ WindUI.Window.Background ] VideoFrame may not work with custom video")
+			BGVideo = customAsset
+		end
+
+		BGImage = New("VideoFrame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Video = BGVideo,
+			Looped = true,
+			Volume = 0,
+		}, {
+			New("UICorner", {
+				CornerRadius = UDim.new(0, Window.UICorner),
+			}),
+		})
+		BGImage:Play()
+	elseif BGHttpImage then
+		local imagePath = (Window.Folder or "Temp")
+			.. "/assets/."
+			.. Creator.SanitizeFilename(BGHttpImage)
+			.. GetImageExtension(BGHttpImage)
+
+		if isfile and not isfile(imagePath) then
+			local success, result = pcall(function()
+				local response = game.HttpGet and game:HttpGet(BGHttpImage)
+					or Creator.Request({
+						Url = BGHttpImage,
+						Method = "GET",
+						Headers = { ["User-Agent"] = "Roblox/Exploit" },
+					}).Body
+
+				writefile(imagePath, response)
+			end)
+
+			if not success then
+				warn("[ Window.Background ] Failed to download image: " .. tostring(result))
+			end
+		end
+
+		local success, customAsset = pcall(function()
+			return getcustomasset(imagePath)
+		end)
+
+		if not success then
+			warn("[ Window.Background ] Failed to load custom asset: " .. tostring(customAsset))
+		end
+
+		BGImage = New("ImageLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Image = customAsset,
+			ImageTransparency = 0,
+			ScaleType = "Crop",
+		}, {
+			New("UICorner", {
+				CornerRadius = UDim.new(0, Window.UICorner),
+			}),
+		})
+	elseif BGRobloxImage then
+		BGImage = New("ImageLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Image = BGRobloxImage,
+			ImageTransparency = 0,
+			ScaleType = "Crop",
+		}, {
+			New("UICorner", {
+				CornerRadius = UDim.new(0, Window.UICorner),
+			}),
+		})
+	elseif Window.Background then
+		BGImage = New("ImageLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 1, 0),
+			Image = typeof(Window.Background) == "string" and Window.Background or "",
+			ImageTransparency = 1,
+			ScaleType = "Crop",
+		}, {
+			New("UICorner", {
+				CornerRadius = UDim.new(0, Window.UICorner),
+			}),
+		})
+	end
+
+	local BottomDragFrame = Creator.NewRoundFrame(99, "Squircle", {
+		ImageTransparency = 0.8,
+		ImageColor3 = Color3.new(1, 1, 1),
+		Size = UDim2.new(0, 0, 0, 4), -- 200
+		Position = UDim2.new(0.5, 0, 1, 4),
+		AnchorPoint = Vector2.new(0.5, 0),
+	}, {
+		New("TextButton", {
+			Size = UDim2.new(1, 12, 1, 12),
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Active = true,
+			ZIndex = 99,
+			Name = "Frame",
+		}),
+	})
+
+	function createAuthor(text)
+		return New("TextLabel", {
+			Text = text,
+			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
+			BackgroundTransparency = 1,
+			TextTransparency = 0.35,
+			AutomaticSize = "XY",
+			Parent = Window.UIElements.Main and Window.UIElements.Main.Main.Topbar.Left.Title,
+			TextXAlignment = "Left",
+			TextSize = 13,
+			LayoutOrder = 2,
+			ThemeTag = {
+				TextColor3 = "WindowTopbarAuthor",
+			},
+			Name = "Author",
+		})
+	end
+
+	local WindowAuthor
+	local WindowIcon
+
+	if Window.Author then
+		WindowAuthor = createAuthor(Window.Author)
+	end
+
+	local WindowTitle = New("TextLabel", {
+		Text = Window.Title,
+		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
+		BackgroundTransparency = 1,
+		AutomaticSize = "XY",
+		Name = "Title",
+		TextXAlignment = "Left",
+		TextSize = 16,
+		ThemeTag = {
+			TextColor3 = "WindowTopbarTitle",
+		},
+	})
+
+	Window.UIElements.Main = New("Frame", {
+		Size = UDim2.new(Window.Size.X.Scale, Window.Size.X.Offset, 0, 0),
+		Position = Window.Position,
+		BackgroundTransparency = 1,
+		Parent = Config.Parent,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Active = true,
+		--GroupTransparency = 1,
+	}, {
+		Config.WindUI.UIScaleObj,
+		Window.AcrylicPaint and Window.AcrylicPaint.Frame or nil,
+		Blur,
+		Creator.NewRoundFrame(Window.UICorner, "Squircle", {
+			ImageTransparency = 1, --  Window.Transparent and Config.WindUI.TransparencyValue or 0,
+			Size = UDim2.new(1, 0, 1, 0),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			Name = "Background",
+			ThemeTag = {
+				ImageColor3 = "WindowBackground",
+			},
+			--ZIndex = -9999,
+		}, {
+			BGImage,
+			BottomDragFrame,
+			ResizeHandle,
+		}),
+		--[[New("UIScale", {
+			Scale = 0.89,
+		}),]]
+		--UIStroke,
+		UICorner,
+		FullScreenIcon,
+		FullScreenBlur,
+		New("Frame", {
+			Size = UDim2.new(1, 0, 1, 0),
+			BackgroundTransparency = 1,
+			Name = "Main",
+			--GroupTransparency = 1,
+			Visible = false,
+			ZIndex = 97,
+		}, {
+			New("UICorner", {
+				CornerRadius = UDim.new(0, Window.UICorner),
+			}),
+			Window.UIElements.SideBarContainer,
+			Window.UIElements.MainBar,
+
+			UserIcon,
+
+			Outline2,
+			New("Frame", { -- Topbar
+				Size = UDim2.new(1, 0, 0, Window.Topbar.Height),
+				BackgroundTransparency = 1,
+				BackgroundColor3 = Color3.fromRGB(50, 50, 50),
+				Name = "Topbar",
+			}, {
+				Outline1,
+				--[[New("Frame", { -- Outline
+                    Size = UDim2.new(1,Window.UIPadding*2, 0, 1),
+                    Position = UDim2.new(0,-Window.UIPadding, 1,Window.UIPadding-2),
+                    BackgroundTransparency = 0.9,
+                    BackgroundColor3 = Color3.fromHex(Config.Theme.Outline),
+                }),]]
+				New("Frame", { -- Topbar Left Side
+					AutomaticSize = "X",
+					Size = UDim2.new(0, 0, 1, 0),
+					Position = Window.Topbar.ButtonsType == "Mac"
+							and UDim2.new(0, Window.SideBarWidth + Window.UIPadding, 0, 0)
+						or nil,
+					BackgroundTransparency = 1,
+					Name = "Left",
+				}, {
+					New("UIListLayout", {
+						Padding = UDim.new(0, Window.UIPadding + 4),
+						SortOrder = "LayoutOrder",
+						FillDirection = "Horizontal",
+						VerticalAlignment = "Center",
+					}),
+					New("Frame", {
+						AutomaticSize = "XY",
+						BackgroundTransparency = 1,
+						Name = "Title",
+						Size = UDim2.new(0, 0, 1, 0),
+						LayoutOrder = 2,
+					}, {
+						New("UIListLayout", {
+							Padding = UDim.new(0, 0),
+							SortOrder = "LayoutOrder",
+							FillDirection = "Vertical",
+							VerticalAlignment = "Center",
+						}),
+						WindowTitle,
+						WindowAuthor,
+					}),
+					New("UIPadding", {
+						PaddingLeft = UDim.new(0, 4),
+					}),
+				}),
+				New("CanvasGroup", {
+					Size = UDim2.new(0, 0, 1, 0),
+					BackgroundTransparency = 1,
+					Name = "Center",
+					AnchorPoint = Vector2.new(0, 0.5),
+					Position = UDim2.new(0, 0, 0.5, 0),
+					AutomaticSize = "Y",
+					Visible = false,
+				}, {
+					--[[New("UICorner", {
+						CornerRadius = UDim.new(1, 0),
+					}),]]
+					New("ScrollingFrame", { -- Topbar Center Size
+						Name = "Holder",
+						BackgroundTransparency = 1,
+						AutomaticSize = "Y",
+						ScrollBarThickness = 0,
+						ScrollingDirection = "X",
+						AutomaticCanvasSize = "X",
+						CanvasSize = UDim2.new(0, 0, 0, 0),
+						Size = UDim2.new(1, 0, 1, 0),
+						--AnchorPoint = Vector2.new(0, 0.5),
+						--Position = UDim2.new(0, 0, 0.5, 0),
+					}, {
+
+						New("UIListLayout", {
+							FillDirection = "Horizontal",
+							VerticalAlignment = "Center",
+							HorizontalAlignment = Window.Topbar.ButtonsType == "Mac" and "Right" or "Left",
+							Padding = UDim.new(0, Window.UIPadding / 2),
+						}),
+					}),
+				}),
+				New("Frame", { -- Topbar Right Side -- Window.UIElements.Main.Main.Topbar.Right
+					AutomaticSize = "XY",
+					BackgroundTransparency = 1,
+					Position = UDim2.new(Window.Topbar.ButtonsType == "Default" and 1 or 0, 0, 0.5, 0),
+					AnchorPoint = Vector2.new(Window.Topbar.ButtonsType == "Default" and 1 or 0, 0.5),
+					Name = "Right",
+				}, {
+					New("UIListLayout", {
+						Padding = UDim.new(0, Window.Topbar.ButtonsType == "Default" and 9 or 0),
+						FillDirection = "Horizontal",
+						SortOrder = "LayoutOrder",
+						-- Centres the traffic lights and the tools on one line; the
+						-- default Top alignment left the tools 3px low.
+						VerticalAlignment = "Center",
+					}),
+				}),
+				New("UIPadding", {
+					PaddingTop = UDim.new(0, Window.UIPadding),
+					PaddingLeft = UDim.new(
+						0,
+						Window.Topbar.ButtonsType == "Default" and Window.UIPadding or Window.UIPadding - 2
+					),
+					PaddingRight = UDim.new(0, 8),
+					PaddingBottom = UDim.new(0, Window.UIPadding),
+				}),
+			}),
+		}),
+	})
+
+	do
+		local Bg = Window.UIElements.Main:FindFirstChild("Background")
+		if Bg and typeof(Config.BackgroundGradient) == "ColorSequence" then
+			New("UIGradient", {
+				Parent = Bg,
+				Rotation = Config.BackgroundGradientRotation or 90,
+				Color = Config.BackgroundGradient,
+			})
+		end
+	end
+
+	-- Sleeve wash. Two squircles sit above the base background and below the
+	-- content. Each is a single pixel of the playing sleeve stretched flat -
+	-- the exact pixel the expanded player's cards wash with - so the window
+	-- colour can never drift from the artwork. Only one is live at a time; a
+	-- track change paints the idle one and crossfades the pair. The
+	-- transparency ramp keeps the wash to the top of the window and the low
+	-- image alpha keeps it from taking the theme over.
+	do
+		local Layers = {}
+		for Index = 1, 2 do
+			local Layer = New("ImageLabel", {
+				Name = Index == 1 and "CoverTintA" or "CoverTintB",
+				Parent = Window.UIElements.Main,
+				Size = UDim2.fromScale(1, 1),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				Image = "",
+				ImageRectSize = Vector2.new(1, 1),
+				ImageTransparency = 1,
+				ScaleType = Enum.ScaleType.Stretch,
+				Visible = false,
+				ZIndex = 2,
+			})
+			New("UICorner", {
+				Parent = Layer,
+				CornerRadius = UDim.new(0, Window.UICorner),
+			})
+			local Gradient = New("UIGradient", {
+				Parent = Layer,
+				Rotation = 90,
+				Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.fromRGB(158, 158, 158)),
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0),
+					NumberSequenceKeypoint.new(0.3, 0.04),
+					NumberSequenceKeypoint.new(0.64, 0.58),
+					NumberSequenceKeypoint.new(1, 0.94),
+				}),
+			})
+			Layers[Index] = { Frame = Layer, Gradient = Gradient }
+		end
+		Window.UIElements.CoverTintLayers = Layers
+	end
+
+	-- Rising bars across the window floor, driven by the same playing state the
+	-- island reads. They sit above the background and below the sleeve wash, so
+	-- the wash keeps its own alpha and the content stays legible.
+	local MusicBars = {}
+	local MusicBarsFrame
+	do
+		MusicBarsFrame = New("Frame", {
+			Name = "MusicBars",
+			Parent = Window.UIElements.Main,
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, 0, 1, 0),
+			Size = UDim2.fromScale(1, 0.34),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Visible = false,
+			ZIndex = 1,
+		})
+		for Index = 1, 18 do
+			local Bar = New("Frame", {
+				Name = "Bar" .. Index,
+				Parent = MusicBarsFrame,
+				AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new((Index - 0.5) / 18, 0, 1, 0),
+				Size = UDim2.new(1 / 18, -4, 0, 2),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = 0.1,
+				BorderSizePixel = 0,
+				ZIndex = 1,
+			})
+			MusicBars[Index] = {
+				Frame = Bar,
+				Weight = 0.45 + 0.55 * math.abs(math.sin(Index * 1.7)),
+				Current = 0.05,
+				Goal = 0.05,
+				Height = 2,
+			}
+		end
+	end
+	Window.UIElements.MusicBarsFrame = MusicBarsFrame
+
+	-- Morph veil: the window folds into the island as one solid shape, so the
+	-- layout never gets read mid-squash. It sits above every ZIndex the window
+	-- uses and only exists for the minimize/restore pair.
+	local MorphVeil = New("Frame", {
+		Parent = Window.UIElements.Main,
+		Name = "MorphVeil",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 4000,
+		ThemeTag = {
+			BackgroundColor3 = "WindowBackground",
+		},
+	}, {
+		New("UICorner", {
+			CornerRadius = UDim.new(0, Window.UICorner),
+		}),
+	})
+
+	local function UpdateTopbarCenter()
+		local Topbar = Window.UIElements.Main.Main.Topbar
+		local UIScale = Config.WindUI.UIScale
+		local LeftWidth = Topbar.Left.AbsoluteSize.X / UIScale
+
+		if Window.Topbar.ButtonsType == "Mac" then
+			local offset = (Window.SideBarVisible and Window.SideBarWidth or 0) + Window.UIPadding
+			Topbar.Center.Position = UDim2.new(0, offset, 0.5, 0)
+			Topbar.Center.Size = UDim2.new(1, -offset - Window.UIPadding, 1, 0)
+			return
+		end
+
+		local RightWidth = Topbar.Right.UIListLayout.AbsoluteContentSize.X / UIScale
+		if Window.Topbar.ButtonsType ~= "Default" then
+			LeftWidth = LeftWidth + RightWidth + Window.UIPadding - 4
+		end
+
+		Topbar.Center.Position = UDim2.new(0, LeftWidth + (Window.UIPadding / UIScale), 0.5, 0)
+		Topbar.Center.Size = UDim2.new(
+			1,
+			-LeftWidth
+				- (Window.UIPadding / UIScale)
+				- (Window.Topbar.ButtonsType == "Default" and RightWidth + Window.UIPadding or 0),
+			1,
+			0
+		)
+	end
+
+	Creator.AddSignal(
+		Window.UIElements.Main.Main.Topbar.Left:GetPropertyChangedSignal("AbsoluteSize"),
+		UpdateTopbarCenter
+	)
+
+	if Window.Topbar.ButtonsType ~= "Default" and Window.Topbar.ButtonsType ~= "Mac" then
+		Creator.AddSignal(Window.UIElements.Main.Main.Topbar.Right:GetPropertyChangedSignal("AbsoluteSize"), function()
+			Window.UIElements.Main.Main.Topbar.Left.Position = UDim2.new(
+				0,
+				(Window.UIElements.Main.Main.Topbar.Right.AbsoluteSize.X / Config.WindUI.UIScale) + Window.UIPadding - 4,
+				0,
+				0
+			)
+		end)
+	end
+
+	UpdateTopbarCenter()
+
+	function Window:CreateTopbarButton(Name, Icon, Callback, LayoutOrder, IconThemed, Color, IconSize)
+		local IconFrame = Creator.Image(
+			Icon,
+			Icon,
+			0,
+			Window.Folder,
+			"WindowTopbarIcon",
+			Window.Topbar.ButtonsType == "Default" and true or false,
+			IconThemed,
+			"WindowTopbarButtonIcon"
+		)
+		IconFrame.Size = Window.Topbar.ButtonsType == "Default"
+				and UDim2.new(0, IconSize or Window.TopBarButtonIconSize, 0, IconSize or Window.TopBarButtonIconSize)
+			or UDim2.new(0, 0, 0, 0)
+		IconFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+		IconFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+		IconFrame.ImageLabel.ImageTransparency = Window.Topbar.ButtonsType == "Default" and 0 or 1
+
+		if Window.Topbar.ButtonsType ~= "Default" and Color then
+			IconFrame.ImageLabel.ImageColor3 = Creator.GetTextColorForHSB(Color)
+		end
+
+		local Button = Creator.NewRoundFrame(
+			Window.Topbar.ButtonsType == "Default" and Window.UICorner - (Window.UIPadding / 2) or 999,
+			"Squircle",
+			{
+				Size = Window.Topbar.ButtonsType == "Default"
+						and UDim2.new(0, Window.Topbar.Height - 16, 0, Window.Topbar.Height - 16)
+					or UDim2.new(0, 14, 0, 14),
+				LayoutOrder = LayoutOrder or 999,
+				--Parent = Window.Topbar.ButtonsType == "Default" and Window.UIElements.Main.Main.Topbar.Right or nil,
+				--Active = true,
+				ZIndex = 9999,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0.5, 0, 0.5, 0),
+				ImageColor3 = Window.Topbar.ButtonsType ~= "Default" and (Color or Color3.fromHex("#ff3030")) or nil,
+				ThemeTag = Window.Topbar.ButtonsType == "Default" and {
+					ImageColor3 = "Text",
+				} or nil,
+				ImageTransparency = Window.Topbar.ButtonsType == "Default" and 1 or 0, -- .93
+			},
+			{
+				--[[Creator.NewRoundFrame(
+					Window.Topbar.ButtonsType == "Default" and Window.UICorner - (Window.UIPadding / 2) or 999,
+					"Glass-1",
+					{
+						Size = UDim2.new(1, 0, 1, 0),
+						ThemeTag = {
+							ImageColor3 = "Outline",
+						},
+						ImageTransparency = Window.Topbar.ButtonsType == "Default" and 1 or 0.5, -- .75
+						Name = "Outline",
+					}
+				),]]
+				IconFrame,
+				New("UIScale", {
+					Scale = 1,
+				}),
+			},
+			true
+		)
+
+		if Window.Topbar.ButtonsType ~= "Default" then
+			-- faint rim keeps the dot from bleeding into a dark bar
+			New("UIStroke", {
+				Thickness = 1,
+				Color = Color3.fromRGB(0, 0, 0),
+				Transparency = 0.85,
+				Parent = Button,
+			})
+		end
+
+		local ButtonContainer = New("Frame", {
+			Size = Window.Topbar.ButtonsType ~= "Default" and UDim2.new(0, 22, 0, 22)
+				or UDim2.new(0, Window.Topbar.Height - 16, 0, Window.Topbar.Height - 16),
+			BackgroundTransparency = 1,
+			Parent = Window.UIElements.Main.Main.Topbar.Right,
+			LayoutOrder = LayoutOrder or 999,
+		}, {
+			Button,
+		})
+
+		-- shhh
+
+		Window.TopBarButtons[100 - LayoutOrder] = {
+			Name = Name,
+			Object = ButtonContainer,
+		}
+
+		Creator.AddSignal(Button.MouseButton1Click, function()
+			if Callback then
+				Callback()
+			end
+		end)
+		Creator.AddSignal(Button.MouseEnter, function()
+			if Window.Topbar.ButtonsType == "Default" then
+				Tween(Button, 0.15, { ImageTransparency = 0.93 }):Play()
+				--Tween(Button.Outline, 0.15, { ImageTransparency = 0.75 }):Play()
+				--Tween(IconFrame.ImageLabel, .15, {ImageTransparency = 0}):Play()
+			else
+				--Tween(Button, .1, {Size = UDim2.new(0,14+8,0,14+8)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+				Tween(
+					IconFrame.ImageLabel,
+					0.1,
+					{ ImageTransparency = 0 },
+					Enum.EasingStyle.Quint,
+					Enum.EasingDirection.Out
+				):Play()
+				Tween(IconFrame, 0.1, {
+					Size = UDim2.new(
+						0,
+						IconSize or Window.TopBarButtonIconSize,
+						0,
+						IconSize or Window.TopBarButtonIconSize
+					),
+				}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			end
+		end)
+
+		Creator.AddSignal(Button.MouseButton1Down, function()
+			Tween(Button.UIScale, 0.2, { Scale = 0.9 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		end)
+
+		Creator.AddSignal(Button.MouseLeave, function()
+			if Window.Topbar.ButtonsType == "Default" then
+				Tween(Button, 0.1, { ImageTransparency = 1 }):Play()
+				--Tween(Button.Outline, 0.1, { ImageTransparency = 1 }):Play()
+				--Tween(IconFrame.ImageLabel, .1, {ImageTransparency = .2}):Play()
+			else
+				--Tween(Button, .1, {Size = UDim2.new(0,14,0,14)}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut):Play()
+				Tween(
+					IconFrame.ImageLabel,
+					0.1,
+					{ ImageTransparency = 1 },
+					Enum.EasingStyle.Quint,
+					Enum.EasingDirection.Out
+				):Play()
+				Tween(
+					IconFrame,
+					0.1,
+					{ Size = UDim2.new(0, 0, 0, 0) },
+					Enum.EasingStyle.Quint,
+					Enum.EasingDirection.Out
+				):Play()
+			end
+		end)
+
+		Creator.AddSignal(Button.InputEnded, function()
+			Tween(Button.UIScale, 0.2, { Scale = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut):Play()
+		end)
+
+		return Button
+	end
+
+	function Window:CreateTopbarTool(Name, Icon, Callback, LayoutOrder)
+		local IconFrame =
+			Creator.Image(Icon, Icon, 0, Window.Folder, "WindowTopbarIcon", true, true, "WindowTopbarButtonIcon")
+		IconFrame.Size = UDim2.new(0, 18, 0, 18)
+		IconFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+		IconFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+		IconFrame.ImageLabel.ImageTransparency = 0.35
+
+		local Button = New("TextButton", {
+			Size = UDim2.new(0, 26, 0, 26),
+			BackgroundTransparency = 1,
+			Text = "",
+			AutoButtonColor = false,
+			LayoutOrder = LayoutOrder or 997,
+			Parent = Window.UIElements.Main.Main.Topbar.Right,
+		}, {
+			IconFrame,
+			New("UIScale", {
+				Scale = 1,
+			}),
+		})
+
+		Window.TopBarButtons[100 - (LayoutOrder or 997)] = {
+			Name = Name,
+			Object = Button,
+		}
+		Window.TopbarTools[Name] = Button
+
+		Creator.AddSignal(Button.MouseButton1Click, function()
+			if Callback then
+				Callback()
+			end
+		end)
+		Creator.AddSignal(Button.MouseEnter, function()
+			Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0 }):Play()
+		end)
+		Creator.AddSignal(Button.MouseLeave, function()
+			Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0.35 }):Play()
+		end)
+		Creator.AddSignal(Button.MouseButton1Down, function()
+			Tween(Button.UIScale, 0.2, { Scale = 0.9 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		end)
+		Creator.AddSignal(Button.InputEnded, function()
+			Tween(Button.UIScale, 0.2, { Scale = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut):Play()
+		end)
+
+		return Button
+	end
+
+	do
+		local function SetSidebarVisible(visible)
+			Window.SideBarVisible = visible
+			Window.UIElements.SideBarContainer.Visible = visible
+			-- The bar keeps every control and tag when the sidebar folds away;
+			-- only the panel (and its user card) goes.
+			if UserIcon then
+				UserIcon.Visible = visible and Window.User.Enabled or false
+			end
+			Tween(Window.UIElements.MainBar, 0.25, {
+				Size = UDim2.new(1, visible and -Window.SideBarWidth or 0, 1, -Window.Topbar.Height),
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			UpdateTopbarCenter()
+		end
+
+		function Window:SetSidebarVisible(visible)
+			SetSidebarVisible(visible and true or false)
+		end
+
+		function Window:ToggleSidebar()
+			SetSidebarVisible(not Window.SideBarVisible)
+		end
+
+		if Window.Topbar.ButtonsType == "Mac" then
+			New("Frame", {
+				Size = UDim2.new(0, 10, 0, 0),
+				BackgroundTransparency = 1,
+				LayoutOrder = 1000,
+				Parent = Window.UIElements.Main.Main.Topbar.Right,
+			})
+
+			Window:CreateTopbarTool("ToggleSidebar", "panel-left", function()
+				Window:ToggleSidebar()
+			end, 1001)
+
+			Window:CreateTopbarTool("Undo", "sf:arrowUturnBackward", function()
+				if Window.OnUndo then
+					Window.OnUndo()
+				end
+			end, 1002)
+
+			Window:CreateTopbarTool("Redo", "sf:arrowUturnForward", function()
+				if Window.OnRedo then
+					Window.OnRedo()
+				end
+			end, 1003)
+		end
+	end
+
+	function Window.Topbar:Button(ButtonConfig: {
+		Name: string,
+		Icon: string,
+		Callback: any,
+		LayoutOrder: number,
+		IconThemed: boolean,
+		Color: Color3,
+		IconSize: number,
+	})
+		return Window:CreateTopbarButton(
+			ButtonConfig.Name,
+			ButtonConfig.Icon,
+			ButtonConfig.Callback,
+			ButtonConfig.LayoutOrder or 0,
+			ButtonConfig.IconThemed,
+			ButtonConfig.Color,
+			ButtonConfig.IconSize
+		)
+	end
+
+	-- local Dragged = false
+
+	local WindowDragModule = Creator.Drag(
+		Window.UIElements.Main,
+		{ Window.UIElements.Main.Main.Topbar, BottomDragFrame.Frame },
+		function(dragging, frame) -- On drag
+			if not Window.Closed then
+				if dragging and frame == BottomDragFrame.Frame then
+					Tween(BottomDragFrame, 0.1, { ImageTransparency = 0.35 }):Play()
+				else
+					Tween(BottomDragFrame, 0.2, { ImageTransparency = 0.8 }):Play()
+				end
+				Window.Position = Window.UIElements.Main.Position
+				Window.Dragging = dragging
+			end
+		end
+	)
+
+	if not IsVideoBG and Window.Background and typeof(Window.Background) == "table" then
+		local BackgroundGradient = New("UIGradient")
+		for key, value in next, Window.Background do
+			BackgroundGradient[key] = value
+		end
+
+		Window.UIElements.BackgroundGradient = Creator.NewRoundFrame(Window.UICorner, "Squircle", {
+			Size = UDim2.new(1, 0, 1, 0),
+			Parent = Window.UIElements.Main.Background,
+			ImageTransparency = Window.Transparent and Config.WindUI.TransparencyValue or 0,
+		}, {
+			BackgroundGradient,
+		})
+	end
+
+	-- local blur = require("../Blur")
+
+	-- blur.new(Window.UIElements.Main.Background, {
+	--     Corner = Window.UICorner
+	-- })
+
+	--Creator.Blur(Window.UIElements.Main.Background)
+	-- local OpenButtonDragModule
+
+	-- if not Window.IsPC then
+	--     OpenButtonDragModule = Creator.Drag(OpenButtonContainer)
+	-- end
+
+	Window.OpenButtonMain = require("./Openbutton").New(Window)
+
+	task.spawn(function()
+		-- Mac topbar shows the plain title block, no window icon beside it.
+		if Window.Icon and Window.Topbar.ButtonsType ~= "Mac" then
+			local WindowIconContainer = New("Frame", {
+				Size = UDim2.new(0, 22, 0, 22),
+				BackgroundTransparency = 1,
+				Parent = Window.UIElements.Main.Main.Topbar.Left,
+			})
+
+			WindowIcon = Creator.Image(
+				Window.Icon,
+				Window.Title,
+				Window.IconRadius,
+				Window.Folder,
+				"Window",
+				true,
+				Window.IconThemed,
+				"WindowTopbarIcon"
+			)
+			WindowIcon.Parent = WindowIconContainer
+			WindowIcon.Size = UDim2.new(0, Window.IconSize, 0, Window.IconSize)
+			WindowIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
+			WindowIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+
+			Window.OpenButtonMain:SetIcon(Window.Icon)
+
+			-- if Creator.Icon(tostring(Window.Icon)) and Creator.Icon(tostring(Window.Icon))[1] then
+			--     -- ImageLabel.Image = Creator.Icon(Window.Icon)[1]
+			--     -- ImageLabel.ImageRectOffset = Creator.Icon(Window.Icon)[2].ImageRectPosition
+			--     -- ImageLabel.ImageRectSize = Creator.Icon(Window.Icon)[2].ImageRectSize
+			--     -- OpenButtonIcon.Image = Creator.Icon(Window.Icon)[1]
+			--     -- OpenButtonIcon.ImageRectOffset = Creator.Icon(Window.Icon)[2].ImageRectPosition
+			--     -- OpenButtonIcon.ImageRectSize = Creator.Icon(Window.Icon)[2].ImageRectSize
+
+			-- end
+			-- end
+		else
+			Window.OpenButtonMain:SetIcon(Window.Icon)
+			--OpenButtonIcon.Visible = false
+		end
+	end)
+
+	function Window:SetToggleKey(keycode)
+		Window.ToggleKey = keycode
+	end
+
+	function Window:SetTitle(text)
+		Window.Title = text
+		WindowTitle.Text = text
+	end
+
+	function Window:SetAuthor(text)
+		Window.Author = text
+		if not WindowAuthor then
+			WindowAuthor = createAuthor(Window.Author)
+		end
+
+		WindowAuthor.Text = text
+	end
+
+	function Window:SetSize(size)
+		if typeof(size) == "UDim2" then
+			Window.Size = size
+
+			Tween(Window.UIElements.Main, 0.08, { Size = size }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		end
+	end
+
+	function Window:SetBackgroundImage(id)
+		Window.UIElements.Main.Background.ImageLabel.Image = id
+	end
+	function Window:SetBackgroundImageTransparency(v)
+		if BGImage and BGImage:IsA("ImageLabel") then
+			BGImage.ImageTransparency = math.floor(v * 10 + 0.5) / 10
+		end
+		Window.BackgroundImageTransparency = math.floor(v * 10 + 0.5) / 10
+	end
+
+	local CoverToken = 0
+	local CoverLive = 0
+
+	-- Same lift the island bars use, so the wash and the bars agree.
+	local function Lift(Color, Amount)
+		if typeof(Color) ~= "Color3" then
+			return Color3.new(1, 1, 1)
+		end
+		return Color3.new(
+			Color.R + (1 - Color.R) * Amount,
+			Color.G + (1 - Color.G) * Amount,
+			Color.B + (1 - Color.B) * Amount
+		)
+	end
+
+	-- The sleeve colour as-is. Lifting it toward white is what turned the wash
+	-- and the floor bars white; only a near-black sleeve gets the minimum lift
+	-- needed to stay visible.
+	local function TintOf(Color)
+		if typeof(Color) ~= "Color3" then
+			return Color3.new(1, 1, 1)
+		end
+		if 0.2126 * Color.R + 0.7152 * Color.G + 0.0722 * Color.B < 0.16 then
+			return Lift(Color, 0.35)
+		end
+		return Color
+	end
+
+	-- Highlight corner follows the window: a frame parked on the right lights
+	-- its top-left, one on the left lights its top-right, the middle stays
+	-- straight down. UIGradient 45 puts the bright end at the top-left, 90 at
+	-- the top centre, 135 at the top-right.
+	local function CoverRotation()
+		local Main = Window.UIElements.Main
+		local Screen = Config.WindUI.ScreenGui
+		local ScreenSize = Screen and Screen.AbsoluteSize or Vector2.new(1920, 1080)
+		local Half = math.max(ScreenSize.X, 1) * 0.5
+		local Centre = Main.AbsolutePosition.X + Main.AbsoluteSize.X * 0.5
+		local Offset = math.clamp((Half - Centre) / Half, -1, 1)
+		return math.floor(90 + Offset * 45 + 0.5)
+	end
+
+	local function ApplyCoverRotation()
+		local Rotation = CoverRotation()
+		Window.CoverRotation = Rotation
+		local Layers = Window.UIElements.CoverTintLayers
+		if Layers then
+			for _, Record in ipairs(Layers) do
+				if Record.Gradient then
+					Record.Gradient.Rotation = Rotation
+				end
+			end
+		end
+		if Window.UIElements.BackgroundGradient then
+			local BG = Window.UIElements.BackgroundGradient
+			if typeof(BG) == "Instance" then
+				local Gradient = BG:FindFirstChildOfClass("UIGradient")
+				if Gradient then
+					Gradient.Rotation = Rotation
+				end
+			end
+		end
+	end
+
+	-- Sleeve wash across the window. Takes the artwork, the pixel rect the
+	-- island reads (a 1 x 1 crop) and the colour that pixel sampled, so both
+	-- surfaces show the same colour. nil restores the theme background.
+	function Window:SetCoverTint(Image, Rect, Shade)
+		local Layers = Window.UIElements.CoverTintLayers
+		if not Layers then
+			return
+		end
+		CoverToken += 1
+		local Token = CoverToken
+
+		if Image == nil or Image == "" then
+			Window.CoverTint = nil
+			CoverLive = 0
+			for Index, Record in ipairs(Layers) do
+				if Record.Frame.Visible then
+					Tween(Record.Frame, 0.45, {
+						ImageTransparency = 1,
+						BackgroundTransparency = 1,
+					}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+					task.delay(0.5, function()
+						if Token == CoverToken and CoverLive ~= Index and Record.Frame.Parent then
+							Record.Frame.Visible = false
+						end
+					end)
+				end
+			end
+			return
+		end
+
+		ApplyCoverRotation()
+
+		Window.CoverTint = Image
+		local Target = CoverLive == 1 and 2 or 1
+		local Record = Layers[Target]
+		CoverLive = Target
+
+		Record.Frame.Image = Image
+		Record.Frame.ImageRectOffset = Rect or Vector2.zero
+		-- Solid plate under the crop, in the sleeve's own colour. The crop
+		-- alone follows the sleeve down into near-black; the plate keeps the
+		-- window reading as the track's colour instead of a bruise, and the
+		-- tinted gradient below stops it washing out to white.
+		local Tint = TintOf(Shade)
+		Record.Frame.BackgroundColor3 = Tint
+		if Record.Gradient then
+			Record.Gradient.Color = ColorSequence.new(Tint, Lift(Tint, 0.45))
+		end
+		-- A layer still fading out keeps its current alpha, so a fast skip
+		-- blends into the new sleeve instead of flashing through black.
+		if not Record.Frame.Visible then
+			Record.Frame.ImageTransparency = 1
+			Record.Frame.BackgroundTransparency = 1
+		end
+		Record.Frame.Visible = true
+
+		for Index, Other in ipairs(Layers) do
+			if Index ~= Target and Other.Frame.Visible then
+				Tween(Other.Frame, 0.5, {
+					ImageTransparency = 1,
+					BackgroundTransparency = 1,
+				}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+				task.delay(0.55, function()
+					if CoverLive ~= Index and Other.Frame.Parent then
+						Other.Frame.Visible = false
+					end
+				end)
+			end
+		end
+
+		Tween(Record.Frame, 0.55, {
+			ImageTransparency = 0.82,
+			BackgroundTransparency = 0.52,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+	end
+
+	function Window:SetMusicEffects(Enabled)
+		Window.MusicEffects = Enabled == true
+		if not Window.MusicEffects then
+			pcall(function()
+				Window:SetCoverTint(nil)
+			end)
+			MusicBarsFrame.Visible = false
+			Window.MusicLive = false
+		elseif Window.MusicLast then
+			pcall(function()
+				Window:SetCoverTint(Window.MusicLast.Art, Window.MusicLast.Rect, Window.MusicLast.Shade)
+			end)
+		end
+	end
+
+	-- The island pushes playback state here every time the sleeve or the
+	-- playing flag changes. The window owns the effects toggle, so this is the
+	-- only place that decides whether the wash and the floor bars paint.
+	function Window:SetMusicState(Playing, Image, Rect, Shade)
+		Window.MusicLast = { Art = Image, Rect = Rect, Shade = Shade }
+		local Live = Playing == true and Image ~= nil and Image ~= ""
+		Window.MusicLive = Live and Window.MusicEffects == true
+		Window.MusicShade = Shade
+
+		if not Window.MusicLive then
+			pcall(function()
+				Window:SetCoverTint(nil)
+			end)
+			MusicBarsFrame.Visible = false
+			return
+		end
+
+		pcall(function()
+			Window:SetCoverTint(Image, Rect, Shade)
+		end)
+
+		local Color = TintOf(Shade)
+		for _, Bar in ipairs(MusicBars) do
+			Bar.Frame.BackgroundColor3 = Color
+		end
+		MusicBarsFrame.Visible = true
+	end
+
+	-- Floor bars: same sway-plus-noise drive as the island row, slower and
+	-- taller so the movement reads as a backdrop rather than a readout.
+	do
+		local Acc = 0
+		local Phase = 0
+		RunService.Heartbeat:Connect(function(Delta)
+			if Window.Destroyed or not Window.MusicLive or not MusicBarsFrame.Visible then
+				return
+			end
+			Acc += Delta
+			Phase += Delta
+			if Acc >= 0.05 then
+				Acc = 0
+				for Index, Bar in ipairs(MusicBars) do
+					local Sway = 0.5 + 0.5 * math.sin(Phase * (1.3 + Bar.Weight * 0.9) + Index * 0.7)
+					local Drive = Sway * 0.6 + math.random() * 0.4
+					Bar.Goal = math.clamp(0.1 + 0.75 * Drive * Bar.Weight, 0, 1)
+				end
+			end
+			local FrameHeight = MusicBarsFrame.AbsoluteSize.Y
+			for _, Bar in ipairs(MusicBars) do
+				local Rate = Bar.Goal > Bar.Current and 14 or 7
+				Bar.Current += (Bar.Goal - Bar.Current) * math.min(1, Rate * Delta)
+				local Height = math.max(2, math.floor(FrameHeight * Bar.Current + 0.5))
+				if Bar.Height ~= Height then
+					Bar.Height = Height
+					Bar.Frame.Size = UDim2.new(1 / 18, -4, 0, Height)
+				end
+			end
+		end)
+	end
+
+	-- Drag and resize both move Main, so the highlight corner is refreshed from
+	-- the live position rather than from the drag callback only.
+	Window.MusicEffects = true
+	Creator.AddSignal(Window.UIElements.Main:GetPropertyChangedSignal("AbsolutePosition"), function()
+		ApplyCoverRotation()
+	end)
+
+	function Window:SetBackgroundTransparency(v)
+		local rounded = math.floor(tonumber(v) * 10 + 0.5) / 10
+		Config.WindUI.TransparencyValue = rounded
+		Window:ToggleTransparency(rounded > 0)
+	end
+
+	local CurrentPos
+	local CurrentSize
+	local iconCopy = Creator.Icon("minimize")
+	local iconSquare = Creator.Icon("maximize")
+
+	local FullscreenButton = Window:CreateTopbarButton(
+		"Fullscreen",
+		Window.Topbar.ButtonsType == "Mac" and "rbxassetid://127426072704909" or "maximize",
+		function()
+			Window:ToggleFullscreen()
+		end,
+		(Window.Topbar.ButtonsType == "Default" and 998 or 999),
+		true,
+		Color3.fromHex("#28C840"),
+		Window.Topbar.ButtonsType == "Mac" and 9 or nil
+	)
+
+	local function SetSize(isAnimation)
+		Tween(Window.UIElements.Main, 0.45, {
+			Size = not Window.IsFullscreen and CurrentSize or UDim2.new(
+				0,
+				(Config.WindUI.ScreenGui.AbsoluteSize.X - 20) / Config.WindUI.UIScale,
+				0,
+				(Config.WindUI.ScreenGui.AbsoluteSize.Y - 20 - 52) / Config.WindUI.UIScale
+			),
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+		Tween(
+			Window.UIElements.Main,
+			0.45,
+			{ Position = not Window.IsFullscreen and CurrentPos or UDim2.new(0.5, 0, 0.5, 52 / 2) },
+			Enum.EasingStyle.Quint,
+			Enum.EasingDirection.Out
+		):Play()
+	end
+
+	function Window:ToggleFullscreen()
+		local isFullscreen = Window.IsFullscreen
+		-- Creator.SetDraggable(isFullscreen)
+		WindowDragModule:Set(isFullscreen)
+
+		if not isFullscreen then
+			CurrentPos = Window.UIElements.Main.Position
+			CurrentSize = Window.UIElements.Main.Size
+
+			Window.CanResize = false
+		else
+			if Window.Resizable then
+				Window.CanResize = true
+			end
+		end
+
+		Window.IsFullscreen = not isFullscreen
+
+		SetSize(true)
+	end
+
+	Creator.AddSignal(Config.WindUI.ScreenGui:GetPropertyChangedSignal("AbsoluteSize"), function()
+		if Window.IsFullscreen then
+			SetSize()
+		end
+	end)
+
+	Window:CreateTopbarButton("Minimize", "minus", function()
+		if Window.Minimize then
+			Window:Minimize()
+		elseif Window.Close then
+			Window:Close()
+		end
+		-- task.spawn(function()
+		--     task.wait(.3)
+		--     if not Window.IsPC and Window.IsOpenButtonEnabled then
+		--         -- OpenButtonContainer.Visible = true
+		--         --Window.OpenButtonMain:Visible(true)
+		--     end
+		-- end)
+
+		-- local NotifiedText = Window.IsPC and "Press " .. Window.ToggleKey.Name .. " to open the Window" or "Click the Button to open the Window"
+
+		-- if not Window.IsOpenButtonEnabled then
+		--     Notified = true
+		-- end
+		-- if not Notified then
+		--     Notified = not Notified
+		--     Config.WindUI:Notify({
+		--         Title = "Minimize",
+		--         Content = "You've closed the Window. " .. NotifiedText,
+		--         Icon = "eye-off",
+		--         Duration = 5,
+		--     })
+		-- end
+	end, (Window.Topbar.ButtonsType == "Default" and 997 or 998), nil, Color3.fromHex("#FEBC2E"))
+
+	function Window:OnOpen(func)
+		Window.OnOpenCallback = func
+	end
+	function Window:OnClose(func)
+		Window.OnCloseCallback = func
+	end
+	function Window:OnDestroy(func)
+		Window.OnDestroyCallback = func
+	end
+
+	if Config.WindUI.UseAcrylic then
+		Window.AcrylicPaint.AddParent(Window.UIElements.Main)
+	end
+
+	function Window:SetIconSize(Size)
+		local NewSize
+		if typeof(Size) == "number" then
+			NewSize = UDim2.new(0, Size, 0, Size)
+			Window.IconSize = Size
+		elseif typeof(Size) == "UDim2" then
+			NewSize = Size
+			Window.IconSize = Size.X.Offset
+		end
+
+		if WindowIcon then
+			WindowIcon.Size = NewSize
+		end
+	end
+
+	function Window:Open()
+		if Window.Destroyed then
+			return
+		end
+		task.spawn(function()
+			if Window.OnOpenCallback then
+				task.spawn(function()
+					Creator.SafeCallback(Window.OnOpenCallback)
+				end)
+			end
+
+			task.wait(0.06)
+			Window.Closed = false
+			if Window.Minimized then
+				Window.Minimized = false
+				MorphVeil.Visible = false
+				Window.UIElements.Main.ClipsDescendants = Window.SavedClips == true
+				Window.UIElements.Main.Position = Window.SavedPosition or Window.Position
+			end
+
+			Window.UIElements.Main.Size = UDim2.new(Window.Size.X.Scale, Window.Size.X.Offset, 0, 100)
+
+			Tween(Window.UIElements.Main, 0.8, {
+				--GroupTransparency = 0,
+				Size = Window.Size,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+			if Window.UIElements.BackgroundGradient then
+				Tween(Window.UIElements.BackgroundGradient, 0.2, {
+					ImageTransparency = 0,
+				}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			end
+
+			Window.UIElements.Main.Background.ImageTransparency = 1
+			Tween(Window.UIElements.Main.Background, 0.4, {
+				--Size = UDim2.new(1, 0, 1, 0),
+				ImageTransparency = Window.Transparent and Config.WindUI.TransparencyValue or 0,
+			}, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out):Play()
+
+			if BGImage then
+				if BGImage:IsA("VideoFrame") then
+					BGImage.Visible = true
+				else
+					Tween(BGImage, 0.2, {
+						ImageTransparency = Window.BackgroundImageTransparency,
+					}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+				end
+			end
+
+			if Window.OpenButtonMain and Window.IsOpenButtonEnabled then
+				Window.OpenButtonMain:Visible(false)
+			end
+
+			--[[Config.WindUI.UIScaleObj.Scale -= 1 - 0.85
+			Tween(
+				Config.WindUI.UIScaleObj,
+				0.33,
+				{ Scale = Config.WindUI.UIScale },
+				Enum.EasingStyle.Back,
+				Enum.EasingDirection.Out
+			):Play()]]
+			Tween(
+				Blur,
+				0.25,
+				{ ImageTransparency = Window.ShadowTransparency },
+				Enum.EasingStyle.Quint,
+				Enum.EasingDirection.Out
+			):Play()
+			--[[if UIStroke then
+				Tween(UIStroke, 0.25, { Transparency = 0.8 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			end]]
+
+			Tween(
+				BottomDragFrame,
+				0.45,
+				{ Size = UDim2.new(0, Window.DragFrameSize, 0, 4), ImageTransparency = 0.8 },
+				Enum.EasingStyle.Exponential,
+				Enum.EasingDirection.Out
+			):Play()
+			WindowDragModule:Set(true)
+
+			if Window.Resizable then
+				Tween(
+					ResizeHandle.ImageLabel,
+					0.45,
+					{ ImageTransparency = 0.8 },
+					Enum.EasingStyle.Exponential,
+					Enum.EasingDirection.Out
+				):Play()
+				Window.CanResize = true
+			end
+
+			Window.CanDropdown = true
+			Window.UIElements.Main.Visible = true
+			--task.spawn(function()
+			--task.wait(0.05)
+
+			Window.UIElements.Main:WaitForChild("Main").Visible = true
+
+			Config.WindUI:ToggleAcrylic(true)
+			--end)
+		end)
+	end
+	function Window:Close()
+		if Window.Destroyed then
+			return
+		end
+
+		local Close = {}
+
+		if Window.OnCloseCallback then
+			task.spawn(function()
+				Creator.SafeCallback(Window.OnCloseCallback)
+			end)
+		end
+
+		Config.WindUI:ToggleAcrylic(false)
+
+		if Window.UIElements.Main and Window.UIElements.Main:WaitForChild("Main") then
+			Window.UIElements.Main.Main.Visible = false
+		end
+
+		Window.CanDropdown = false
+		Window.Closed = true
+
+		Tween(Window.UIElements.Main, 0.9, {
+			--GroupTransparency = 1,
+			Size = UDim2.new(Window.Size.X.Scale, Window.Size.X.Offset, 0, 0),
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		if Window.UIElements.BackgroundGradient then
+			Tween(Window.UIElements.BackgroundGradient, 0.2, {
+				ImageTransparency = 1,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut):Play()
+		end
+
+		Tween(Window.UIElements.Main.Background, 0.3, {
+			--Size = UDim2.new(1, 0, 1, -240),
+			ImageTransparency = 1,
+		}, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut):Play()
+
+		--[[Tween(
+			Config.WindUI.UIScaleObj,
+			0.28,
+			{ Scale = Config.WindUI.UIScale - (1 - 0.85) },
+			Enum.EasingStyle.Quint,
+			Enum.EasingDirection.Out
+		):Play()]]
+		if BGImage then
+			if BGImage:IsA("VideoFrame") then
+				BGImage.Visible = false
+			else
+				Tween(BGImage, 0.3, {
+					ImageTransparency = 1,
+				}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			end
+		end
+		Tween(Blur, 0.25, { ImageTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		--[[if UIStroke then
+			Tween(UIStroke, 0.25, { Transparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		end]]
+
+		Tween(
+			BottomDragFrame,
+			0.3,
+			{ Size = UDim2.new(0, 0, 0, 4), ImageTransparency = 1 },
+			Enum.EasingStyle.Exponential,
+			Enum.EasingDirection.InOut
+		):Play()
+		Tween(
+			ResizeHandle.ImageLabel,
+			0.3,
+			{ ImageTransparency = 1 },
+			Enum.EasingStyle.Exponential,
+			Enum.EasingDirection.Out
+		):Play()
+		WindowDragModule:Set(false)
+		Window.CanResize = false
+
+		task.spawn(function()
+			task.wait(0.4)
+
+			if not Window.Closed then
+				return
+			end
+
+			Window.UIElements.Main.Visible = false
+
+			if Window.OpenButtonMain and not Window.Destroyed and not Window.IsPC and Window.IsOpenButtonEnabled then
+				Window.OpenButtonMain:Visible(true)
+			end
+		end)
+
+		function Close:Destroy()
+			task.spawn(function()
+				if Window.OnDestroyCallback then
+					task.spawn(function()
+						Creator.SafeCallback(Window.OnDestroyCallback)
+					end)
+				end
+
+				if Window.AcrylicPaint and Window.AcrylicPaint.Model then
+					Window.AcrylicPaint.Model:Destroy()
+				end
+
+				Window.Destroyed = true
+
+				task.wait(0.4)
+
+				Config.WindUI.ScreenGui:Destroy()
+				Config.WindUI.NotificationGui:Destroy()
+				Config.WindUI.DropdownGui:Destroy()
+				Config.WindUI.TooltipGui:Destroy()
+
+				Creator.DisconnectAll()
+
+				return
+			end)
+		end
+
+		return Close
+	end
+
+	-- The capsule a minimized window folds into. Set once the island exists;
+	-- without one, minimize falls back to the old collapse.
+	function Window:SetIsland(Island)
+		Window.Island = type(Island) == "table" and Island or nil
+		local Target = Window.Island
+		if not Target or Window.IslandHoverWired then
+			return
+		end
+		local Hit = Target.Hit or Target.Root
+		local Root = Target.Root
+		if typeof(Hit) ~= "Instance" or typeof(Root) ~= "Instance" then
+			return
+		end
+		Window.IslandHoverWired = true
+
+		-- Miniature of the frame that folds into the pill. It hangs under the
+		-- island and only exists while the window is minimized; hovering the
+		-- pill stretches it out, clicking it restores the real window.
+		local Host = Root.Parent
+		local Preview = New("TextButton", {
+			Name = "IslandPreview",
+			Parent = Host,
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, 60),
+			Size = UDim2.fromOffset(238, 152),
+			BackgroundColor3 = Color3.fromRGB(18, 18, 20),
+			BackgroundTransparency = 0.04,
+			BorderSizePixel = 0,
+			AutoButtonColor = false,
+			Text = "",
+			Visible = false,
+			ClipsDescendants = true,
+			ZIndex = 3,
+			ThemeTag = {
+				BackgroundColor3 = "WindowBackground",
+			},
+		}, {
+			New("UICorner", { CornerRadius = UDim.new(0, 14) }),
+			New("UIStroke", {
+				Color = Color3.new(1, 1, 1),
+				Transparency = 0.82,
+				Thickness = 1,
+			}),
+			New("UIScale", { Scale = 0.72 }),
+		})
+		local PreviewScale = Preview:FindFirstChildOfClass("UIScale")
+
+		do
+			-- Title row: the three traffic lights and a title bar, matching the
+			-- real chrome so the miniature is recognisable at a glance.
+			local Head = New("Frame", {
+				Parent = Preview,
+				Name = "Head",
+				Size = UDim2.new(1, 0, 0, 30),
+				BackgroundTransparency = 1,
+				ZIndex = 4,
+			})
+			for Index = 1, 3 do
+				New("Frame", {
+					Parent = Head,
+					Position = UDim2.fromOffset(10 + (Index - 1) * 12, 11),
+					Size = UDim2.fromOffset(8, 8),
+					BackgroundColor3 = Index == 1 and Color3.fromRGB(255, 95, 87)
+						or Index == 2 and Color3.fromRGB(254, 188, 46)
+						or Color3.fromRGB(40, 200, 64),
+					BorderSizePixel = 0,
+					ZIndex = 5,
+				}, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+			end
+			New("Frame", {
+				Parent = Head,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.new(0.5, 0, 0.5, 0),
+				Size = UDim2.fromOffset(74, 6),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = 0.72,
+				BorderSizePixel = 0,
+				ZIndex = 5,
+			}, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+			New("Frame", {
+				Parent = Head,
+				Position = UDim2.new(0, 0, 1, -1),
+				Size = UDim2.new(1, 0, 0, 1),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = 0.9,
+				BorderSizePixel = 0,
+				ZIndex = 5,
+			})
+
+			-- Sidebar strip with four rows, then three content rows.
+			local Side = New("Frame", {
+				Parent = Preview,
+				Position = UDim2.fromOffset(10, 40),
+				Size = UDim2.fromOffset(56, 100),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = 0.93,
+				BorderSizePixel = 0,
+				ZIndex = 4,
+			}, { New("UICorner", { CornerRadius = UDim.new(0, 7) }) })
+			for Index = 1, 4 do
+				New("Frame", {
+					Parent = Side,
+					Position = UDim2.fromOffset(8, 9 + (Index - 1) * 20),
+					Size = UDim2.fromOffset(Index == 1 and 40 or 32, 8),
+					BackgroundColor3 = Color3.new(1, 1, 1),
+					BackgroundTransparency = Index == 1 and 0.35 or 0.72,
+					BorderSizePixel = 0,
+					ZIndex = 5,
+				}, { New("UICorner", { CornerRadius = UDim.new(1, 0) }) })
+			end
+			for Index = 1, 3 do
+				New("Frame", {
+					Parent = Preview,
+					Position = UDim2.fromOffset(76, 44 + (Index - 1) * 30),
+					Size = UDim2.fromOffset(Index == 3 and 92 or 148, 22),
+					BackgroundColor3 = Color3.new(1, 1, 1),
+					BackgroundTransparency = 0.9,
+					BorderSizePixel = 0,
+					ZIndex = 4,
+				}, { New("UICorner", { CornerRadius = UDim.new(0, 6) }) })
+			end
+		end
+
+		Window.IslandPreview = Preview
+		local HideToken = 0
+
+		local function PlacePreview()
+			local Top = Root.Position.Y.Offset or 0
+			local Height = Root.Size.Y.Offset or 40
+			Preview.Position = UDim2.new(0.5, 0, 0, Top + Height + 10)
+		end
+
+		local function ShowPreview()
+			HideToken += 1
+			if not Window.Minimized or Window.Destroyed then
+				return
+			end
+			PlacePreview()
+			Preview.Visible = true
+			Preview.BackgroundTransparency = 1
+			PreviewScale.Scale = 0.72
+			Tween(Preview, 0.22, {
+				BackgroundTransparency = 0.04,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			Tween(PreviewScale, 0.28, {
+				Scale = 1,
+			}, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
+		end
+
+		local function HidePreview()
+			HideToken += 1
+			local Token = HideToken
+			task.delay(0.3, function()
+				if Token ~= HideToken or not Preview.Parent then
+					return
+				end
+				Tween(Preview, 0.16, {
+					BackgroundTransparency = 1,
+				}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+				Tween(PreviewScale, 0.18, {
+					Scale = 0.72,
+				}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+				task.delay(0.2, function()
+					if Token == HideToken then
+						Preview.Visible = false
+					end
+				end)
+			end)
+		end
+
+		-- Desktop: the pointer crossing the pill peeks the miniature. Touch has
+		-- no hover, so the hub wires Island:SetOnTap for that path.
+		Window.IslandHoverConn = Hit.MouseEnter:Connect(function()
+			if Window.Minimized and not Window.Destroyed then
+				ShowPreview()
+			end
+		end)
+		Window.IslandHoverLeaveConn = Hit.MouseLeave:Connect(function()
+			if Window.Minimized and not Window.Destroyed then
+				HidePreview()
+			end
+		end)
+		Window.IslandPreviewEnterConn = Preview.MouseEnter:Connect(function()
+			if Window.Minimized and not Window.Destroyed then
+				ShowPreview()
+			end
+		end)
+		Window.IslandPreviewLeaveConn = Preview.MouseLeave:Connect(function()
+			if Window.Minimized and not Window.Destroyed then
+				HidePreview()
+			end
+		end)
+		Window.IslandPreviewClickConn = Preview.MouseButton1Click:Connect(function()
+			if Window.Minimized and not Window.Destroyed then
+				HideToken += 1
+				Preview.Visible = false
+				Window:Restore()
+			end
+		end)
+	end
+
+	-- Centre and footprint of the island in window-frame space. Positions are
+	-- layout offsets, so a non-1 UIScale is divided back out.
+	local function IslandTarget()
+		local Island = Window.Island
+		local Main = Window.UIElements.Main
+		local Root = type(Island) == "table" and Island.Root or nil
+		if not Main or typeof(Root) ~= "Instance" then
+			return nil
+		end
+		local Size = Root.AbsoluteSize
+		if Size.X <= 0 or Size.Y <= 0 then
+			return nil
+		end
+		local Center = Root.AbsolutePosition + Size * 0.5
+		local Parent = Main.Parent
+		local ParentPos = Vector2.zero
+		if Parent and Parent:IsA("GuiObject") then
+			ParentPos = Parent.AbsolutePosition
+		end
+		local Scale = tonumber(Config.WindUI.UIScale) or 1
+		if Scale <= 0 then
+			Scale = 1
+		end
+		return UDim2.fromOffset((Center.X - ParentPos.X) / Scale, (Center.Y - ParentPos.Y) / Scale),
+			UDim2.fromOffset(Size.X / Scale, Size.Y / Scale)
+	end
+
+	-- Mac-style minimize: the whole frame shrinks and slides into the island,
+	-- then the pill pings. The veil keeps the layout from being read mid-squash.
+	function Window:Minimize()
+		if Window.Destroyed or Window.Minimized or Window.Closed then
+			return
+		end
+
+		local Main = Window.UIElements.Main
+		local TargetPos, TargetSize = IslandTarget()
+		if not TargetPos then
+			Window:Close()
+			return
+		end
+
+		Window.Minimized = true
+		Window.Closed = true
+		Window.CanDropdown = false
+		Window.CanResize = false
+		if Window.IslandPreview then
+			Window.IslandPreview.Visible = false
+		end
+		Window.SavedPosition = Main.Position
+		Window.SavedSize = Main.Size
+		Window.SavedClips = Main.ClipsDescendants
+		Main.ClipsDescendants = true
+
+		if WindowDragModule then
+			pcall(function()
+				WindowDragModule:Set(false)
+			end)
+		end
+		Config.WindUI:ToggleAcrylic(false)
+
+		local Content = Main:FindFirstChild("Main")
+
+		MorphVeil.Visible = true
+		MorphVeil.BackgroundTransparency = 1
+		Tween(MorphVeil, 0.13, {
+			BackgroundTransparency = 0,
+		}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+
+		-- Veil first, then squash: the layout is never read mid-reflow.
+		task.delay(0.1, function()
+			if not Window.Minimized or Window.Destroyed then
+				return
+			end
+			if Content then
+				Content.Visible = false
+			end
+			Tween(Main, 0.34, {
+				Position = TargetPos,
+				Size = TargetSize,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.In):Play()
+		end)
+
+		-- The squashed frame sits on the island for a beat so the eye can follow
+		-- it, then the pill takes over. A restore bumps the token and cancels
+		-- the hide, so a hover during the hold never blanks a live window.
+		local Island = Window.Island
+		Window.MinimizeToken = (Window.MinimizeToken or 0) + 1
+		local Token = Window.MinimizeToken
+		task.delay(Window.MinimizeHold or 1.4, function()
+			if Window.MinimizeToken ~= Token or not Window.Minimized or Window.Destroyed then
+				return
+			end
+			Main.Visible = false
+			if type(Island) == "table" and type(Island.Ping) == "function" then
+				pcall(Island.Ping, Island)
+			end
+		end)
+	end
+
+	-- Reverse of minimize: the frame grows back out of the island and the veil
+	-- lifts once the layout is at its final size.
+	function Window:Restore()
+		if Window.Destroyed or not Window.Minimized then
+			return
+		end
+
+		local Main = Window.UIElements.Main
+		local TargetPos, TargetSize = IslandTarget()
+
+		Window.Minimized = false
+		Window.Closed = false
+		Window.MinimizeToken = (Window.MinimizeToken or 0) + 1
+		if Window.IslandPreview then
+			Window.IslandPreview.Visible = false
+		end
+		Main.Visible = true
+		Main.ClipsDescendants = true
+		local Content = Main:FindFirstChild("Main")
+		if Content then
+			Content.Visible = false
+		end
+
+		MorphVeil.Visible = true
+		MorphVeil.BackgroundTransparency = 0
+		Config.WindUI:ToggleAcrylic(true)
+
+		if TargetPos then
+			Main.Position = TargetPos
+			Main.Size = TargetSize
+		end
+
+		Tween(Main, 0.46, {
+			Position = Window.SavedPosition or Window.Position,
+			Size = Window.SavedSize or Window.Size,
+		}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+
+		-- Content reappears only once the frame is near its final size, so the
+		-- growing shape is a clean panel instead of a reflowing page.
+		task.delay(0.32, function()
+			if Window.Minimized or Window.Destroyed then
+				return
+			end
+			if Content then
+				Content.Visible = true
+			end
+			Tween(MorphVeil, 0.2, {
+				BackgroundTransparency = 1,
+			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+			task.delay(0.22, function()
+				if not Window.Minimized and not Window.Destroyed then
+					MorphVeil.Visible = false
+					Main.ClipsDescendants = Window.SavedClips == true
+				end
+			end)
+		end)
+
+		if WindowDragModule and not Window.IsFullscreen then
+			WindowDragModule:Set(true)
+		end
+		if Window.Resizable then
+			Window.CanResize = true
+		end
+		Window.CanDropdown = true
+	end
+
+	function Window:Destroy()
+		return Window:Close():Destroy()
+	end
+	function Window:Toggle()
+		if Window.Minimized then
+			Window:Restore()
+		elseif Window.Closed then
+			Window:Open()
+		else
+			Window:Close()
+		end
+	end
+
+	function Window:ToggleTransparency(Value)
+		-- Config.Transparent = Value
+		Window.Transparent = Value
+		Config.WindUI.Transparent = Value
+
+		Window.UIElements.Main.Background.ImageTransparency = Value and Config.WindUI.TransparencyValue or 0
+		-- Window.UIElements.Main.Background.ImageLabel.ImageTransparency = Value and Config.WindUI.TransparencyValue or 0
+		--Window.UIElements.MainBar.Background.ImageTransparency = Value and 0.97 or 0.95
+	end
+
+	function Window:LockAll()
+		for _, element in next, Window.AllElements do
+			if element.Lock then
+				element:Lock()
+			end
+		end
+	end
+	function Window:UnlockAll()
+		for _, element in next, Window.AllElements do
+			if element.Unlock then
+				element:Unlock()
+			end
+		end
+	end
+	function Window:GetLocked()
+		local LockedElements = {}
+
+		for _, element in next, Window.AllElements do
+			if element.Locked then
+				table.insert(LockedElements, element)
+			end
+		end
+
+		return LockedElements
+	end
+	function Window:GetUnlocked()
+		local UnlockedElements = {}
+
+		for _, element in next, Window.AllElements do
+			if element.Locked == false then
+				table.insert(UnlockedElements, element)
+			end
+		end
+
+		return UnlockedElements
+	end
+
+	function Window:GetUIScale(v)
+		return Config.WindUI.UIScale
+	end
+
+	function Window:SetUIScale(v)
+		Config.WindUI.UIScale = v
+		Tween(Config.WindUI.UIScaleObj, 0.2, { Scale = v }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
+		return Window
+	end
+
+	function Window:SetToTheCenter()
+		Tween(
+			Window.UIElements.Main,
+			0.45,
+			{ Position = UDim2.new(0.5, 0, 0.5, 0) },
+			Enum.EasingStyle.Quint,
+			Enum.EasingDirection.Out
+		):Play()
+		return Window
+	end
+
+	function Window:SetCurrentConfig(ConfigModule)
+		Window.CurrentConfig = ConfigModule
+	end
+
+	do
+		local Margin = 40
+		local ViewportSize = CurrentCamera.ViewportSize
+		local WindowSize = Vector2.new(Window.Size.X.Offset, Window.Size.Y.Offset)
+
+		if not Window.IsFullscreen and Window.AutoScale then
+			local AvailableWidth = ViewportSize.X - (Margin * 2)
+			local AvailableHeight = ViewportSize.Y - (Margin * 2)
+
+			local ScaleX = AvailableWidth / WindowSize.X
+			local ScaleY = AvailableHeight / WindowSize.Y
+
+			local RequiredScale = math.min(ScaleX, ScaleY)
+
+			local MinScale = 0.3
+			local MaxScale = 1.0
+
+			local FinalScale = math.clamp(RequiredScale, MinScale, MaxScale)
+
+			local CurrentScale = Window:GetUIScale() or 1
+			local Tolerance = 0.05
+
+			if math.abs(FinalScale - CurrentScale) > Tolerance then
+				Window:SetUIScale(FinalScale)
+			end
+		end
+	end
+
+	if Window.OpenButtonMain and Window.OpenButtonMain.Button then
+		Creator.AddSignal(Window.OpenButtonMain.Button.TextButton.MouseButton1Click, function()
+			-- OpenButtonContainer.Visible = false
+			--Window.OpenButtonMain:Visible(false)
+			Window:Open()
+		end)
+	end
+
+	Creator.AddSignal(UserInputService.InputBegan, function(input, isProcessed)
+		if isProcessed then
+			return
+		end
+
+		if Window.ToggleKey then
+			if input.KeyCode == Window.ToggleKey then
+				Window:Toggle()
+			end
+		end
+	end)
+
+	task.spawn(function()
+		--task.wait(1.38583)
+		Window:Open()
+	end)
+
+	function Window:EditOpenButton(OpenButtonConfig)
+		return Window.OpenButtonMain:Edit(OpenButtonConfig)
+	end
+
+	if Window.OpenButton and typeof(Window.OpenButton) == "table" then
+		Window:EditOpenButton(Window.OpenButton)
+	end
+
+	local TabModuleMain = require("./Tab")
+	local SectionModule = require("./Section")
+	local TabModule = TabModuleMain.Init(Window, Config.WindUI, Config.WindUI.TooltipGui)
+	TabModule:OnChange(function(t)
+		Window.CurrentTab = t
+	end)
+
+	Window.TabModule = TabModule
+
+	function Window:Tab(TabConfig)
+		TabConfig.Parent = Window.UIElements.SideBar.Frame
+		return TabModule.New(TabConfig, Config.WindUI.UIScale)
+	end
+
+	function Window:SelectTab(Tab)
+		TabModule:SelectTab(Tab)
+	end
+
+	function Window:Section(SectionConfig)
+		return SectionModule.New(
+			SectionConfig,
+			Window.UIElements.SideBar.Frame,
+			Window.Folder,
+			Config.WindUI.UIScale,
+			Window
+		)
+	end
+
+	function Window:IsResizable(v)
+		Window.Resizable = v
+		Window.CanResize = v
+	end
+
+	function Window:SetPanelBackground(v)
+		if typeof(v) == "boolean" then
+			Window.HidePanelBackground = v
+
+			Window.UIElements.MainBar.Background.Visible = v
+
+			if TabModule then
+				for _, Container in next, TabModule.Containers do
+					Container.ScrollingFrame.UIPadding.PaddingTop = UDim.new(0, Window.HidePanelBackground and 20 or 10)
+					Container.ScrollingFrame.UIPadding.PaddingLeft =
+						UDim.new(0, Window.HidePanelBackground and 20 or 10)
+					Container.ScrollingFrame.UIPadding.PaddingRight =
+						UDim.new(0, Window.HidePanelBackground and 20 or 10)
+					Container.ScrollingFrame.UIPadding.PaddingBottom =
+						UDim.new(0, Window.HidePanelBackground and 20 or 10)
+				end
+			end
+		end
+	end
+
+	function Window:Divider()
+		local Divider = New("Frame", {
+			Size = UDim2.new(1, 0, 0, 1),
+			Position = UDim2.new(0.5, 0, 0, 0),
+			AnchorPoint = Vector2.new(0.5, 0),
+			BackgroundTransparency = 0.9,
+			ThemeTag = {
+				BackgroundColor3 = "Text",
+			},
+		})
+		local MainDivider = New("Frame", {
+			Parent = Window.UIElements.SideBar.Frame,
+			--AutomaticSize = "Y",
+			Size = UDim2.new(1, -7, 0, 5),
+			BackgroundTransparency = 1,
+		}, {
+			Divider,
+		})
+
+		return MainDivider
+	end
+
+	local DialogModule = require("./Dialog")
+	function Window:Dialog(DialogConfig)
+		local DialogTable = {
+			Title = DialogConfig.Title or "Dialog",
+			Width = DialogConfig.Width or 320,
+			Content = DialogConfig.Content,
+			Buttons = DialogConfig.Buttons or {},
+
+			TextPadding = 14,
+		}
+		local Dialog = DialogModule.Create(false, "Dialog", Window, Config.WindUI, Window.UIElements.Main.Main)
+
+		Dialog.UIElements.Main.Size = UDim2.new(0, DialogTable.Width, 0, 0)
+
+		local DialogTopColFrame = New("Frame", {
+			Size = UDim2.new(1, 0, 1, 0),
+			AutomaticSize = "Y",
+			BackgroundTransparency = 1,
+			Parent = Dialog.UIElements.Main,
+		}, {
+			New("UIListLayout", {
+				FillDirection = "Vertical",
+				--HorizontalAlignment = "Center",
+				Padding = UDim.new(0, Dialog.UIPadding),
+			}),
+		})
+
+		local DialogTopRowFrame = New("Frame", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = "Y",
+			BackgroundTransparency = 1,
+			Parent = DialogTopColFrame,
+		}, {
+			New("UIListLayout", {
+				FillDirection = "Horizontal",
+				Padding = UDim.new(0, Dialog.UIPadding),
+				VerticalAlignment = "Center",
+			}),
+			New("UIPadding", {
+				PaddingTop = UDim.new(0, DialogTable.TextPadding / 2),
+				PaddingLeft = UDim.new(0, DialogTable.TextPadding / 2),
+				PaddingRight = UDim.new(0, DialogTable.TextPadding / 2),
+			}),
+		})
+
+		local Icon
+		if DialogConfig.Icon then
+			Icon = Creator.Image(
+				DialogConfig.Icon,
+				DialogTable.Title .. ":" .. DialogConfig.Icon,
+				0,
+				Window,
+				"Dialog",
+				true,
+				DialogConfig.IconThemed
+			)
+			Icon.Size = UDim2.new(0, 22, 0, 22)
+			Icon.Parent = DialogTopRowFrame
+		end
+
+		Dialog.UIElements.UIListLayout = New("UIListLayout", {
+			Padding = UDim.new(0, 12),
+			FillDirection = "Vertical",
+			HorizontalAlignment = "Left",
+			VerticalFlex = "SpaceBetween",
+			Parent = Dialog.UIElements.Main,
+		})
+
+		New("UISizeConstraint", {
+			MinSize = Vector2.new(180, 20),
+			MaxSize = Vector2.new(400, math.huge),
+			Parent = Dialog.UIElements.Main,
+		})
+
+		Dialog.UIElements.Title = New("TextLabel", {
+			Text = DialogTable.Title,
+			TextSize = 20,
+			FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
+			TextXAlignment = "Left",
+			TextWrapped = true,
+			RichText = true,
+			Size = UDim2.new(1, Icon and -26 - Dialog.UIPadding or 0, 0, 0),
+			AutomaticSize = "Y",
+			ThemeTag = {
+				TextColor3 = "Text",
+			},
+			BackgroundTransparency = 1,
+			Parent = DialogTopRowFrame,
+		})
+		if DialogTable.Content then
+			local Content = New("TextLabel", {
+				Text = DialogTable.Content,
+				TextSize = 18,
+				TextTransparency = 0.4,
+				TextWrapped = true,
+				RichText = true,
+				FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
+				TextXAlignment = "Left",
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = "Y",
+				LayoutOrder = 2,
+				ThemeTag = {
+					TextColor3 = "Text",
+				},
+				BackgroundTransparency = 1,
+				Parent = DialogTopColFrame,
+			}, {
+				New("UIPadding", {
+					PaddingLeft = UDim.new(0, DialogTable.TextPadding / 2),
+					PaddingRight = UDim.new(0, DialogTable.TextPadding / 2),
+					PaddingBottom = UDim.new(0, DialogTable.TextPadding / 2),
+				}),
+			})
+		end
+
+		local ButtonsLayout = New("UIListLayout", {
+			Padding = UDim.new(0, 6),
+			FillDirection = "Horizontal",
+			HorizontalAlignment = "Center",
+			HorizontalFlex = "Fill",
+		})
+
+		local ButtonsContent = New("Frame", {
+			Size = UDim2.new(1, 0, 0, 36),
+			AutomaticSize = "None",
+			BackgroundTransparency = 1,
+			Parent = Dialog.UIElements.Main,
+			LayoutOrder = 4,
+		}, {
+			ButtonsLayout,
+			-- New("UIPadding", {
+			--     PaddingTop = UDim.new(0, DialogTable.TextPadding/2),
+			--     PaddingLeft = UDim.new(0, DialogTable.TextPadding/2),
+			--     PaddingRight = UDim.new(0, DialogTable.TextPadding/2),
+			--     PaddingBottom = UDim.new(0, DialogTable.TextPadding/2),
+			-- })
+		})
+
+		local Buttons = {}
+
+		for _, Button in next, DialogTable.Buttons do
+			local ButtonFrame =
+				CreateButton(Button.Title, Button.Icon, Button.Callback, Button.Variant, ButtonsContent, Dialog, true)
+			table.insert(Buttons, ButtonFrame)
+			ButtonFrame.Size = UDim2.new(1, 0, 1, 0)
+		end
+
+		local function CheckButtonsOverflow()
+			ButtonsLayout.FillDirection = Enum.FillDirection.Horizontal
+			ButtonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+			ButtonsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+			ButtonsContent.AutomaticSize = Enum.AutomaticSize.None
+
+			for _, button in ipairs(Buttons) do
+				button.Size = UDim2.new(0, 0, 1, 0)
+				button.AutomaticSize = Enum.AutomaticSize.X
+			end
+
+			wait()
+
+			local totalWidth = ButtonsLayout.AbsoluteContentSize.X / Config.WindUI.UIScale
+			local parentWidth = ButtonsContent.AbsoluteSize.X / Config.WindUI.UIScale
+
+			if totalWidth > parentWidth then
+				ButtonsLayout.FillDirection = Enum.FillDirection.Vertical
+				ButtonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+				ButtonsLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+				ButtonsContent.AutomaticSize = Enum.AutomaticSize.Y
+
+				for _, button in ipairs(Buttons) do
+					button.Size = UDim2.new(1, 0, 0, 36)
+					button.AutomaticSize = Enum.AutomaticSize.None
+				end
+			else
+				local availableSpace = parentWidth - totalWidth
+				if availableSpace > 0 then
+					local smallestButton = nil
+					local smallestWidth = math.huge
+
+					for _, button in ipairs(Buttons) do
+						local buttonWidth = button.AbsoluteSize.X / Config.WindUI.UIScale
+						if buttonWidth < smallestWidth then
+							smallestWidth = buttonWidth
+							smallestButton = button
+						end
+					end
+
+					if smallestButton then
+						smallestButton.Size = UDim2.new(0, smallestWidth + availableSpace, 1, 0)
+						smallestButton.AutomaticSize = Enum.AutomaticSize.None
+					end
+				end
+			end
+		end
+
+		-- Creator.AddSignal(Dialog.UIElements.Main:GetPropertyChangedSignal("AbsoluteSize"), CheckButtonsOverflow)
+		-- CheckButtonsOverflow()
+
+		-- wait()
+		Dialog:Open()
+
+		return Dialog
+	end
+
+	local ClickedClose = false
+
+	Window:CreateTopbarButton("Close", "x", function()
+		if not ClickedClose then
+			if not Window.IgnoreAlerts then
+				ClickedClose = true
+				--Window:SetToTheCenter()
+				Window:Dialog({
+					--Icon = "trash-2",
+					Title = Creator.Translate("CLOSE_WINDOW_TITLE", "Close Window"),
+					Content = Creator.Translate(
+						"CLOSE_WINDOW_BODY",
+						"Do you want to close this window? You will not be able to open it again."
+					),
+					Buttons = {
+						{
+							Title = Creator.Translate("CANCEL", "Cancel"),
+							--Icon = "chevron-left",
+							Callback = function()
+								ClickedClose = false
+							end,
+							Variant = "Secondary",
+						},
+						{
+							Title = Creator.Translate("CLOSE_WINDOW_BUTTON", "Close Window"),
+							--Icon = "chevron-down",
+							Callback = function()
+								ClickedClose = false
+								Window:Destroy()
+							end,
+							Variant = "Primary",
+						},
+					},
+				})
+			else
+				Window:Destroy()
+			end
+		end
+	end, (Window.Topbar.ButtonsType == "Default" and 999 or 997), nil, Color3.fromHex("#FF5F57"))
+
+	function Window:Tag(TagConfig)
+		if Window.UIElements.Main.Main.Topbar.Center.Visible == false then
+			Window.UIElements.Main.Main.Topbar.Center.Visible = true
+		end
+		TagConfig.Window = Window
+		return Tag:New(TagConfig, Window.UIElements.Main.Main.Topbar.Center.Holder)
+	end
+
+	local CurResizeInput = Config.WindUI.GenerateGUID()
+
+	local function startResizing(input)
+		if Window.CanResize then
+			isResizing = true
+			FullScreenIcon.Active = true
+			initialSize = Window.UIElements.Main.Size
+			initialInputPosition = input.Position
+			--Tween(FullScreenIcon, 0.12, {ImageTransparency = .65}):Play()
+			--Tween(FullScreenIcon.ImageLabel, 0.12, {ImageTransparency = 0}):Play()
+			Tween(ResizeHandle.ImageLabel, 0.1, { ImageTransparency = 0.35 }):Play()
+
+			Creator.AddSignal(input.Changed, function()
+				if input.UserInputState == Enum.UserInputState.End then
+					if Config.WindUI.CurrentInput and Config.WindUI.CurrentInput ~= CurResizeInput then
+						return
+					end
+
+					Config.WindUI.CurrentInput = nil
+
+					isResizing = false
+					FullScreenIcon.Active = false
+					--Tween(FullScreenIcon, 0.2, {ImageTransparency = 1}):Play()
+					--Tween(FullScreenIcon.ImageLabel, 0.17, {ImageTransparency = 1}):Play()
+					Tween(ResizeHandle.ImageLabel, 0.17, { ImageTransparency = 0.8 }):Play()
+				end
+			end)
+		end
+	end
+
+	Creator.AddSignal(ResizeHandle.InputBegan, function(input)
+		if
+			input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch
+		then
+			if Config.WindUI.CurrentInput and Config.WindUI.CurrentInput ~= CurResizeInput then
+				return
+			end
+			Config.WindUI.CurrentInput = CurResizeInput
+
+			if Window.CanResize then
+				startResizing(input)
+			end
+		end
+	end)
+
+	Creator.AddSignal(UserInputService.InputChanged, function(input)
+		if
+			input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch
+		then
+			if isResizing and Window.CanResize then
+				local delta = input.Position - initialInputPosition
+				local newSize = UDim2.new(0, initialSize.X.Offset + delta.X * 2, 0, initialSize.Y.Offset + delta.Y * 2)
+
+				newSize = UDim2.new(
+					newSize.X.Scale,
+					math.clamp(newSize.X.Offset, Window.MinSize.X, Window.MaxSize.X),
+					newSize.Y.Scale,
+					math.clamp(newSize.Y.Offset, Window.MinSize.Y, Window.MaxSize.Y)
+				)
+
+				Tween(Window.UIElements.Main, 0.08, {
+					Size = newSize,
+				}, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
+
+				Window.Size = newSize
+			end
+		end
+	end)
+
+	Creator.AddSignal(ResizeHandle.MouseEnter, function()
+		if Config.WindUI.CurrentInput and Config.WindUI.CurrentInput ~= CurResizeInput then
+			return
+		end
+		if not isResizing then
+			Tween(ResizeHandle.ImageLabel, 0.1, { ImageTransparency = 0.35 }):Play()
+		end
+	end)
+	Creator.AddSignal(ResizeHandle.MouseLeave, function()
+		if Config.WindUI.CurrentInput and Config.WindUI.CurrentInput ~= CurResizeInput then
+			return
+		end
+		if not isResizing then
+			Tween(ResizeHandle.ImageLabel, 0.17, { ImageTransparency = 0.8 }):Play()
+		end
+	end)
+
+	-- / Double click /
+
+	local LastUpTime = 0
+	local DoubleClickWindow = 0.4
+	local InitialPosition = nil
+	local ClickCount = 0
+
+	function onDoubleClick()
+		Window:SetToTheCenter()
+	end
+
+	Creator.AddSignal(BottomDragFrame.Frame.MouseButton1Up, function()
+		local currentTime = tick()
+		local currentPosition = Window.Position
+
+		ClickCount = ClickCount + 1
+
+		if ClickCount == 1 then
+			LastUpTime = currentTime
+			InitialPosition = currentPosition
+
+			task.spawn(function()
+				task.wait(DoubleClickWindow)
+				if ClickCount == 1 then
+					ClickCount = 0
+					InitialPosition = nil
+				end
+			end)
+		elseif ClickCount == 2 then
+			if currentTime - LastUpTime <= DoubleClickWindow and currentPosition == InitialPosition then
+				onDoubleClick()
+			end
+
+			ClickCount = 0
+			InitialPosition = nil
+			LastUpTime = 0
+		else
+			ClickCount = 1
+			LastUpTime = currentTime
+			InitialPosition = currentPosition
+		end
+	end)
+
+	-- / Search Bar /
+
+	do
+		local SearchBar = require("../search/Init")
+		local IsOpen = false
+
+		local function OpenSearch()
+			if IsOpen then
+				return
+			end
+
+			SearchBar.new(Window.TabModule, Window.UIElements.Main, function()
+				-- OnClose
+				IsOpen = false
+				if Window.Resizable then
+					Window.CanResize = true
+				end
+
+				Tween(FullScreenBlur, 0.1, { ImageTransparency = 1 }):Play()
+				FullScreenBlur.Active = false
+			end)
+			Tween(FullScreenBlur, 0.1, { ImageTransparency = 0.65 }):Play()
+			FullScreenBlur.Active = true
+
+			IsOpen = true
+			Window.CanResize = false
+		end
+
+		-- The search affordance is a small icon next to the title; the field
+		-- itself only exists in the overlay it opens.
+		do
+			local IconFrame =
+				Creator.Image("search", "search", 0, Window.Folder, "WindowSearchIcon", true, true, "WindowTopbarButtonIcon")
+			IconFrame.Size = UDim2.new(0, 15, 0, 15)
+			IconFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+			IconFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+			IconFrame.ImageLabel.ImageTransparency = 0.35
+
+			local Button = New("TextButton", {
+				Size = UDim2.new(0, 20, 0, 20),
+				BackgroundTransparency = 1,
+				Text = "",
+				AutoButtonColor = false,
+				LayoutOrder = 3,
+				Parent = Window.UIElements.Main.Main.Topbar.Left,
+			}, {
+				IconFrame,
+				New("UIScale", {
+					Scale = 1,
+				}),
+			})
+
+			Window.UIElements.SearchButton = Button
+			Window.TopbarTools = Window.TopbarTools or {}
+			Window.TopbarTools.Search = Button
+
+			Creator.AddSignal(Button.MouseButton1Click, OpenSearch)
+			Creator.AddSignal(Button.MouseEnter, function()
+				Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0 }):Play()
+			end)
+			Creator.AddSignal(Button.MouseLeave, function()
+				Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0.35 }):Play()
+			end)
+		end
+
+		if not Window.HideSearchBar then
+			if Window.Topbar.ButtonsType == "Mac" then
+				-- Mac bars carry no title slot: the title block moves into the
+				-- sidebar header, under the traffic lights, beside the mark.
+				local Header = New("Frame", {
+					Size = UDim2.new(1, -Window.UIPadding, 0, Window.SidebarHeaderHeight),
+					Position = UDim2.new(0, Window.UIPadding / 2, 0, 0),
+					BackgroundTransparency = 1,
+					Name = "SidebarHeader",
+					Parent = Window.UIElements.SideBarContainer,
+				})
+
+				if Window.Icon then
+					local HeaderIcon =
+						Creator.Image(Window.Icon, Window.Title, 8, Window.Folder, "Window", false, false)
+					HeaderIcon.Size = UDim2.new(0, 28, 0, 28)
+					HeaderIcon.AnchorPoint = Vector2.new(0, 0.5)
+					HeaderIcon.Position = UDim2.new(0, 4, 0.5, 0)
+					HeaderIcon.Parent = Header
+				end
+
+				local TitleBlock = Window.UIElements.Main.Main.Topbar.Left.Title
+				if TitleBlock then
+					TitleBlock.Parent = Header
+					TitleBlock.AnchorPoint = Vector2.new(0, 0.5)
+					TitleBlock.Position = UDim2.new(0, 42, 0.5, 0)
+					WindowTitle.TextSize = 20
+					if WindowAuthor then
+						WindowAuthor.TextSize = 12
+					end
+				end
+
+				Window.UIElements.Main.Main.Topbar.Left.Visible = false
+
+				local SearchButton = Window.UIElements.SearchButton
+				if SearchButton then
+					SearchButton.Parent = Header
+					SearchButton.Size = UDim2.new(0, 22, 0, 22)
+					SearchButton.AnchorPoint = Vector2.new(1, 0.5)
+					SearchButton.Position = UDim2.new(1, -2, 0.5, 0)
+					local SearchIcon = SearchButton:FindFirstChildWhichIsA("Frame")
+					if SearchIcon then
+						SearchIcon.Size = UDim2.new(0, 16, 0, 16)
+					end
+				end
+			else
+				local SearchLabel = CreateLabel("Search", "search", Window.UIElements.SideBarContainer, true)
+				SearchLabel.Size = UDim2.new(1, -Window.UIPadding / 2, 0, Window.SidebarHeaderHeight)
+				SearchLabel.Position = UDim2.new(0, Window.UIPadding / 2, 0, 0)
+
+				Creator.AddSignal(SearchLabel.MouseButton1Click, OpenSearch)
+			end
+		end
+	end
+
+	-- / TopBar Edit /
+
+	function Window:DisableTopbarButtons(btns)
+		for _, b in next, btns do
+			for _, i in next, Window.TopBarButtons do
+				if i.Name == b then
+					i.Object.Visible = false
+				end
+			end
+		end
+	end
+
+	-- local Bindings = {
+	--     Title = function(v)
+	--         Window:SetTitle(v)
+	--     end,
+	--     Author = function(v)
+	--         Window:SetAuthor(v)
+	--     end,
+	--     Size = function(v)
+	--         Window:SetSize(v)
+	--     end,
+	--     HidePanelBackground  = function(v)
+	--         Window:SetPanelBackground(v)
+	--     end
+	-- }
+
+	-- setmetatable(Window, {
+	--     __newindex = function(t, key, value)
+	--         rawset(t, key, value)
+
+	--         local bind = bindings[key]
+	--         if bind then
+	--             bind(value)
+	--         end
+	--     end
+	-- })
+
+	return Window
+end
