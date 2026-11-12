@@ -13727,6 +13727,9 @@ function PlayerTags:BuildTag(player)
 		AlwaysOnTop = true,
 		LightInfluence = 0,
 		MaxDistance = maxDistance,
+		-- BillboardGui input is off by default: without this the click
+		-- surface exists but never receives the press.
+		Active = true,
 		Parent = head,
 	})
 	-- The scale loop needs the untransformed size, otherwise a shrink compounds
@@ -35782,5 +35785,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome26
+-- enderhub-windui-mac-chrome27
 return __require("src/Init.lua")
