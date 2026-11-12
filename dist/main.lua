@@ -6037,12 +6037,14 @@ __modules["src/elements/Customize.lua"] = function(require)
 			end)
 		end
 
+		-- Two bars meeting at the bottom form "v" (expand); flipped they form
+		-- "^" (collapse). Pointing the same way keeps it reading as one glyph.
 		local function paintChevron()
 			local open = Customize.Open
 			chevronBars[1].Rotation = open and -45 or 45
 			chevronBars[2].Rotation = open and 45 or -45
-			chevronBars[1].Position = UDim2.fromScale(open and 0.5 or 0.38, 0.5)
-			chevronBars[2].Position = UDim2.fromScale(open and 0.5 or 0.62, 0.5)
+			chevronBars[1].Position = UDim2.fromScale(0.42, 0.5)
+			chevronBars[2].Position = UDim2.fromScale(0.58, 0.5)
 		end
 
 		local function setOpen(open)
@@ -36619,5 +36621,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome30
+-- enderhub-windui-mac-chrome31
 return __require("src/Init.lua")
