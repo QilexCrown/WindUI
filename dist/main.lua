@@ -5551,14 +5551,16 @@ __modules["src/elements/Customize.lua"] = function(require)
 
 	local Element = {}
 
-	local SHIRT = Color3.fromRGB(52, 112, 240)
-	local PANTS = Color3.fromRGB(34, 38, 48)
-	local SKIN = Color3.fromRGB(236, 200, 164)
+	local SHIRT = Color3.fromRGB(0, 92, 200)
+	local PANTS = Color3.fromRGB(0, 130, 70)
+	local SKIN = Color3.fromRGB(245, 205, 48)
+	local HAIR = Color3.fromRGB(86, 56, 38)
+	local EYE = Color3.fromRGB(24, 22, 24)
 
 	-- Rig bounds. The camera and the ESP box both read these, so a change here
 	-- moves the preview and the frame together.
 	local FEET_Y = -0.2
-	local HEAD_TOP_Y = 5.1
+	local HEAD_TOP_Y = 5.16
 	local CENTRE_Y = (HEAD_TOP_Y + FEET_Y) * 0.5
 
 	-- Drags are stored in screen pixels, so the same clamp is the useful range
@@ -5583,16 +5585,21 @@ __modules["src/elements/Customize.lua"] = function(require)
 		})
 	end
 
-	-- A blocky R6 rig, built from parts so the preview never waits on an asset
-	-- or on the player's own avatar. Proportions are slimmed from stock R6 so
-	-- the rig's silhouette sits inside the ESP frame instead of spilling past it.
+	-- The classic bacon-hair avatar: yellow blocky R6, brown cap and back hair,
+	-- blue shirt, green legs. Built from parts so the preview never waits on an
+	-- asset or on the player's own character.
 	local function buildRig()
 		local model = Instance.new("WorldModel")
 		model.Name = "PreviewRig"
 		part(model, "Head", Vector3.new(1.3, 1.3, 1.3), CFrame.new(0, 4.45, 0), SKIN)
+		part(model, "HairTop", Vector3.new(1.36, 0.26, 1.36), CFrame.new(0, 5.03, 0), HAIR)
+		part(model, "HairBack", Vector3.new(1.36, 0.62, 0.26), CFrame.new(0, 4.62, 0.58), HAIR)
+		part(model, "EyeL", Vector3.new(0.14, 0.18, 0.04), CFrame.new(-0.22, 4.52, 0.655), EYE)
+		part(model, "EyeR", Vector3.new(0.14, 0.18, 0.04), CFrame.new(0.22, 4.52, 0.655), EYE)
+		part(model, "Mouth", Vector3.new(0.34, 0.07, 0.04), CFrame.new(0, 4.3, 0.655), EYE)
 		part(model, "Torso", Vector3.new(1.5, 2, 0.9), CFrame.new(0, 2.8, 0), SHIRT)
-		part(model, "Left Arm", Vector3.new(0.6, 2, 0.9), CFrame.new(-1.05, 2.8, 0), SHIRT)
-		part(model, "Right Arm", Vector3.new(0.6, 2, 0.9), CFrame.new(1.05, 2.8, 0), SHIRT)
+		part(model, "Left Arm", Vector3.new(0.6, 2, 0.9), CFrame.new(-1.05, 2.8, 0), SKIN)
+		part(model, "Right Arm", Vector3.new(0.6, 2, 0.9), CFrame.new(1.05, 2.8, 0), SKIN)
 		part(model, "Left Leg", Vector3.new(0.7, 2, 0.9), CFrame.new(-0.375, 0.8, 0), PANTS)
 		part(model, "Right Leg", Vector3.new(0.7, 2, 0.9), CFrame.new(0.375, 0.8, 0), PANTS)
 		return model
@@ -36641,5 +36648,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome36
+-- enderhub-windui-mac-chrome37
 return __require("src/Init.lua")
