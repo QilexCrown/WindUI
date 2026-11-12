@@ -5628,10 +5628,10 @@ __modules["src/elements/Customize.lua"] = function(require)
 			Cursor = {
 				Preset = "Star of David",
 				Color = Color3.fromRGB(255, 255, 255),
-				Size = 26,
+				Size = 34,
 				Spin = false,
 				Speed = 60,
-				Thickness = 0.13,
+				Thickness = 0.09,
 				Offset = Vector2.new(0, 0),
 			},
 			CursorDraw = Config.CursorDraw,
@@ -36641,5 +36641,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome35
+-- enderhub-windui-mac-chrome36
 return __require("src/Init.lua")
