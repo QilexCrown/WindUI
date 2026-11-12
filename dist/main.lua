@@ -13420,6 +13420,7 @@ __modules["src/components/PlayerTags.lua"] = function(require)
 ]]
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local Creator = require("src/modules/Creator.lua")
 local New = Creator.New
@@ -13436,6 +13437,13 @@ local DEFAULT_ICON = "rbxassetid://84919257334887"
 -- Same corner and shadow stack as the Dynamic Island: 20 px radius when the
 -- island is collapsed, a 38 px dark glow and a tight contact shadow.
 local DEFAULT_CORNER = 20
+
+-- Tags fade out past this many studs, and shrink as the player walks away so a
+-- crowded server does not turn into a wall of billboards. Both are ceilings the
+-- Config can raise; the defaults match the hub's own spec.
+local DEFAULT_MAX_DISTANCE = 1000
+local DEFAULT_NEAR_DISTANCE = 40
+local DEFAULT_MIN_SCALE = 0.45
 
 -- AccountAge is replicated for every player, so the age chip reads correctly
 -- on someone else's tag. One unit, no label: 3y, 7mo, 12d.
@@ -13481,6 +13489,9 @@ function PlayerTags.New(Config, WindUI)
 		PlayerConns = {},
 		StatConns = {},
 		Alive = true,
+		-- Clicking a tag is opt-in from the hub, on by default here so the fork
+		-- behaves the same whether or not the caller knows about the flag.
+		Clickable = (Config or {}).Clickable ~= false,
 		LocalPlayer = Players.LocalPlayer,
 	}, PlayerTags)
 
@@ -13490,6 +13501,7 @@ function PlayerTags.New(Config, WindUI)
 	self:ResolveColors()
 
 	self:Scan()
+	self:StartScaleLoop()
 	self.PlayerAddedConn = Players.PlayerAdded:Connect(function(player)
 		self:Watch(player)
 	end)
@@ -13587,6 +13599,100 @@ function PlayerTags:BindStat(player)
 	self:UpdateTime(player)
 end
 
+-- Distance handling. A tag at 900 studs is noise, so it shrinks towards
+-- Config.MinScale and stops existing entirely past Config.MaxDistance. Scaling
+-- the billboard's own offset size keeps the text crisp, which a UIScale cannot
+-- do here because the labels live inside a BillboardGui, not a frame.
+function PlayerTags:ApplyScale(player, billboard, distance)
+	local near = self.Config.NearDistance or DEFAULT_NEAR_DISTANCE
+	local far = self.Config.MaxDistance or DEFAULT_MAX_DISTANCE
+	local minScale = self.Config.MinScale or DEFAULT_MIN_SCALE
+
+	local scale = 1
+	if distance and distance > near and far > near then
+		local ratio = math.clamp((distance - near) / (far - near), 0, 1)
+		scale = 1 - (1 - minScale) * ratio
+	end
+
+	local width = billboard:GetAttribute("WindUI_BaseWidth") or 220
+	local height = billboard:GetAttribute("WindUI_BaseHeight") or 84
+	billboard.Size = UDim2.fromOffset(math.floor(width * scale), math.floor(height * scale))
+end
+
+function PlayerTags:StartScaleLoop()
+	if self.ScaleConn then
+		return self
+	end
+	self.ScaleConn = RunService.Heartbeat:Connect(function()
+		if not self.Alive then
+			return
+		end
+		local camera = workspace.CurrentCamera
+		local origin = camera and camera.CFrame.Position
+		for player, billboard in pairs(self.Tags) do
+			local adornee = billboard.Adornee
+			if not (adornee and adornee:IsDescendantOf(workspace)) then
+				continue
+			end
+			local distance = origin and (adornee.Position - origin).Magnitude or 0
+			self:ApplyScale(player, billboard, distance)
+		end
+	end)
+	return self
+end
+
+function PlayerTags:StopScaleLoop()
+	if self.ScaleConn then
+		self.ScaleConn:Disconnect()
+		self.ScaleConn = nil
+	end
+	return self
+end
+
+-- Walks the local character to the tagged player. Server-side teleports are not
+-- available to a client, so this is a CFrame move: fine in games that trust the
+-- client, ignored in games that rubber-band it back.
+function PlayerTags:TeleportTo(player)
+	if not player or player == self.LocalPlayer then
+		return false
+	end
+
+	local targetChar = player.Character
+	local targetRoot = targetChar
+		and (targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Head"))
+	local myChar = self.LocalPlayer.Character
+	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if not (targetRoot and myRoot) then
+		return false
+	end
+
+	-- Land in front of them, facing the same way, so the camera does not spin.
+	local target = targetRoot.CFrame
+	local destination = CFrame.new(target.Position + target.LookVector * -5 + Vector3.new(0, 3, 0), target.Position)
+	myRoot.CFrame = destination
+	myRoot.AssemblyLinearVelocity = Vector3.zero
+	myRoot.AssemblyAngularVelocity = Vector3.zero
+
+	if type(self.Config.OnClick) == "function" then
+		pcall(self.Config.OnClick, player)
+	end
+	return true
+end
+
+-- Turn the click surface on or off for every tag already on screen. Exposed so
+-- the hub can wire it to a toggle without rebuilding the tags.
+function PlayerTags:SetClickable(on)
+	self.Clickable = on ~= false
+	for _, billboard in pairs(self.Tags) do
+		local root = billboard:FindFirstChild("TagRoot")
+		local click = root and root:FindFirstChild("Click")
+		if click then
+			click.Visible = self.Clickable
+		end
+	end
+	return self
+end
+
 function PlayerTags:BuildTag(player)
 	self:DestroyTag(player)
 
@@ -13609,16 +13715,24 @@ function PlayerTags:BuildTag(player)
 	local rankColor = self.RankColors[rankKey] or colors.Text
 	local radius = self.Config.CornerRadius or DEFAULT_CORNER
 
+	local maxDistance = self.Config.MaxDistance or DEFAULT_MAX_DISTANCE
+	local baseWidth = self.Config.Width or 220
+	local baseHeight = self.Config.Height or 84
+
 	local billboard = New("BillboardGui", {
 		Name = "WindUI_PlayerTag",
 		Adornee = head,
-		Size = UDim2.fromOffset(self.Config.Width or 220, self.Config.Height or 84),
+		Size = UDim2.fromOffset(baseWidth, baseHeight),
 		StudsOffset = self.Config.Offset or Vector3.new(0, 3, 0),
 		AlwaysOnTop = true,
 		LightInfluence = 0,
-		MaxDistance = self.Config.MaxDistance or 0,
+		MaxDistance = maxDistance,
 		Parent = head,
 	})
+	-- The scale loop needs the untransformed size, otherwise a shrink compounds
+	-- every frame and the tag collapses to a dot.
+	billboard:SetAttribute("WindUI_BaseWidth", baseWidth)
+	billboard:SetAttribute("WindUI_BaseHeight", baseHeight)
 
 	-- Island shadow stack: a wide dark glow and a tight contact shadow. Both
 	-- are pcall'd because UIShadow is not available on every client build.
@@ -13799,7 +13913,25 @@ function PlayerTags:BuildTag(player)
 		Parent = root,
 	})
 
+	-- Click surface. A transparent button over the whole card, so the tag itself
+	-- is the target: pressing it walks the local player to that person. It sits
+	-- above every label so the rank text cannot swallow the click.
+	local click = New("TextButton", {
+		Name = "Click",
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 10,
+		Visible = self.Clickable,
+		Parent = root,
+	})
+	click.MouseButton1Click:Connect(function()
+		self:TeleportTo(player)
+	end)
+
 	self.Tags[player] = billboard
+	self:ApplyScale(player, billboard, 0)
 	self:UpdateTime(player)
 end
 
@@ -13906,6 +14038,7 @@ end
 
 function PlayerTags:Destroy()
 	self.Alive = false
+	self:StopScaleLoop()
 	if self.PlayerAddedConn then
 		self.PlayerAddedConn:Disconnect()
 	end
