@@ -5557,8 +5557,8 @@ __modules["src/elements/Customize.lua"] = function(require)
 
 	-- Rig bounds. The camera and the ESP box both read these, so a change here
 	-- moves the preview and the frame together.
-	local FEET_Y = -0.25
-	local HEAD_TOP_Y = 5.0
+	local FEET_Y = -0.2
+	local HEAD_TOP_Y = 5.1
 	local CENTRE_Y = (HEAD_TOP_Y + FEET_Y) * 0.5
 
 	-- Drags are stored in screen pixels, so the same clamp is the useful range
@@ -5584,16 +5584,17 @@ __modules["src/elements/Customize.lua"] = function(require)
 	end
 
 	-- A blocky R6 rig, built from parts so the preview never waits on an asset
-	-- or on the player's own avatar.
+	-- or on the player's own avatar. Proportions are slimmed from stock R6 so
+	-- the rig's silhouette sits inside the ESP frame instead of spilling past it.
 	local function buildRig()
 		local model = Instance.new("WorldModel")
 		model.Name = "PreviewRig"
-		part(model, "Head", Vector3.new(1.5, 1.5, 1.5), CFrame.new(0, 4.25, 0), SKIN)
-		part(model, "Torso", Vector3.new(2, 2, 1), CFrame.new(0, 2.75, 0), SHIRT)
-		part(model, "Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.5, 2.75, 0), SHIRT)
-		part(model, "Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.5, 2.75, 0), SHIRT)
-		part(model, "Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.5, 0.75, 0), PANTS)
-		part(model, "Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.5, 0.75, 0), PANTS)
+		part(model, "Head", Vector3.new(1.3, 1.3, 1.3), CFrame.new(0, 4.45, 0), SKIN)
+		part(model, "Torso", Vector3.new(1.5, 2, 0.9), CFrame.new(0, 2.8, 0), SHIRT)
+		part(model, "Left Arm", Vector3.new(0.6, 2, 0.9), CFrame.new(-1.05, 2.8, 0), SHIRT)
+		part(model, "Right Arm", Vector3.new(0.6, 2, 0.9), CFrame.new(1.05, 2.8, 0), SHIRT)
+		part(model, "Left Leg", Vector3.new(0.7, 2, 0.9), CFrame.new(-0.375, 0.8, 0), PANTS)
+		part(model, "Right Leg", Vector3.new(0.7, 2, 0.9), CFrame.new(0.375, 0.8, 0), PANTS)
 		return model
 	end
 
@@ -6333,7 +6334,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 
 			Customize.Angle = (Customize.Angle + delta * 0.35) % (math.pi * 2)
 			local target = Vector3.new(0, CENTRE_Y, 0)
-			local radius = 14
+			local radius = 17
 			local eye = target + Vector3.new(math.sin(Customize.Angle) * radius, 1.1, math.cos(Customize.Angle) * radius)
 			camera.CFrame = CFrame.lookAt(eye, target)
 
@@ -36621,5 +36622,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome32
+-- enderhub-windui-mac-chrome33
 return __require("src/Init.lua")
