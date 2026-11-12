@@ -5642,11 +5642,14 @@ __modules["src/elements/Customize.lua"] = function(require)
 			CursorAngle = 0,
 		}
 
-		for key, value in next, Config.ESP or {} do
-			Customize.ESP[key] = value
+		-- The hub passes its live style tables. Keep the reference instead of
+		-- copying, so a toggle flipped elsewhere shows up in the preview on the
+		-- next frame without a sync call.
+		if type(Config.ESP) == "table" then
+			Customize.ESP = Config.ESP
 		end
-		for key, value in next, Config.Cursor or {} do
-			Customize.Cursor[key] = value
+		if type(Config.Cursor) == "table" then
+			Customize.Cursor = Config.Cursor
 		end
 
 		local Frame = require("src/components/window/Element.lua")({
@@ -36622,5 +36625,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome33
+-- enderhub-windui-mac-chrome34
 return __require("src/Init.lua")
