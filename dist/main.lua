@@ -5592,11 +5592,11 @@ __modules["src/elements/Customize.lua"] = function(require)
 		local model = Instance.new("WorldModel")
 		model.Name = "PreviewRig"
 		part(model, "Head", Vector3.new(1.3, 1.3, 1.3), CFrame.new(0, 4.45, 0), SKIN)
-		part(model, "HairTop", Vector3.new(1.36, 0.26, 1.36), CFrame.new(0, 5.03, 0), HAIR)
-		part(model, "HairBack", Vector3.new(1.36, 0.62, 0.26), CFrame.new(0, 4.62, 0.58), HAIR)
-		part(model, "EyeL", Vector3.new(0.14, 0.18, 0.04), CFrame.new(-0.22, 4.52, 0.655), EYE)
-		part(model, "EyeR", Vector3.new(0.14, 0.18, 0.04), CFrame.new(0.22, 4.52, 0.655), EYE)
-		part(model, "Mouth", Vector3.new(0.34, 0.07, 0.04), CFrame.new(0, 4.3, 0.655), EYE)
+		part(model, "HairTop", Vector3.new(1.38, 0.32, 1.38), CFrame.new(0, 5.0, 0), HAIR)
+		part(model, "HairBack", Vector3.new(1.38, 0.66, 0.28), CFrame.new(0, 4.6, 0.57), HAIR)
+		part(model, "EyeL", Vector3.new(0.18, 0.24, 0.05), CFrame.new(-0.23, 4.52, 0.66), EYE)
+		part(model, "EyeR", Vector3.new(0.18, 0.24, 0.05), CFrame.new(0.23, 4.52, 0.66), EYE)
+		part(model, "Mouth", Vector3.new(0.42, 0.09, 0.05), CFrame.new(0, 4.3, 0.66), EYE)
 		part(model, "Torso", Vector3.new(1.5, 2, 0.9), CFrame.new(0, 2.8, 0), SHIRT)
 		part(model, "Left Arm", Vector3.new(0.6, 2, 0.9), CFrame.new(-1.05, 2.8, 0), SKIN)
 		part(model, "Right Arm", Vector3.new(0.6, 2, 0.9), CFrame.new(1.05, 2.8, 0), SKIN)
@@ -36648,5 +36648,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome37
+-- enderhub-windui-mac-chrome41
 return __require("src/Init.lua")
