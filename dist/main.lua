@@ -5773,7 +5773,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 		camera.FieldOfView = 26
 		camera.Parent = stage
 
-		New("ViewportFrame", {
+		local viewport = New("ViewportFrame", {
 			Name = "Viewport",
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
@@ -5785,7 +5785,6 @@ __modules["src/elements/Customize.lua"] = function(require)
 		}, {
 			buildRig(),
 		})
-
 		local overlay = New("Frame", {
 			Name = "Overlay",
 			Size = UDim2.new(1, 0, 1, 0),
@@ -5915,7 +5914,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 			Name = "CursorStage",
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromOffset(120, 120),
+			Size = UDim2.new(1, -28, 1, -24),
 			BackgroundTransparency = 1,
 			Visible = false,
 			Parent = stage,
@@ -5963,6 +5962,22 @@ __modules["src/elements/Customize.lua"] = function(require)
 				Transparency = 0.55,
 				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 			}),
+		})
+
+		-- The real pointer sits at the stage centre; the artwork rides the drag
+		-- offset away from it, so the dot marks the true cursor hotspot.
+		New("Frame", {
+			Name = "Hotspot",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(5, 5),
+			BackgroundColor3 = HINT,
+			BackgroundTransparency = 0.15,
+			BorderSizePixel = 0,
+			ZIndex = 4,
+			Parent = cursorStage,
+		}, {
+			New("UICorner", { CornerRadius = UDim.new(1, 0) }),
 		})
 
 		-- ============================================================ footer
@@ -6016,6 +6031,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 			Customize.Mode = mode == "Cursor" and "Cursor" or "ESP"
 			paintPills()
 			overlay.Visible = Customize.Mode == "ESP"
+			viewport.Visible = Customize.Mode == "ESP"
 			cursorStage.Visible = Customize.Mode == "Cursor"
 			hint.Text = Customize.Mode == "Cursor" and "Drag the cursor" or "Drag the box or the text"
 			Customize:Refresh()
@@ -36625,5 +36641,5 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome34
+-- enderhub-windui-mac-chrome35
 return __require("src/Init.lua")
