@@ -1,4 +1,4 @@
--- Bundled WindUI fork: src/Init.lua (modules: 73)
+-- Bundled WindUI fork: src/Init.lua (modules: 78)
 local __modules = {}
 local __cache = {}
 local function __require(id)
@@ -619,6 +619,8 @@ local Notified = false
 
 return function(Config)
 	local Window = {
+		IOS26 = Config.IOS26 ~= false,
+		ReducedMotion = Config.ReducedMotion == true,
 		Title = Config.Title or "UI Library",
 		Author = Config.Author,
 		Icon = Config.Icon,
@@ -643,7 +645,7 @@ return function(Config)
 
 		ToggleKey = Config.ToggleKey,
 		ElementsRadius = Config.ElementsRadius,
-		Radius = Config.Radius or 16,
+		Radius = Config.Radius or (Config.IOS26 ~= false and 26 or 16),
 		Transparent = Config.Transparent or false,
 		HideSearchBar = Config.HideSearchBar ~= false,
 		ScrollBarEnabled = Config.ScrollBarEnabled or false,
@@ -701,7 +703,7 @@ return function(Config)
 
 	Window.ElementConfig = {
 		UIPadding = (Window.NewElements and 10 or 13),
-		UICorner = Window.ElementsRadius or (Window.NewElements and 23 or 16),
+		UICorner = Window.ElementsRadius or (Window.IOS26 and 18 or (Window.NewElements and 23 or 16)),
 	}
 
 	local WindowSize = Window.Size or UDim2.new(0, 580, 0, 460)
@@ -1748,9 +1750,7 @@ return function(Config)
 			end
 		end)
 
-		Creator.AddSignal(Button.MouseButton1Down, function()
-			Tween(Button.UIScale, 0.2, { Scale = 0.9 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
-		end)
+		require("src/components/PressMotion.lua").Bind(Button, Window.ReducedMotion, Button.UIScale)
 
 		Creator.AddSignal(Button.MouseLeave, function()
 			if Window.Topbar.ButtonsType == "Default" then
@@ -1776,9 +1776,7 @@ return function(Config)
 			end
 		end)
 
-		Creator.AddSignal(Button.InputEnded, function()
-			Tween(Button.UIScale, 0.2, { Scale = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut):Play()
-		end)
+
 
 		return Button
 	end
@@ -1822,12 +1820,8 @@ return function(Config)
 		Creator.AddSignal(Button.MouseLeave, function()
 			Tween(IconFrame.ImageLabel, 0.1, { ImageTransparency = 0.35 }):Play()
 		end)
-		Creator.AddSignal(Button.MouseButton1Down, function()
-			Tween(Button.UIScale, 0.2, { Scale = 0.9 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
-		end)
-		Creator.AddSignal(Button.InputEnded, function()
-			Tween(Button.UIScale, 0.2, { Scale = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut):Play()
-		end)
+		require("src/components/PressMotion.lua").Bind(Button, Window.ReducedMotion, Button.UIScale)
+
 
 		return Button
 	end
@@ -3435,7 +3429,9 @@ return function(Config)
 			Window.UIElements.Main.Main.Topbar.Center.Visible = true
 		end
 		TagConfig.Window = Window
-		return Tag:New(TagConfig, Window.UIElements.Main.Main.Topbar.Center.Holder)
+		local tag = Tag:New(TagConfig, Window.UIElements.Main.Main.Topbar.Center.Holder)
+		if Window.TagDock then Window.TagDock:Add(tag) end
+		return tag
 	end
 
 	local CurResizeInput = Config.WindUI.GenerateGUID()
@@ -3727,6 +3723,7 @@ return function(Config)
 	--     end
 	-- })
 
+	require("src/components/IOS26.lua").Attach(Window, Config)
 	return Window
 end
 end
@@ -5299,20 +5296,7 @@ function TabModule:SelectTab(TabIndex)
 			Creator.Tween(TabModule.Tabs[TabIndex].UIElements.Main.Glass, 0.15, { ImageTransparency = 0.72 }):Play()
 		end
 
-		task.spawn(function()
-			for _, ContainerObject in next, TabModule.Containers do
-				ContainerObject.AnchorPoint = Vector2.new(0, 0.05)
-				ContainerObject.Visible = false
-			end
-			TabModule.Containers[TabIndex].Visible = true
-			local TweenService = game:GetService("TweenService")
-
-			local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-			local tween = TweenService:Create(TabModule.Containers[TabIndex], tweenInfo, {
-				AnchorPoint = Vector2.new(0, 0),
-			})
-			tween:Play()
-		end)
+		require("src/components/TabMotion.lua").Select(TabModule.Containers, TabIndex, Window.ReducedMotion)
 
 		TabModule.OnChangeFunc(TabIndex)
 	end
@@ -13707,177 +13691,150 @@ return ConfigManager
 end
 
 __modules["src/components/ui/Tag.lua"] = function(require)
-local Tag = {}
-
 local Creator = require("src/modules/Creator.lua")
-local New = Creator.New
-local Tween = Creator.Tween
-
-function Tag:New(TagConfig, Parent)
-	local TagModule = {
-		Title = TagConfig.Title or "Tag",
-		Icon = TagConfig.Icon,
-		Color = TagConfig.Color or Color3.fromHex("#315dff"),
-		Radius = TagConfig.Radius or 999,
-		Border = TagConfig.Border or false,
-
-		TagFrame = nil,
-		Height = 26,
-		Padding = 10,
-		TextSize = 14,
-		IconSize = 16,
-	}
-
-	local TagIcon
-	if TagModule.Icon then
-		TagIcon = Creator.Image(TagModule.Icon, TagModule.Icon, 0, TagConfig.Window, "Tag", false)
-
-		TagIcon.Size = UDim2.new(0, TagModule.IconSize, 0, TagModule.IconSize)
-		TagIcon.ImageLabel.ImageColor3 = typeof(TagModule.Color) == "Color3"
-				and Creator.GetTextColorForHSB(TagModule.Color)
-			or typeof(TagModule.Color) == "string"
-				and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme)))
-	end
-
-	local TagTitle = New("TextLabel", {
-		BackgroundTransparency = 1,
-		AutomaticSize = "XY",
-		TextSize = TagModule.TextSize,
-		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
-		Text = TagModule.Title,
-		-- A tag with no Color used to evaluate to `false` here and the property
-		-- write threw, killing the whole window build on the version tag.
-		TextColor3 = typeof(TagModule.Color) == "Color3" and Creator.GetTextColorForHSB(TagModule.Color) or typeof(
-			TagModule.Color
-		) == "string" and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme)))
-			or Color3.new(1, 1, 1),
-		LayoutOrder = 9999,
-	})
-
-	local BackgroundGradient
-
-	if typeof(TagModule.Color) == "table" then
-		BackgroundGradient = New("UIGradient")
-		for key, value in next, TagModule.Color do
-			BackgroundGradient[key] = value
-		end
-
-		TagTitle.TextColor3 = Creator.GetTextColorForHSB(Creator.GetAverageColor(BackgroundGradient))
-		if TagIcon then
-			TagIcon.ImageLabel.ImageColor3 = Creator.GetTextColorForHSB(Creator.GetAverageColor(BackgroundGradient))
-		end
-	end
-
-	local TagFrame = Creator.NewRoundFrame(TagModule.Radius, "Squircle", {
-		AutomaticSize = "X",
-		Size = UDim2.new(0, 0, 0, TagModule.Height),
-		Parent = Parent,
-		ImageColor3 = typeof(TagModule.Color) == "Color3" and TagModule.Color
-			or typeof(TagModule.Color) == "table" and Color3.new(1, 1, 1)
-			or nil,
-		ThemeTag = typeof(TagModule.Color) == "string" and {
-			ImageColor3 = TagModule.Color,
-		},
-	}, {
-		BackgroundGradient,
-		Creator.NewRoundFrame(TagModule.Radius + 1, "SquircleGlass", {
-			Size = UDim2.new(1, 1, 1, 1),
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.new(0.5, 0, 0.5, 0),
-			ThemeTag = {
-				ImageColor3 = "White",
-			},
-			ImageTransparency = 0.75,
-		}),
-		New("Frame", {
-			Size = UDim2.new(0, 0, 1, 0),
-			AutomaticSize = "X",
-			Name = "Content",
-			BackgroundTransparency = 1,
-		}, {
-			TagIcon,
-			TagTitle,
-			New("UIPadding", {
-				PaddingLeft = UDim.new(0, TagModule.Padding),
-				PaddingRight = UDim.new(0, TagModule.Padding),
-			}),
-			New("UIListLayout", {
-				FillDirection = "Horizontal",
-				VerticalAlignment = "Center",
-				Padding = UDim.new(0, TagModule.Padding / 1.5),
-			}),
-		}),
-	})
-
-	function TagModule:SetTitle(text)
-		TagModule.Title = text
-		TagTitle.Text = text
-
-		return TagModule
-	end
-
-	function TagModule:SetColor(color)
-		TagModule.Color = color
-		if typeof(color) == "table" then
-			local avgColor = Creator.GetAverageColor(color)
-			Tween(TagTitle, 0.06, { TextColor3 = Creator.GetTextColorForHSB(avgColor) }):Play()
-			local gradient = TagFrame:FindFirstChildOfClass("UIGradient") or New("UIGradient", { Parent = TagFrame })
-			for k, v in next, color do
-				gradient[k] = v
-			end
-			Tween(TagFrame, 0.06, { ImageColor3 = Color3.new(1, 1, 1) }):Play()
-		else
-			if BackgroundGradient then
-				BackgroundGradient:Destroy()
-			end
-			Tween(TagTitle, 0.06, { TextColor3 = Creator.GetTextColorForHSB(color) }):Play()
-			if TagIcon then
-				Tween(TagIcon.ImageLabel, 0.06, { ImageColor3 = Creator.GetTextColorForHSB(color) }):Play()
-			end
-			Tween(TagFrame, 0.06, { ImageColor3 = color }):Play()
-		end
-
-		return TagModule
-	end
-
-	function TagModule:SetIcon(icon)
-		TagModule.Icon = icon
-
-		if TagIcon then
-			TagIcon:Destroy()
-			TagIcon = nil
-		end
-
-		if icon then
-			TagIcon = Creator.Image(icon, icon, 0, TagConfig.Window, "Tag", false)
-
-			TagIcon.Size = UDim2.new(0, TagModule.IconSize, 0, TagModule.IconSize)
-			TagIcon.Parent = TagFrame:FindFirstChild("Content")
-
-			if typeof(TagModule.Color) == "Color3" then
-				TagIcon.ImageLabel.ImageColor3 = Creator.GetTextColorForHSB(TagModule.Color)
-			elseif typeof(TagModule.Color) == "table" then
-				TagIcon.ImageLabel.ImageColor3 = Creator.GetTextColorForHSB(Creator.GetAverageColor(BackgroundGradient))
-			end
-		end
-		return TagModule
-	end
-
-	function TagModule:Destroy()
-		TagFrame:Destroy()
-		return TagModule
-	end
-
-	Creator:OnThemeChange(function(NewTheme, OldTheme)
-		TagTitle.TextColor3 = Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme))
-		TagIcon.ImageLabel.ImageColor3 =
-			Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme))
-	end)
-
-	return TagModule
+local TextService = game:GetService("TextService")
+local Tag = {}
+function Tag:New(config, parent)
+    config = config or {}
+    local glass = config.Style == "Glass" or (config.Style == nil and config.Window and config.Window.IOS26)
+    local self = {Title = config.Title or "Tag", Icon = config.Icon, Color = config.Color or Color3.fromHex("#315dff"),
+        Height = 26, Priority = config.Priority or 0, CompactTitle = config.CompactTitle, Destroyed = false}
+    local connections, icon, gradient, foreground = {}, nil, nil, Color3.new(1, 1, 1)
+    local compact = false
+    local frame = Creator.NewRoundFrame(13, "Squircle", {
+        Name = glass and "IOS26Tag" or "Tag", Parent = parent,
+        Size = UDim2.new(0, 80, 0, self.Height),
+        AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
+        ImageTransparency = glass and 0.90 or 0,
+        ThemeTag = glass and {ImageColor3 = "Text"} or nil,
+    }, {
+        Creator.NewRoundFrame(13, "SquircleOutline", {
+            Size = UDim2.new(1, 0, 1, 0), ImageTransparency = glass and 0.83 or 0.88,
+            ThemeTag = {ImageColor3 = "Text"}, Name = "Bezel",
+        }),
+    })
+    self.TagFrame, self.Frame = frame, frame
+    local title = Creator.New("TextLabel", {
+        Name = "Title", Parent = frame, Text = self.Title,
+        FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium), TextSize = 12,
+        BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Center,
+        TextTruncate = Enum.TextTruncate.AtEnd, TextWrapped = false,
+        Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0),
+        ThemeTag = glass and {TextColor3 = "Text"} or nil,
+    })
+    self.Title = title.Text
+    local compactLabel
+    if self.CompactTitle then
+        compactLabel = Creator.New("TextLabel", {
+            Name = "CompactTitle", Parent = frame, Text = self.CompactTitle,
+            FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium), TextSize = 12,
+            BackgroundTransparency = 1, TextTruncate = Enum.TextTruncate.AtEnd,
+            Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0), Visible = false,
+            ThemeTag = glass and {TextColor3 = "Text"} or nil,
+        })
+        self.CompactTitle = compactLabel.Text
+    end
+    local function measure(text)
+        return TextService:GetTextSize(tostring(text or ""), 12, Enum.Font.GothamMedium, Vector2.new(10000, 26)).X
+    end
+    local function refreshMetrics()
+        self.Width = math.max(32, math.min(144, math.ceil(measure(self.Title)) + (icon and 40 or 20)))
+        self.CompactWidth = icon and 30 or self.CompactTitle and math.max(32, math.ceil(measure(self.CompactTitle)) + 20) or self.Width
+    end
+    local function applyColor()
+        if gradient then gradient:Destroy(); gradient = nil end
+        if glass then return end
+        local color = self.Color
+        if typeof(color) == "string" then color = Creator.GetThemeProperty(color, Creator.Theme) end
+        if typeof(color) == "table" then
+            gradient = Creator.New("UIGradient", {Parent = frame})
+            for key, value in pairs(color) do gradient[key] = value end
+            frame.ImageColor3 = Color3.new(1, 1, 1)
+            color = Creator.GetAverageColor(gradient)
+        else frame.ImageColor3 = color end
+        foreground = Creator.GetTextColorForHSB(color)
+        title.TextColor3 = foreground
+        if compactLabel then compactLabel.TextColor3 = foreground end
+        if icon then icon.ImageLabel.ImageColor3 = foreground end
+    end
+    function self:GetMetrics()
+        return {Width = self.Width, CompactWidth = self.CompactWidth, Priority = self.Priority}
+    end
+    function self:SetLayout(state)
+        if self.Destroyed then return self end
+        compact = state.Compact
+        frame.Visible = state.Visible
+        frame.Size = UDim2.new(0, state.Width, 0, self.Height)
+        frame.Position = UDim2.new(0, state.X or 0, 0.5, 0)
+        local inset = icon and not compact and 30 or 10
+        title.Position = UDim2.new(0, inset, 0, 0)
+        title.Size = UDim2.new(1, -inset - 10, 1, 0)
+        title.Visible = not (compact and (icon ~= nil or compactLabel ~= nil))
+        if compactLabel then compactLabel.Visible = compact and icon == nil end
+        if icon then
+            icon.AnchorPoint = Vector2.new(compact and 0.5 or 0, 0.5)
+            icon.Position = UDim2.new(compact and 0.5 or 0, compact and 0 or 10, 0.5, 0)
+        end
+        return self
+    end
+    local function changed()
+        refreshMetrics()
+        if self.OnLayoutChanged then self.OnLayoutChanged()
+        else self:SetLayout({Width = self.Width, Compact = false, Visible = true}) end
+    end
+    function self:SetTitle(text)
+        self.Title = tostring(text or "")
+        title.Text = self.Title
+        changed()
+        return self
+    end
+    function self:SetColor(color)
+        self.Color = color
+        applyColor()
+        return self
+    end
+    function self:SetIcon(value)
+        self.Icon = value
+        if icon then icon:Destroy(); icon = nil end
+        if value then
+            icon = Creator.Image(value, value, 0, config.Window, "Tag", false)
+            icon.Size, icon.Parent = UDim2.new(0, 14, 0, 14), frame
+            if glass then Creator.AddThemeObject(icon.ImageLabel, {ImageColor3 = "Text"})
+            else icon.ImageLabel.ImageColor3 = foreground end
+        end
+        changed()
+        return self
+    end
+    local function cleanup()
+        if self.Destroyed then return end
+        self.Destroyed = true
+        for _, connection in ipairs(connections) do connection:Disconnect() end
+        connections = {}
+        if self.OnDestroyed then self.OnDestroyed() end
+        self.OnLayoutChanged, self.OnDestroyed = nil, nil
+    end
+    function self:Destroy()
+        if not self.Destroyed then frame:Destroy() end
+        return self
+    end
+    self:SetIcon(config.Icon)
+    applyColor()
+    connections[#connections + 1] = title:GetPropertyChangedSignal("Text"):Connect(function()
+        if self.Destroyed then return end
+        self.Title = title.Text; changed()
+    end)
+    if compactLabel then
+        connections[#connections + 1] = compactLabel:GetPropertyChangedSignal("Text"):Connect(function()
+            if self.Destroyed then return end
+            self.CompactTitle = compactLabel.Text; changed()
+        end)
+    end
+    connections[#connections + 1] = frame.Destroying:Connect(cleanup)
+    connections[#connections + 1] = Creator:OnThemeChange(function() if not self.Destroyed then applyColor() end end)
+    return self
 end
-
 return Tag
+
 end
 
 __modules["src/components/ui/ScrollSlider.lua"] = function(require)
@@ -14175,6 +14132,7 @@ function Button.New(Title, Icon, Callback, Variant, Parent, Dialog, FullRounded,
 		end
 	end)
 
+	require("src/components/PressMotion.lua").Bind(ButtonFrame)
 	return ButtonFrame
 end
 
@@ -37367,5 +37325,202 @@ return InfoCard
 
 end
 
--- enderhub-windui-mac-chrome43-info
+__modules["src/components/ToolbarLayout.lua"] = function(require)
+-- Pure logical-pixel layout. Lower priorities compact and disappear first.
+local Layout = {}
+local function finite(value, fallback)
+    return type(value) == 'number' and value == value and math.abs(value) < math.huge and value or fallback
+end
+function Layout.Calculate(available, entries)
+    available = math.max(0, finite(available, 0))
+    local states, order = {}, {}
+    local function total()
+        local width, count = 0, 0
+        for _, item in ipairs(states) do
+            if item.Visible then width = width + item.Width; count = count + 1 end
+        end
+        return width + math.max(0, count - 1) * 6
+    end
+    for index, entry in ipairs(entries) do
+        local width = math.max(28, math.min(144, finite(entry.Width, 28)))
+        states[index] = {Width = width, Compact = false, Visible = true,
+            CompactWidth = math.max(28, math.min(width, finite(entry.CompactWidth, width)))}
+        order[index] = index
+    end
+    table.sort(order, function(a, b)
+        local pa, pb = finite(entries[a].Priority, 0), finite(entries[b].Priority, 0)
+        return pa == pb and a > b or pa < pb
+    end)
+    for _, index in ipairs(order) do
+        if total() <= available then break end
+        local item = states[index]
+        if item.CompactWidth < item.Width then item.Width = item.CompactWidth; item.Compact = true end
+    end
+    for _, index in ipairs(order) do
+        if total() <= available then break end
+        states[index].Visible = false
+    end
+    local x = math.max(0, available - total())
+    for _, item in ipairs(states) do
+        item.X = x
+        if item.Visible then x = x + item.Width + 6 end
+    end
+    return states
+end
+return Layout
+
+end
+
+__modules["src/components/ToolbarDock.lua"] = function(require)
+local Layout = require("src/components/ToolbarLayout.lua")
+local Dock = {}
+function Dock.New(parent, windui)
+    local self = {Tags = {}, Connections = {}, Destroyed = false}
+    local list = parent:FindFirstChildOfClass('UIListLayout')
+    if list then list:Destroy() end
+    parent.ClipsDescendants = true
+    parent.ScrollingEnabled = false
+    parent.AutomaticCanvasSize = Enum.AutomaticSize.None
+    parent.CanvasSize = UDim2.new(0, 0, 0, 0)
+    function self:Layout()
+        if self.Destroyed then return end
+        local entries = {}
+        for i, tag in ipairs(self.Tags) do entries[i] = tag:GetMetrics() end
+        local scale = math.max(0.1, tonumber(windui.UIScale) or 1)
+        local states = Layout.Calculate(math.max(0, parent.AbsoluteSize.X / scale - 2), entries)
+        for i, state in ipairs(states) do self.Tags[i]:SetLayout(state) end
+    end
+    function self:Add(tag)
+        table.insert(self.Tags, tag)
+        tag.OnLayoutChanged = function() self:Layout() end
+        tag.OnDestroyed = function()
+            for i, item in ipairs(self.Tags) do
+                if item == tag then table.remove(self.Tags, i); break end
+            end
+            self:Layout()
+        end
+        self:Layout()
+    end
+    function self:Destroy()
+        if self.Destroyed then return end
+        self.Destroyed = true
+        for _, connection in ipairs(self.Connections) do connection:Disconnect() end
+        for _, tag in ipairs(self.Tags) do tag.OnLayoutChanged = nil; tag.OnDestroyed = nil end
+        self.Tags, self.Connections = {}, {}
+    end
+    self.Connections[1] = parent:GetPropertyChangedSignal('AbsoluteSize'):Connect(function() self:Layout() end)
+    self.Connections[2] = parent.Destroying:Connect(function() self:Destroy() end)
+    return self
+end
+return Dock
+
+end
+
+__modules["src/components/PressMotion.lua"] = function(require)
+-- A finite, local press. No render loop and no changes to Creator.Tween.
+local Creator = require("src/modules/Creator.lua")
+local Motion = {}
+function Motion.Bind(button, reduced, ownedScale)
+    local scale = ownedScale or button:FindFirstChildOfClass('UIScale')
+    if (scale and not ownedScale) or reduced then return end
+    -- Reuse is explicit, after replacing that control's previous motion owner.
+    scale = scale or Creator.New('UIScale', {Parent = button, Scale = 1})
+    local connections, current, destroyed, pressed = {}, nil, false, false
+    local function animate(value, duration)
+        if destroyed then return end
+        if current then current:Cancel() end
+        if Motion.Reduced then scale.Scale = 1; current = nil; return end
+        current = Creator.Tween(scale, duration, {Scale = value}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        current:Play()
+    end
+    local function bind(event, callback) connections[#connections + 1] = event:Connect(callback) end
+    local function isPress(input)
+        return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+            or input.KeyCode == Enum.KeyCode.ButtonA or input.KeyCode == Enum.KeyCode.Return
+    end
+    bind(button.InputBegan, function(input)
+        if isPress(input) then
+            pressed = true; animate(0.97, 0.10)
+        end
+    end)
+    bind(button.InputEnded, function(input)
+        if pressed and isPress(input) then pressed = false; animate(1, 0.22) end
+    end)
+    bind(button.MouseLeave, function() pressed = false; animate(1, 0.18) end)
+    bind(button.SelectionLost, function() pressed = false; animate(1, 0.18) end)
+    bind(button.Destroying, function()
+        destroyed = true
+        if current then current:Cancel(); current = nil end
+        for _, connection in ipairs(connections) do connection:Disconnect() end
+        connections = {}
+    end)
+end
+return Motion
+
+end
+
+__modules["src/components/TabMotion.lua"] = function(require)
+local Creator = require("src/modules/Creator.lua")
+local Motion = {Active = setmetatable({}, {__mode = 'k'})}
+function Motion.Select(containers, selected, reduced)
+    for index, container in pairs(containers) do
+        local active = Motion.Active[container]
+        if active then
+            active.Tween:Cancel()
+            active.Connection:Disconnect()
+            Motion.Active[container] = nil
+        end
+        container.Visible = index == selected
+        container.AnchorPoint = Vector2.new(0, 0)
+    end
+    local target = containers[selected]
+    if not target or reduced then return end
+    target.AnchorPoint = Vector2.new(0, 0.012)
+    local tween = Creator.Tween(target, 0.24, {AnchorPoint = Vector2.new(0, 0)}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+    local entry = {Tween = tween}
+    entry.Connection = target.Destroying:Connect(function()
+        tween:Cancel(); entry.Connection:Disconnect(); Motion.Active[target] = nil
+    end)
+    Motion.Active[target] = entry
+    tween.Completed:Once(function()
+        if Motion.Active[target] == entry then
+            entry.Connection:Disconnect(); Motion.Active[target] = nil
+        end
+    end)
+    tween:Play()
+end
+return Motion
+
+end
+
+__modules["src/components/IOS26.lua"] = function(require)
+-- Native Roblox approximation of the iOS material hierarchy.
+-- Chrome gets a single quiet translucent surface; content stays readable.
+local Creator = require("src/modules/Creator.lua")
+local Dock = require("src/components/ToolbarDock.lua")
+local Motion = require("src/components/PressMotion.lua")
+local IOS26 = {}
+function IOS26.Attach(window, config)
+    Motion.Reduced = config.ReducedMotion == true
+    if not window.IOS26 then return end
+    local topbar = window.UIElements.Main.Main.Topbar
+    window.TagDock = Dock.New(topbar.Center.Holder, config.WindUI)
+    local material = Creator.NewRoundFrame(18, 'Squircle', {
+        Name = 'IOS26Toolbar', Parent = topbar,
+        Size = UDim2.new(1, -12, 1, -8), Position = UDim2.new(0, 6, 0, 4),
+        ImageTransparency = 0.94, ZIndex = 0,
+        ThemeTag = {ImageColor3 = 'Text'},
+    }, {
+        Creator.NewRoundFrame(18, 'SquircleOutline', {
+            Name = 'Bezel', Size = UDim2.new(1, 0, 1, 0),
+            ImageTransparency = 0.88, ThemeTag = {ImageColor3 = 'Text'},
+        }),
+    })
+    window.UIElements.IOS26Toolbar = material
+end
+return IOS26
+
+end
+
+-- enderhub-windui-ios26-46
 return __require("src/Init.lua")
