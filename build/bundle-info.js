@@ -6,7 +6,7 @@ const path = require('node:path');
 const fork = path.resolve(__dirname, '..');
 const file = path.join(fork, 'build/enderhub-base.lua');
 let bundle = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
-const moduleIds = ['src/components/InfoCardLayout.lua', 'src/components/InfoCard.lua'];
+const moduleIds = ['src/components/InfoCardLayout.lua', 'src/components/InfoCard.lua', 'src/components/SidebarRail.lua'];
 for (const id of moduleIds) {
     const source = fs.readFileSync(path.join(fork, id), 'utf8').replace(/\r\n/g, '\n');
     const chunk = `__modules[${JSON.stringify(id)}] = function(require)\n` + source.replace(
@@ -27,6 +27,7 @@ for (const id of moduleIds) {
         bundle = bundle.slice(0, tail) + '\n' + chunk + bundle.slice(tail);
     }
 }
+bundle = require('./sidebar-rail')(bundle);
 if (!bundle.includes('function WindUI:InfoCard(Config)')) {
     const marker = 'function WindUI:PlayerTags(Config)';
     if (bundle.split(marker).length !== 2) throw Error('Ambiguous Init module');
@@ -37,7 +38,7 @@ if (!bundle.includes('function WindUI:InfoCredits(Config)')) {
     bundle = bundle.replace(marker, 'function WindUI:InfoCredits(Config)\n\treturn require("src/components/InfoCard.lua").Credits(Config)\nend\n\nfunction WindUI:InfoFeedback(Config)\n\treturn require("src/components/InfoCard.lua").Feedback(Config)\nend\n\n' + marker);
 }
 bundle = bundle.replace(/-- enderhub-windui-[^\n]+\nreturn __require\("src\/Init.lua"\)/,
-    '-- enderhub-windui-mac-chrome43-info\nreturn __require("src/Init.lua")');
+    '-- enderhub-windui-mac-chrome47-rail\nreturn __require("src/Init.lua")');
 const count = [...bundle.matchAll(/^__modules\[/gm)].length;
 bundle = bundle.replace(/\(modules: \d+\)/, `(modules: ${count})`);
 fs.writeFileSync(path.join(fork, 'dist/main.lua'), bundle);

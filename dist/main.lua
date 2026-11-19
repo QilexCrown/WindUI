@@ -1,4 +1,4 @@
--- Bundled WindUI fork: src/Init.lua (modules: 73)
+-- Bundled WindUI fork: src/Init.lua (modules: 74)
 local __modules = {}
 local __cache = {}
 local function __require(id)
@@ -1589,7 +1589,7 @@ return function(Config)
 		local LeftWidth = Topbar.Left.AbsoluteSize.X / UIScale
 
 		if Window.Topbar.ButtonsType == "Mac" then
-			local offset = (Window.SideBarVisible and Window.SideBarWidth or 0) + Window.UIPadding
+			local offset = (Window.SideBarVisible and Window.SideBarWidth or 52) + Window.UIPadding
 			Topbar.Center.Position = UDim2.new(0, offset, 0.5, 0)
 			Topbar.Center.Size = UDim2.new(1, -offset - Window.UIPadding, 1, 0)
 			return
@@ -1836,13 +1836,14 @@ return function(Config)
 		local function SetSidebarVisible(visible)
 			Window.SideBarVisible = visible
 			Window.UIElements.SideBarContainer.Visible = visible
+			if Window.IconRail then Window.IconRail.Frame.Visible = not visible; Window.IconRail:Sync() end
 			-- The bar keeps every control and tag when the sidebar folds away;
 			-- only the panel (and its user card) goes.
 			if UserIcon then
 				UserIcon.Visible = visible and Window.User.Enabled or false
 			end
 			Tween(Window.UIElements.MainBar, 0.25, {
-				Size = UDim2.new(1, visible and -Window.SideBarWidth or 0, 1, -Window.Topbar.Height),
+				Size = UDim2.new(1, visible and -Window.SideBarWidth or -52, 1, -Window.Topbar.Height),
 			}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
 			UpdateTopbarCenter()
 		end
@@ -3727,6 +3728,7 @@ return function(Config)
 	--     end
 	-- })
 
+	require("src/components/SidebarRail.lua").Attach(Window)
 	return Window
 end
 end
@@ -5239,6 +5241,7 @@ function TabModule.New(Config, UIScale)
 		end)
 	end)
 
+	if Window.IconRail then Window.IconRail:Sync() end
 	return Tab
 end
 
@@ -5314,6 +5317,7 @@ function TabModule:SelectTab(TabIndex)
 			tween:Play()
 		end)
 
+		if Window.IconRail then Window.IconRail:Refresh() end
 		TabModule.OnChangeFunc(TabIndex)
 	end
 end
@@ -37367,5 +37371,70 @@ return InfoCard
 
 end
 
--- enderhub-windui-mac-chrome43-info
+__modules["src/components/SidebarRail.lua"] = function(require)
+local Creator = require("src/modules/Creator.lua")
+local Rail = {Width = 52}
+function Rail.Attach(window)
+    local self = {Buttons = {}, Connections = {}}
+    local root = Creator.New("ScrollingFrame", {
+        Name = "CollapsedTabRail", Parent = window.UIElements.Main.Main,
+        Size = UDim2.new(0, Rail.Width, 1, -window.Topbar.Height),
+        Position = UDim2.new(0, 0, 0, window.Topbar.Height),
+        BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+        CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y, Visible = false,
+    }, {
+        Creator.New("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder,
+            HorizontalAlignment = Enum.HorizontalAlignment.Center}),
+        Creator.New("UIPadding", {PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 8)}),
+    })
+    self.Frame = root
+    function self:Refresh()
+        local module = window.TabModule
+        if not module then return end
+        for index, button in pairs(self.Buttons) do
+            button.ImageTransparency = module.SelectedTab == index and 0.90 or 1
+        end
+    end
+    function self:Sync()
+        local module = window.TabModule
+        if not module then return end
+        for index, tab in ipairs(module.Tabs) do
+            if not self.Buttons[index] then
+                local button = Creator.NewRoundFrame(12, "Squircle", {
+                    Name = "RailTab" .. index, Parent = root, Size = UDim2.new(0, 38, 0, 38),
+                    LayoutOrder = index, ImageTransparency = 1, ThemeTag = {ImageColor3 = "Text"},
+                }, nil, true)
+                if tab.Icon then
+                    local icon = Creator.Image(tab.Icon, tab.Icon, 0, window.Folder, "Tab", true, tab.IconThemed, "TabIcon")
+                    icon.Size = UDim2.new(0, 18, 0, 18)
+                    icon.AnchorPoint = Vector2.new(0.5, 0.5)
+                    icon.Position = UDim2.new(0.5, 0, 0.5, 0)
+                    icon.Parent = button
+                    icon.ImageLabel.ImageTransparency = tab.Locked and 0.7 or 0.1
+                else
+                    Creator.New("TextLabel", {Parent = button, BackgroundTransparency = 1,
+                        Size = UDim2.new(1, 0, 1, 0), Text = tostring(index), TextSize = 14,
+                        ThemeTag = {TextColor3 = "Text"}})
+                end
+                self.Buttons[index] = button
+                self.Connections[#self.Connections + 1] = button.MouseButton1Click:Connect(function()
+                    module:SelectTab(index)
+                end)
+            end
+        end
+        self:Refresh()
+    end
+    root.Destroying:Once(function()
+        for _, connection in ipairs(self.Connections) do connection:Disconnect() end
+        self.Connections, self.Buttons = {}, {}
+    end)
+    window.IconRail = self
+    self:Sync()
+end
+return Rail
+
+end
+
+-- enderhub-windui-mac-chrome47-rail
 return __require("src/Init.lua")
