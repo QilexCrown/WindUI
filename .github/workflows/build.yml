@@ -30,16 +30,14 @@ jobs:
       - name: Setup Aftman
         uses: ok-nick/setup-aftman@v0.3.0
 
+      - name: Check Info components
+        run: lua tests/InfoCard.lua
+
       - name: Install Rojo, Lune and DarkLua
         run: aftman install
 
       - name: Run build
         run: npm run build
 
-      - name: Commit dist/main.lua back to repo
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add dist/main.lua
-          git commit -m "[AUTO] Upload built main.lua" || exit 0
-          git push
+      - name: Verify the committed release is reproducible
+        run: git diff --exit-code -- dist/main.lua

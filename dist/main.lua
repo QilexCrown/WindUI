@@ -1,4 +1,4 @@
--- Bundled WindUI fork: src/Init.lua (modules: 70)
+-- Bundled WindUI fork: src/Init.lua (modules: 73)
 local __modules = {}
 local __cache = {}
 local function __require(id)
@@ -411,6 +411,18 @@ end
 --
 -- Only players present in Ranks get a tag. Colours follow the active theme;
 -- Config.Colors { Text, Subtle, Accent, Icon } pins them instead.
+function WindUI:InfoCredits(Config)
+	return require("src/components/InfoCard.lua").Credits(Config)
+end
+
+function WindUI:InfoFeedback(Config)
+	return require("src/components/InfoCard.lua").Feedback(Config)
+end
+
+function WindUI:InfoCard(Config)
+	return require("src/components/InfoCard.lua").New(Config)
+end
+
 function WindUI:PlayerTags(Config)
 	Config = Config or {}
 	Config.WindUI = WindUI
@@ -4766,6 +4778,12 @@ function TabModule.New(Config, UIScale)
 			--     })
 			-- }),
 		}),
+		Creator.NewRoundFrame(Tab.UICorner, "SquircleGlass", {
+			Size = UDim2.new(1, 0, 1, 0),
+			ImageColor3 = Color3.new(1, 1, 1),
+			ImageTransparency = 1,
+			Name = "Glass",
+		}),
 		Creator.NewRoundFrame(Tab.UICorner, "Squircle", {
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = "Y",
@@ -5250,6 +5268,12 @@ function TabModule:SelectTab(TabIndex)
 						ImageTransparency = "TabIconTransparency",
 					}, 0.15)
 				end
+				-- The glass pane rides only the selected tab: every other one is
+				-- bare, so the active tab reads as a lit capsule instead of a
+				-- wash of white.
+				if TabObject.UIElements.Main.Glass then
+					Creator.Tween(TabObject.UIElements.Main.Glass, 0.15, { ImageTransparency = 1 }):Play()
+				end
 				TabObject.Selected = false
 			end
 		end
@@ -5271,6 +5295,9 @@ function TabModule:SelectTab(TabIndex)
 			}, 0.15)
 		end
 		TabModule.Tabs[TabIndex].Selected = true
+		if TabModule.Tabs[TabIndex].UIElements.Main.Glass then
+			Creator.Tween(TabModule.Tabs[TabIndex].UIElements.Main.Glass, 0.15, { ImageTransparency = 0.72 }):Play()
+		end
 
 		task.spawn(function()
 			for _, ContainerObject in next, TabModule.Containers do
@@ -5398,14 +5425,20 @@ return {
 
 						table.remove(Window.AllElements, config.GlobalIndex)
 						table.remove(tbl.Elements, config.Index)
-						table.remove(Tab.Elements, config.Index)
+						if Tab and tbl == Tab then
+							table.remove(Tab.Elements, config.Index)
+						end
 						tbl:UpdateAllElementShapes(tbl)
 					end
 				end
 
-				Window.AllElements[config.Index] = content
+				-- Nested containers (HStack, Group, Section) load their children
+				-- into their own Elements list. Writing those children into the
+				-- tab's list as well overwrites the tab's first slots, because
+				-- the child index is local to the container.
+				Window.AllElements[config.GlobalIndex] = content
 				tbl.Elements[config.Index] = content
-				if Tab then
+				if Tab and tbl == Tab then
 					Tab.Elements[config.Index] = content
 				end
 
@@ -5548,6 +5581,8 @@ __modules["src/elements/Customize.lua"] = function(require)
 	local New = Creator.New
 	local RunService = game:GetService("RunService")
 	local UserInputService = game:GetService("UserInputService")
+	local Players = game:GetService("Players")
+	local player = Players.LocalPlayer
 
 	local Element = {}
 
@@ -5557,16 +5592,18 @@ __modules["src/elements/Customize.lua"] = function(require)
 	local HAIR = Color3.fromRGB(86, 56, 38)
 	local EYE = Color3.fromRGB(24, 22, 24)
 
-	-- Rig bounds. The camera and the ESP box both read these, so a change here
-	-- moves the preview and the frame together.
+	-- Fallback rig bounds. A real avatar replaces them with its own measured
+	-- box, so the camera and the ESP frame track whatever the player wears.
 	local FEET_Y = -0.2
 	local HEAD_TOP_Y = 5.16
-	local CENTRE_Y = (HEAD_TOP_Y + FEET_Y) * 0.5
 
 	-- Drags are stored in screen pixels, so the same clamp is the useful range
 	-- for the preview and for the real overlay.
 	local DRAG_LIMIT = 240
 	local HINT = Color3.fromRGB(120, 170, 255)
+	local PANEL_W = 300
+	local PANEL_H = 478
+
 
 	local function part(model, name, size, cframe, color)
 		return New("Part", {
@@ -5585,9 +5622,8 @@ __modules["src/elements/Customize.lua"] = function(require)
 		})
 	end
 
-	-- The classic bacon-hair avatar: yellow blocky R6, brown cap and back hair,
-	-- blue shirt, green legs. Built from parts so the preview never waits on an
-	-- asset or on the player's own character.
+	-- Blocky fallback: used before the character loads and on any clone
+	-- failure, so the stage is never empty.
 	local function buildRig()
 		local model = Instance.new("WorldModel")
 		model.Name = "PreviewRig"
@@ -5605,6 +5641,76 @@ __modules["src/elements/Customize.lua"] = function(require)
 		return model
 	end
 
+	-- The preview is the player's own avatar: a clone stripped of scripts and
+	-- physics, pivoted to the origin and measured so the stage frames it.
+	local function buildAvatar()
+		local model = Instance.new("WorldModel")
+		model.Name = "PreviewAvatar"
+		local character = player.Character
+		if not character then
+			model:Destroy()
+			return nil
+		end
+		if not character:FindFirstChildOfClass("Humanoid") then
+			model:Destroy()
+			return nil
+		end
+
+		-- Player characters ship with Archivable off, so Clone() returns nil and
+		-- the preview silently falls back to the blocky rig. Flip it for the
+		-- duration of the copy and put it back exactly as it was.
+		local wasArchivable = character.Archivable
+		local wasChildArchivable = {}
+		character.Archivable = true
+		for _, item in ipairs(character:GetDescendants()) do
+			wasChildArchivable[item] = item.Archivable
+			item.Archivable = true
+		end
+		local ok, clone = pcall(function()
+			return character:Clone()
+		end)
+		for item, value in next, wasChildArchivable do
+			if item.Parent then
+				item.Archivable = value
+			end
+		end
+		character.Archivable = wasArchivable
+		if not ok or not clone then
+			model:Destroy()
+			return nil
+		end
+
+		for _, item in ipairs(clone:GetDescendants()) do
+			if item:IsA("Script") or item:IsA("LocalScript") or item:IsA("ModuleScript") then
+				item:Destroy()
+			elseif item:IsA("BasePart") then
+				item.Anchored = true
+				item.CanCollide = false
+				item.CanQuery = false
+				item.CanTouch = false
+				item.Massless = true
+			end
+		end
+		local humanoid = clone:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid:Destroy()
+		end
+		local root = clone:FindFirstChild("HumanoidRootPart")
+		if root then
+			root:Destroy()
+		end
+
+		clone.Parent = model
+		clone:PivotTo(CFrame.new())
+
+		local box, size = clone:GetBoundingBox()
+		-- Feet on the stage floor, body centred on the turntable axis.
+		clone:PivotTo(clone:GetPivot() + Vector3.new(-box.Position.X, -box.Position.Y + size.Y * 0.5, -box.Position.Z))
+		model:SetAttribute("RigHeight", size.Y)
+		model:SetAttribute("RigWidth", math.max(size.X, size.Z))
+		return model
+	end
+
 	function Element:New(Config)
 		local Customize = {
 			__type = "Customize",
@@ -5614,6 +5720,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 			Height = Config.Height or 190,
 			Aspect = Config.Aspect or 0.45,
 			Open = false,
+			ShowPanel = true,
 			ESP = {
 				Box = true,
 				BoxColor = Color3.fromRGB(255, 255, 255),
@@ -5679,8 +5786,8 @@ __modules["src/elements/Customize.lua"] = function(require)
 		local container = Frame.UIElements.Container
 
 		-- ============================================================ header
-		-- The header is the whole click target while the card is closed, so the
-		-- card opens from anywhere on its face instead of a tiny chevron.
+		-- The tab keeps one slim row: the editor itself lives outside the
+		-- window, so this card only reports and resets it.
 		local header = New("Frame", {
 			Name = "Header",
 			Size = UDim2.new(1, 0, 0, 26),
@@ -5699,7 +5806,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 
 		local modesRow = New("Frame", {
 			Name = "Modes",
-			Size = UDim2.new(0, 128, 1, 0),
+			Size = UDim2.new(0, 132, 1, 0),
 			BackgroundTransparency = 1,
 			ZIndex = 3,
 			Parent = header,
@@ -5712,67 +5819,194 @@ __modules["src/elements/Customize.lua"] = function(require)
 			}),
 		})
 
-		local chevron = New("TextButton", {
-			Name = "Chevron",
+		local panelToggle = New("TextButton", {
+			Name = "PanelToggle",
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.fromScale(1, 0.5),
-			Size = UDim2.fromOffset(22, 22),
+			Size = UDim2.fromOffset(64, 22),
 			BackgroundColor3 = Color3.new(1, 1, 1),
-			BackgroundTransparency = 0.92,
-			Text = "",
+			BackgroundTransparency = 0.55,
+			Text = "Panel",
+			TextColor3 = Color3.new(1, 1, 1),
+			TextSize = 12,
+			FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
 			AutoButtonColor = false,
 			ZIndex = 3,
 			Parent = header,
 		}, {
-			New("UICorner", { CornerRadius = UDim.new(0, 6) }),
+			New("UICorner", { CornerRadius = UDim.new(1, 0) }),
 		})
 
-		local chevronBars = {}
-		for index = 1, 2 do
-			chevronBars[index] = New("Frame", {
-				Name = "Bar" .. index,
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.fromOffset(7, 1.5),
-				BackgroundColor3 = Color3.new(1, 1, 1),
-				BorderSizePixel = 0,
-				Parent = chevron,
-			})
+		-- ============================================================= panel
+		-- Sibling of the window frame, not a child: the card floats to the
+		-- right of the window and disappears with it.
+		local windowMain = Config.Window.UIElements.Main
+		local tabIndex = nil
+		local tabs = Config.Window.TabModule and Config.Window.TabModule.Tabs
+		if type(tabs) == "table" then
+			for index, tab in next, tabs do
+				if tab == Config.Tab then
+					tabIndex = index
+				end
+			end
 		end
 
-		-- ============================================================== body
-		local body = New("Frame", {
-			Name = "Body",
-			Size = UDim2.new(1, 0, 0, 0),
-			AutomaticSize = "Y",
-			BackgroundTransparency = 1,
-			Visible = false,
-			Parent = container,
-		}, {
-			New("UIListLayout", {
-				Padding = UDim.new(0, 6),
-				FillDirection = "Vertical",
-				HorizontalAlignment = "Center",
-			}),
-		})
-
-		local stage = New("Frame", {
-			Name = "Stage",
-			Size = UDim2.new(1, 0, 0, Customize.Height),
-			BackgroundColor3 = Color3.fromRGB(12, 13, 18),
+		local panel = New("Frame", {
+			Name = "EnderHubPreviewPanel",
+			AnchorPoint = Vector2.new(0, 0),
+			Position = UDim2.fromOffset(0, 0),
+			Size = UDim2.fromOffset(PANEL_W, PANEL_H),
+			BackgroundColor3 = Color3.fromRGB(15, 16, 22),
 			BorderSizePixel = 0,
 			ClipsDescendants = true,
-			Parent = body,
+			Visible = false,
+			ZIndex = 600,
+			Parent = windowMain.Parent,
 		}, {
-			New("UICorner", { CornerRadius = corner }),
+			New("UICorner", { CornerRadius = UDim.new(0, 12) }),
 			New("UIGradient", {
-				Color = ColorSequence.new(Color3.fromRGB(28, 31, 42), Color3.fromRGB(9, 10, 14)),
+				Color = ColorSequence.new(Color3.fromRGB(27, 29, 38), Color3.fromRGB(11, 12, 17)),
 				Rotation = 90,
 			}),
 			New("UIStroke", {
-				Color = Color3.new(1, 1, 1),
-				Transparency = 0.9,
+				Color = Color3.fromRGB(120, 160, 255),
+				Transparency = 0.86,
+				Thickness = 1,
 				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			}),
+		})
+
+		-- Top row: status dot, wordmark, and the two mode pills.
+		local panelHead = New("Frame", {
+			Name = "Head",
+			Size = UDim2.new(1, -24, 0, 40),
+			Position = UDim2.fromOffset(12, 8),
+			BackgroundTransparency = 1,
+			Parent = panel,
+		})
+
+		New("Frame", {
+			Name = "Dot",
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.fromOffset(0, 12),
+			Size = UDim2.fromOffset(6, 6),
+			BackgroundColor3 = HINT,
+			BorderSizePixel = 0,
+			Parent = panelHead,
+		}, {
+			New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		})
+
+		New("TextLabel", {
+			Name = "Wordmark",
+			Position = UDim2.fromOffset(12, 2),
+			Size = UDim2.new(0, 150, 0, 20),
+			BackgroundTransparency = 1,
+			Text = "LIVE PREVIEW",
+			TextColor3 = Color3.fromRGB(196, 208, 232),
+			TextSize = 10,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			FontFace = Font.new(Creator.Font, Enum.FontWeight.Bold),
+			Parent = panelHead,
+		})
+
+		local panelSub = New("TextLabel", {
+			Name = "Sub",
+			Position = UDim2.fromOffset(12, 19),
+			Size = UDim2.new(0, 160, 0, 14),
+			BackgroundTransparency = 1,
+			Text = "casualjoker392",
+			TextColor3 = Color3.fromRGB(120, 130, 152),
+			TextSize = 11,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
+			Parent = panelHead,
+		})
+
+		local panelModes = New("Frame", {
+			Name = "Modes",
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.fromScale(1, 0.5),
+			Size = UDim2.fromOffset(124, 24),
+			BackgroundTransparency = 1,
+			Parent = panelHead,
+		}, {
+			New("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				Padding = UDim.new(0, 4),
+				HorizontalAlignment = Enum.HorizontalAlignment.Right,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+			}),
+		})
+
+		local pills = {}
+
+		local function paintPills()
+			for mode, pill in next, pills do
+				local selected = Customize.Mode == mode
+				pill.BackgroundTransparency = selected and 0.35 or 0.9
+				pill.TextTransparency = selected and 0 or 0.4
+			end
+		end
+
+		for _, mode in ipairs({ "ESP", "Cursor" }) do
+			pills[mode] = New("TextButton", {
+				Name = mode,
+				Text = mode,
+				Size = UDim2.fromOffset(58, 22),
+				BackgroundColor3 = Color3.new(1, 1, 1),
+				BackgroundTransparency = 0.9,
+				TextColor3 = Color3.new(1, 1, 1),
+				TextSize = 12,
+				FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
+				AutoButtonColor = false,
+				Parent = panelModes,
+			}, {
+				New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+			})
+			pills[mode].MouseButton1Click:Connect(function()
+				Customize:SetMode(mode)
+			end)
+		end
+
+		-- ============================================================= stage
+		local stage = New("Frame", {
+			Name = "Stage",
+			Position = UDim2.fromOffset(12, 52),
+			Size = UDim2.new(1, -24, 1, -108),
+			BackgroundColor3 = Color3.fromRGB(40, 45, 60),
+			BorderSizePixel = 0,
+			ClipsDescendants = true,
+			Parent = panel,
+		}, {
+			New("UICorner", { CornerRadius = UDim.new(0, 10) }),
+			New("UIStroke", {
+				Color = Color3.new(1, 1, 1),
+				Transparency = 0.92,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+			}),
+		})
+
+		-- Turntable floor: a soft ellipse that grounds the avatar without
+		-- needing a lit surface in the viewport.
+		New("Frame", {
+			Name = "Floor",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.86),
+			Size = UDim2.new(0.62, 0, 0.09, 0),
+			BackgroundColor3 = Color3.fromRGB(120, 160, 255),
+			BackgroundTransparency = 0.9,
+			BorderSizePixel = 0,
+			ZIndex = 2,
+			Parent = stage,
+		}, {
+			New("UICorner", { CornerRadius = UDim.new(1, 0) }),
+			New("UIGradient", {
+				Transparency = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 1),
+					NumberSequenceKeypoint.new(0.5, 0.55),
+					NumberSequenceKeypoint.new(1, 1),
+				}),
 			}),
 		})
 
@@ -5784,18 +6018,18 @@ __modules["src/elements/Customize.lua"] = function(require)
 			Name = "Viewport",
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
-			Ambient = Color3.fromRGB(190, 190, 190),
-			LightColor = Color3.new(1, 1, 1),
-			LightDirection = Vector3.new(-0.4, -1, -0.6),
+			Ambient = Color3.fromRGB(198, 202, 212),
+			LightColor = Color3.fromRGB(255, 246, 236),
+			LightDirection = Vector3.new(-0.45, -1, -0.7),
 			CurrentCamera = camera,
 			Parent = stage,
-		}, {
-			buildRig(),
 		})
+
 		local overlay = New("Frame", {
 			Name = "Overlay",
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
+			ZIndex = 3,
 			Parent = stage,
 		})
 
@@ -5859,7 +6093,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 		local nameLabel = New("TextLabel", {
 			Name = "Name",
 			BackgroundTransparency = 1,
-			Text = "casualjoker392",
+			Text = player.Name,
 			TextSize = Customize.ESP.TextSize,
 			FontFace = Font.new(Creator.Font, Enum.FontWeight.Bold),
 			TextXAlignment = Enum.TextXAlignment.Center,
@@ -5889,6 +6123,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 				Text = "",
 				AutoButtonColor = false,
 				Visible = false,
+				ZIndex = 4,
 				Parent = overlay,
 			}, {
 				New("UICorner", { CornerRadius = UDim.new(0, 3) }),
@@ -5924,6 +6159,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 			Size = UDim2.new(1, -28, 1, -24),
 			BackgroundTransparency = 1,
 			Visible = false,
+			ZIndex = 3,
 			Parent = stage,
 		})
 		New("Frame", {
@@ -5990,17 +6226,20 @@ __modules["src/elements/Customize.lua"] = function(require)
 		-- ============================================================ footer
 		local footer = New("Frame", {
 			Name = "Footer",
-			Size = UDim2.new(1, 0, 0, 20),
+			Position = UDim2.new(0, 12, 1, -46),
+			Size = UDim2.new(1, -24, 0, 34),
 			BackgroundTransparency = 1,
-			Parent = body,
+			Parent = panel,
 		})
 		local hint = New("TextLabel", {
 			Name = "Hint",
-			Size = UDim2.new(1, -60, 1, 0),
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.fromScale(0, 0.5),
+			Size = UDim2.new(1, -70, 1, 0),
 			BackgroundTransparency = 1,
 			Text = "Drag the box or the text",
 			TextColor3 = Color3.new(1, 1, 1),
-			TextTransparency = 0.55,
+			TextTransparency = 0.32,
 			TextSize = 11,
 			FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -6010,7 +6249,7 @@ __modules["src/elements/Customize.lua"] = function(require)
 			Name = "Reset",
 			AnchorPoint = Vector2.new(1, 0.5),
 			Position = UDim2.fromScale(1, 0.5),
-			Size = UDim2.fromOffset(56, 18),
+			Size = UDim2.fromOffset(62, 24),
 			BackgroundColor3 = Color3.new(1, 1, 1),
 			BackgroundTransparency = 0.9,
 			Text = "Reset",
@@ -6020,20 +6259,10 @@ __modules["src/elements/Customize.lua"] = function(require)
 			AutoButtonColor = false,
 			Parent = footer,
 		}, {
-			New("UICorner", { CornerRadius = UDim.new(0, 6) }),
+			New("UICorner", { CornerRadius = UDim.new(1, 0) }),
 		})
 
 		-- ============================================================= modes
-		local pills = {}
-
-		local function paintPills()
-			for mode, pill in next, pills do
-				local selected = Customize.Mode == mode
-				pill.BackgroundTransparency = selected and 0.55 or 0.9
-				pill.TextTransparency = selected and 0 or 0.35
-			end
-		end
-
 		local function setMode(mode)
 			Customize.Mode = mode == "Cursor" and "Cursor" or "ESP"
 			paintPills()
@@ -6044,48 +6273,59 @@ __modules["src/elements/Customize.lua"] = function(require)
 			Customize:Refresh()
 		end
 
-		for _, mode in ipairs({ "ESP", "Cursor" }) do
-			pills[mode] = New("TextButton", {
-				Name = mode,
-				Text = mode,
-				Size = UDim2.fromOffset(58, 22),
-				BackgroundColor3 = Color3.new(1, 1, 1),
-				BackgroundTransparency = 0.9,
-				TextColor3 = Color3.new(1, 1, 1),
-				TextSize = 12,
-				FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
-				AutoButtonColor = false,
-				Parent = modesRow,
-			}, {
-				New("UICorner", { CornerRadius = UDim.new(1, 0) }),
-			})
-			pills[mode].MouseButton1Click:Connect(function()
-				setMode(mode)
-			end)
+		-- ======================================================= avatar build
+		local rigFeetY = FEET_Y
+		local rigTopY = HEAD_TOP_Y
+		local rigWidth = 2.7
+		local fitRadius = 17
+		local avatarConn = nil
+
+		local function clearViewport()
+			for _, child in ipairs(viewport:GetChildren()) do
+				if child ~= camera then
+					child:Destroy()
+				end
+			end
 		end
 
-		-- Two bars meeting at the bottom form "v" (expand); flipped they form
-		-- "^" (collapse). Pointing the same way keeps it reading as one glyph.
-		local function paintChevron()
-			local open = Customize.Open
-			chevronBars[1].Rotation = open and -45 or 45
-			chevronBars[2].Rotation = open and 45 or -45
-			chevronBars[1].Position = UDim2.fromScale(0.42, 0.5)
-			chevronBars[2].Position = UDim2.fromScale(0.58, 0.5)
+		local function fitCamera()
+			local size = stage.AbsoluteSize
+			if size.X < 8 or size.Y < 8 then
+				return
+			end
+			local fov = math.rad(camera.FieldOfView)
+			local aspect = size.X / size.Y
+			local height = math.max(0.5, rigTopY - rigFeetY)
+			local distanceH = (height * 0.5) / math.tan(fov * 0.5) * 1.3
+			local distanceW = (rigWidth * 0.5) / (math.tan(fov * 0.5) * aspect) * 1.2
+			fitRadius = math.max(distanceH, distanceW, 4)
 		end
 
-		local function setOpen(open)
-			Customize.Open = open == true
-			body.Visible = Customize.Open
-			paintChevron()
-			return Customize
+		local function mountRig()
+			clearViewport()
+			local model = buildAvatar()
+			if model then
+				rigFeetY = 0
+				rigTopY = model:GetAttribute("RigHeight") or HEAD_TOP_Y
+				rigWidth = model:GetAttribute("RigWidth") or 2.7
+			else
+				model = buildRig()
+				rigFeetY = FEET_Y
+				rigTopY = HEAD_TOP_Y
+				rigWidth = 2.7
+			end
+			model.Parent = viewport
+			fitCamera()
 		end
+		Customize.MountRig = mountRig
 
-		hit.MouseButton1Click:Connect(function()
-			setOpen(not Customize.Open)
-		end)
-		chevron.MouseButton1Click:Connect(function()
-			setOpen(not Customize.Open)
+		mountRig()
+
+		panelSub.Text = player.DisplayName ~= "" and (player.DisplayName .. "  ·  @" .. player.Name) or player.Name
+		nameLabel.Text = player.Name
+
+		avatarConn = player.CharacterAdded:Connect(function()
+			task.defer(mountRig)
 		end)
 
 		-- ======================================================== projection
@@ -6136,8 +6376,8 @@ __modules["src/elements/Customize.lua"] = function(require)
 			local style = Customize.ESP
 			hideESP()
 
-			local top = project(Vector3.new(0, HEAD_TOP_Y, 0))
-			local bottom = project(Vector3.new(0, FEET_Y, 0))
+			local top = project(Vector3.new(0, rigTopY, 0))
+			local bottom = project(Vector3.new(0, rigFeetY, 0))
 			if not (top and bottom) then
 				return
 			end
@@ -6348,21 +6588,72 @@ __modules["src/elements/Customize.lua"] = function(require)
 		end
 
 		function Customize:SetOpen(open)
-			return setOpen(open)
+			Customize.Open = open == true
+			return self
 		end
+
+		function Customize:SetPanel(on)
+			Customize.ShowPanel = on ~= false
+			panelToggle.BackgroundTransparency = Customize.ShowPanel and 0.55 or 0.9
+			return self
+		end
+
+		panelToggle.MouseButton1Click:Connect(function()
+			Customize:SetPanel(not Customize.ShowPanel)
+		end)
+		hit.MouseButton1Click:Connect(function()
+			Customize:SetPanel(not Customize.ShowPanel)
+		end)
+		Customize:SetPanel(true)
+
+		-- ============================================================ layout
+		local function panelSync()
+			local visible = Customize.ShowPanel
+				and windowMain.Visible
+				and (tabIndex == nil or (Config.Window.TabModule and Config.Window.TabModule.SelectedTab == tabIndex))
+			panel.Visible = visible
+			if not visible then
+				return
+			end
+			local origin = windowMain.AbsolutePosition
+			local width = windowMain.AbsoluteSize.X
+			local viewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+			local x = origin.X + width + 14
+			if x + PANEL_W > viewportSize.X - 8 then
+				x = origin.X - PANEL_W - 14
+			end
+			panel.Position = UDim2.fromOffset(math.floor(math.max(8, x)), math.floor(origin.Y))
+		end
+
+		local lastStage = Vector2.new(0, 0)
 
 		local connection
 		connection = RunService.RenderStepped:Connect(function(delta)
-			if Customize.Dead or not stage.Parent then
+			if Customize.Dead or not panel.Parent then
 				connection:Disconnect()
 				return
 			end
 
-			Customize.Angle = (Customize.Angle + delta * 0.35) % (math.pi * 2)
-			local target = Vector3.new(0, CENTRE_Y, 0)
-			local radius = 17
-			local eye = target + Vector3.new(math.sin(Customize.Angle) * radius, 1.1, math.cos(Customize.Angle) * radius)
-			camera.CFrame = CFrame.lookAt(eye, target)
+			panelSync()
+
+			if not panel.Visible then
+				return
+			end
+
+			local stageSize = stage.AbsoluteSize
+			if stageSize ~= lastStage then
+				lastStage = stageSize
+				fitCamera()
+			end
+
+			Customize.Angle = (Customize.Angle + delta * 0.28) % (math.pi * 2)
+			local centre = Vector3.new(0, (rigFeetY + rigTopY) * 0.5, 0)
+			local eye = centre + Vector3.new(
+				math.sin(Customize.Angle) * fitRadius,
+				(rigTopY - rigFeetY) * 0.12 + 0.6,
+				math.cos(Customize.Angle) * fitRadius
+			)
+			camera.CFrame = CFrame.lookAt(eye, centre)
 
 			if drag then
 				local source = drag.kind == "ESP" and Customize.ESP or Customize.Cursor
@@ -6393,11 +6684,15 @@ __modules["src/elements/Customize.lua"] = function(require)
 			if connection then
 				connection:Disconnect()
 			end
+			if avatarConn then
+				avatarConn:Disconnect()
+			end
+			if panel then
+				panel:Destroy()
+			end
 		end)
 
 		setMode(Customize.Mode)
-		paintChevron()
-		setOpen(Customize.Open)
 		Customize:Refresh()
 
 		return Customize.__type, Customize
@@ -6661,7 +6956,9 @@ function Element:New(Config)
         Size = UDim2.new(1,0,0,0),
         BackgroundTransparency = 1,
         AutomaticSize = "Y",
-        Parent = Config.Parent,
+        -- A card stack paints one rounded slab behind every row, so the rows
+        -- read as sections of a single surface instead of a stack of pills.
+        Parent = Config.Card and nil or Config.Parent,
     }, {
         New("UIListLayout", {
             FillDirection = "Vertical",
@@ -6670,6 +6967,27 @@ function Element:New(Config)
             Padding = UDim.new(0, Config.Tab and Config.Tab.Gap or (Config.Window.NewElements and 1 or 6))
         }),
     })
+
+    if Config.Card then
+        local Pad = Config.CardPadding or 10
+        local Holder = New("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundTransparency = 1,
+            AutomaticSize = "Y",
+            Parent = Config.Parent,
+        })
+        Creator.NewRoundFrame(Config.CardRadius or 16, "Squircle", {
+            Name = "Card",
+            Size = UDim2.new(1, Pad * 2, 1, 0),
+            Position = UDim2.new(0, -Pad, 0, 0),
+            ThemeTag = {
+                ImageColor3 = "ElementBackground",
+                ImageTransparency = "ElementBackgroundTransparency",
+            },
+            Parent = Holder,
+        })
+        VStackFrame.Parent = Holder
+    end
 
     VStackModule.ElementFrame = VStackFrame
     
@@ -9810,7 +10128,7 @@ local CurrentCamera = workspace.CurrentCamera
 local Element = {
 	UICorner = 10,
 	UIPadding = 12,
-	MenuCorner = 15,
+	MenuCorner = 22,
 	MenuPadding = 5,
 	TabPadding = 10,
 	SearchBarHeight = 39,
@@ -9825,7 +10143,9 @@ function Element:New(Config)
 		Locked = Config.Locked or false,
 		LockedTitle = Config.LockedTitle,
 		Values = Config.Values or {},
-		MenuWidth = Config.MenuWidth or 180,
+		-- Menu matches the control it drops out of: the picker is 150 wide, so a
+		-- wider panel reads as a detached sheet.
+		MenuWidth = Config.MenuWidth or 150,
 		Value = Config.Value,
 		AllowNone = Config.AllowNone,
 		SearchBarEnabled = Config.SearchBarEnabled or false,
@@ -9943,7 +10263,12 @@ local Creator = require("src/modules/Creator.lua")
 local New = Creator.New
 local Tween = Creator.Tween
 
-local TabBackgroundTransparency = 0.67
+-- Selected row wash: white, not the theme's element colour, so the mark reads
+-- on a dark panel without turning into a slab.
+local TabBackgroundColor = Color3.fromRGB(255, 255, 255)
+-- One step above the panel itself: enough to read as a glass pill, not enough
+-- to become a slab on the near-black menu.
+local TabBackgroundTransparency = 0.92
 
 function DropdownMenu.New(Config, Dropdown, Element, Type)
 	local DropdownModule = {}
@@ -9962,7 +10287,7 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 		ThemeTag = {
 			ImageColor3 = "DropdownBackground",
 		},
-		ImageTransparency = 1, -- 0.05
+		ImageTransparency = 0.06,
 		Size = UDim2.new(1, 0, 1, 0),
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, 0, 0, 0),
@@ -9999,6 +10324,15 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 			}, {
 				Dropdown.UIElements.UIListLayout,
 			}),
+			-- Hairline rim over the rows: the panel reads as a glass card
+			-- instead of a floating list. Not a button, so clicks pass.
+			Creator.NewRoundFrame(Element.MenuCorner - Element.MenuPadding, "SquircleOutline", {
+				Name = "Rim",
+				Size = UDim2.new(1, 0, 1, 0),
+				ImageColor3 = Color3.new(1, 1, 1),
+				ImageTransparency = 0.82,
+				Active = false,
+			}),
 		}),
 	})
 
@@ -10014,8 +10348,8 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 	}, {
 		Dropdown.UIElements.Menu,
 		New("UISizeConstraint", {
-			MinSize = Vector2.new(170, 0),
-			MaxSize = Vector2.new(300, 400),
+			MinSize = Vector2.new(0, 0),
+			MaxSize = Vector2.new(1000, 400),
 		}),
 	})
 
@@ -10056,6 +10390,13 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 			offset = requiredSpace - availableSpaceBelow - 54
 		end
 
+		-- The window draws through a UIScale while this menu lives on an
+		-- unscaled screen gui, so an offset width lands wider than the control
+		-- it drops out of. Match the control's drawn width, plus a small bleed
+		-- so the panel reads as its own surface rather than a clipped copy.
+		local bleed = 24
+		menu.Size = UDim2.fromOffset(button.AbsoluteSize.X + bleed, menu.AbsoluteSize.Y)
+
 		menu.Position = UDim2.new(
 			0,
 			button.AbsolutePosition.X + button.AbsoluteSize.X,
@@ -10065,6 +10406,19 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 	end
 
 	local SearchLabel
+
+	-- Values carry their raw title so callbacks keep matching on a stable id;
+	-- only what the user reads goes through the pack.
+	local function LocText(text)
+		if type(text) ~= "string" then
+			return text
+		end
+		local key = string.match(text, "^loc:(.+)$")
+		if not key then
+			return text
+		end
+		return Creator.Translate(key, key)
+	end
 
 	function DropdownModule:Display()
 		local Values = Dropdown.Values
@@ -10082,7 +10436,7 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 			for _, value in ipairs(Values) do
 				local title = typeof(value) == "table" and value.Title or value
 				if selected[title] then
-					Str = Str .. title .. ", "
+					Str = Str .. LocText(title) .. ", "
 				end
 			end
 
@@ -10090,9 +10444,11 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 				Str = Str:sub(1, #Str - 2)
 			end
 		else
-			Str = typeof(Dropdown.Value) == "table" and (Dropdown.Value.Title or Dropdown.Value[1])
-				or Dropdown.Value
-				or ""
+			Str = LocText(
+				typeof(Dropdown.Value) == "table" and (Dropdown.Value.Title or Dropdown.Value[1])
+					or Dropdown.Value
+					or ""
+			)
 		end
 
 		if Dropdown.UIElements.Dropdown then
@@ -10156,6 +10512,7 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 					tab.Locked = true
 				else
 					if tab.Selected then
+						tab.UIElements.TabItem.ImageColor3 = TabBackgroundColor
 						Tween(tab.UIElements.TabItem, 0.1, { ImageTransparency = TabBackgroundTransparency }):Play()
 						--Tween(tab.UIElements.TabItem.Highlight, 0.1, { ImageTransparency = 0.75 }):Play()
 						Tween(tab.UIElements.TabItem.Frame.Title.TextLabel, 0.1, { TextTransparency = 0 }):Play()
@@ -10168,7 +10525,7 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 						Tween(
 							tab.UIElements.TabItem.Frame.Title.TextLabel,
 							0.1,
-							{ TextTransparency = Type == "Dropdown" and 0.4 or 0.05 }
+							{ TextTransparency = Type == "Dropdown" and 0.08 or 0.05 }
 						):Play()
 						if tab.UIElements.TabIcon then
 							Tween(
@@ -10239,10 +10596,10 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 					TabMain.UIElements.TabIcon = TabIcon
 				end
 				TabMain.UIElements.TabItem = Creator.NewRoundFrame(
-					Element.MenuCorner - Element.MenuPadding,
+					18,
 					"Squircle",
 					{
-						Size = UDim2.new(1, 0, 0, 36),
+						Size = UDim2.new(1, 0, 0, 44),
 						AutomaticSize = TabMain.Desc and "Y",
 						ImageTransparency = 1, -- 0
 						Parent = Dropdown.UIElements.Menu.Frame.ScrollingFrame,
@@ -10253,7 +10610,7 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 						Active = not TabMain.Locked,
 					},
 					{
-						Creator.NewRoundFrame(Element.MenuCorner - Element.MenuPadding, "Glass-1.4", {
+						Creator.NewRoundFrame(18, "Glass-1.4", {
 							Size = UDim2.new(1, 0, 1, 0),
 							ThemeTag = {
 								ImageColor3 = "DropdownTabBorder",
@@ -10291,7 +10648,7 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 								PaddingBottom = UDim.new(0, Element.TabPadding),
 							}),
 							New("UICorner", {
-								CornerRadius = UDim.new(0, Element.MenuCorner - Element.MenuPadding),
+								CornerRadius = UDim.new(0, 18),
 							}),
 							TabIcon,
 							New("Frame", {
@@ -10301,29 +10658,29 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 								Name = "Title",
 							}, {
 								New("TextLabel", {
-									Text = TabMain.Name,
+									Text = LocText(TabMain.Name),
 									TextXAlignment = "Left",
 									FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
 									ThemeTag = {
 										TextColor3 = "Text",
 										BackgroundColor3 = "Text",
 									},
-									TextSize = 15,
+									TextSize = 16,
 									BackgroundTransparency = 1,
-									TextTransparency = Type == "Dropdown" and 0.4 or 0.05,
+									TextTransparency = Type == "Dropdown" and 0.08 or 0.05,
 									LayoutOrder = 999,
 									AutomaticSize = "Y",
 									Size = UDim2.new(1, 0, 0, 0),
 								}),
 								New("TextLabel", {
-									Text = TabMain.Desc or "",
+									Text = LocText(TabMain.Desc or ""),
 									TextXAlignment = "Left",
 									FontFace = Font.new(Creator.Font, Enum.FontWeight.Regular),
 									ThemeTag = {
 										TextColor3 = "Text",
 										BackgroundColor3 = "Text",
 									},
-									TextSize = 15,
+									TextSize = 13,
 									BackgroundTransparency = 1,
 									TextTransparency = Type == "Dropdown" and 0.6 or 0.35,
 									LayoutOrder = 999,
@@ -10342,6 +10699,30 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 					},
 					true
 				)
+
+				-- Selected mark: the check rides the row's right edge, outside the
+				-- horizontal list so the title keeps the rest of the width.
+				local CheckData = Creator.Icon("check")
+				if CheckData and CheckData[2] then
+					local Check = New("ImageLabel", {
+						Parent = TabMain.UIElements.TabItem,
+						Name = "Check",
+						AnchorPoint = Vector2.new(1, 0.5),
+						Position = UDim2.new(1, -(Element.TabPadding - 2), 0.5, 0),
+						Size = UDim2.new(0, 16, 0, 16),
+						BackgroundTransparency = 1,
+						Image = CheckData[1],
+						ImageRectSize = CheckData[2].ImageRectSize,
+						ImageRectOffset = CheckData[2].ImageRectPosition,
+						ImageTransparency = 1,
+						Visible = false,
+						ZIndex = 3,
+						ThemeTag = {
+							ImageColor3 = "Text",
+						},
+					})
+					TabMain.UIElements.TabCheck = Check
+				end
 
 				if TabMain.Locked then
 					TabMain.UIElements.TabItem.Frame.Title.TextLabel.TextTransparency = 0.6
@@ -10382,11 +10763,16 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 				end
 
 				if TabMain.Selected and not TabMain.Locked then
+					TabMain.UIElements.TabItem.ImageColor3 = TabBackgroundColor
 					TabMain.UIElements.TabItem.ImageTransparency = TabBackgroundTransparency
 					--TabMain.UIElements.TabItem.Highlight.ImageTransparency = 0.75
 					TabMain.UIElements.TabItem.Frame.Title.TextLabel.TextTransparency = 0
 					if TabMain.UIElements.TabIcon then
 						TabMain.UIElements.TabIcon.ImageLabel.ImageTransparency = 0
+					end
+					if TabMain.UIElements.TabCheck then
+						TabMain.UIElements.TabCheck.ImageTransparency = 0
+						TabMain.UIElements.TabCheck.Visible = true
 					end
 				end
 
@@ -10403,6 +10789,7 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 						if Dropdown.Multi then
 							if not TabMain.Selected then
 								TabMain.Selected = true
+								TabMain.UIElements.TabItem.ImageColor3 = TabBackgroundColor
 								Tween(
 									TabMain.UIElements.TabItem,
 									0.1,
@@ -10412,6 +10799,10 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 								Tween(TabMain.UIElements.TabItem.Frame.Title.TextLabel, 0.1, { TextTransparency = 0 }):Play()
 								if TabMain.UIElements.TabIcon then
 									Tween(TabMain.UIElements.TabIcon.ImageLabel, 0.1, { ImageTransparency = 0 }):Play()
+								end
+								if TabMain.UIElements.TabCheck then
+									TabMain.UIElements.TabCheck.Visible = true
+									Tween(TabMain.UIElements.TabCheck, 0.1, { ImageTransparency = 0 }):Play()
 								end
 								table.insert(Dropdown.Value, TabMain.Original)
 							else
@@ -10424,6 +10815,10 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 								Tween(TabMain.UIElements.TabItem.Frame.Title.TextLabel, 0.1, { TextTransparency = 0.4 }):Play()
 								if TabMain.UIElements.TabIcon then
 									Tween(TabMain.UIElements.TabIcon.ImageLabel, 0.1, { ImageTransparency = 0.2 }):Play()
+								end
+								if TabMain.UIElements.TabCheck then
+									Tween(TabMain.UIElements.TabCheck, 0.1, { ImageTransparency = 1 }):Play()
+									TabMain.UIElements.TabCheck.Visible = false
 								end
 
 								for i, v in next, Dropdown.Value do
@@ -10445,14 +10840,23 @@ function DropdownMenu.New(Config, Dropdown, Element, Type)
 								if TabPisun.UIElements.TabIcon then
 									Tween(TabPisun.UIElements.TabIcon.ImageLabel, 0.1, { ImageTransparency = 0.2 }):Play()
 								end
+								if TabPisun.UIElements.TabCheck then
+									Tween(TabPisun.UIElements.TabCheck, 0.1, { ImageTransparency = 1 }):Play()
+									TabPisun.UIElements.TabCheck.Visible = false
+								end
 								TabPisun.Selected = false
 							end
 							TabMain.Selected = true
+							TabMain.UIElements.TabItem.ImageColor3 = TabBackgroundColor
 							Tween(TabMain.UIElements.TabItem, 0.1, { ImageTransparency = TabBackgroundTransparency }):Play()
 							--Tween(TabMain.UIElements.TabItem.Highlight, 0.1, { ImageTransparency = 0.75 }):Play()
 							Tween(TabMain.UIElements.TabItem.Frame.Title.TextLabel, 0.1, { TextTransparency = 0 }):Play()
 							if TabMain.UIElements.TabIcon then
 								Tween(TabMain.UIElements.TabIcon.ImageLabel, 0.1, { ImageTransparency = 0 }):Play()
+							end
+							if TabMain.UIElements.TabCheck then
+								TabMain.UIElements.TabCheck.Visible = true
+								Tween(TabMain.UIElements.TabCheck, 0.1, { ImageTransparency = 0 }):Play()
 							end
 							Dropdown.Value = TabMain.Original
 						end
@@ -14801,6 +15205,7 @@ function PlayerTags:BuildTag(player)
 	self:UpdateTime(player)
 end
 
+
 function PlayerTags:DestroyTag(player, char)
 	local billboard = self.Tags[player]
 	if billboard then
@@ -15278,11 +15683,11 @@ local function NewIdleFace(Root)
 		Position = UDim2.fromOffset(14, 11),
 		Size = UDim2.fromOffset(18, 18),
 		ScaleType = Enum.ScaleType.Fit,
-		ImageColor3 = Palette.Accent,
+		ImageColor3 = Palette.Ink,
 		Visible = false,
 		ZIndex = 5,
 	})
-	local Source, Rect = Icon("lucide:sparkles")
+	local Source, Rect = Icon("lucide:clock")
 	Face.Icon.Image = Source
 	Face.Icon.ImageRectOffset = Rect.ImageRectPosition
 	Face.Icon.ImageRectSize = Rect.ImageRectSize
@@ -15295,13 +15700,13 @@ local function NewIdleFace(Root)
 		TextSize = 13,
 		TextColor3 = Palette.Ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = "Ender Hub",
+		Text = "",
 		Position = UDim2.fromOffset(38, 9),
 		Size = UDim2.fromOffset(PILL_W - 52, 22),
 		Visible = false,
 		ZIndex = 5,
 	})
-	Tr(Face.Text, "ENDER_HUB")
+	-- No translation key on this one: it is a clock, not a wordmark.
 
 	-- Mini player: the same capsule, but it names the track while a provider
 	-- is bound. Two lines keep the artist out of the title's way.
@@ -15338,6 +15743,28 @@ local function NewIdleFace(Root)
 	})
 
 	return Face
+end
+
+-- Clock face driver: the resting pill tells the local hour instead of a
+-- wordmark, so the capsule is useful before a key or a track exists. A hub that
+-- wants its own line hands one to SetIdle, which then owns the label. Lives
+-- outside New on purpose: New sits at the register ceiling, and four more
+-- locals there fail to compile once the module bundles and loads at -O0.
+local function StartClock(self, Root)
+	local Label = self.IdleText
+	if not Label then
+		return
+	end
+	Label.Text = os.date("%I:%M %p")
+	task.spawn(function()
+		while Root.Parent do
+			local Now = os.date("%I:%M %p")
+			if not self.IdleTextLocked and Label.Visible and Label.Text ~= Now then
+				Label.Text = Now
+			end
+			task.wait(1)
+		end
+	end)
 end
 
 -- Tool face: the game's own mode strip, moved into the capsule. The game
@@ -15922,6 +16349,7 @@ function DynamicIsland.New(Config)
 	end)
 	self.IdleIcon, self.IdleText = IdleUI.Icon, IdleUI.Text
 	self.MiniTitle, self.MiniArtist = IdleUI.MiniTitle, IdleUI.MiniArtist
+	StartClock(self, Root)
 
 	--------------------------------------------------------------- cards
 
@@ -17914,6 +18342,9 @@ function DynamicIsland.New(Config)
 		end
 		if type(Text_) == "string" and Text_ ~= "" then
 			IdleUI.Text.Text = Text_
+			self.IdleTextLocked = true
+		else
+			self.IdleTextLocked = false
 		end
 		if self.Expanded then
 			self:Collapse()
@@ -25847,6 +26278,7 @@ __modules["src/components/Notification.lua"] = function(require)
 local Creator = require("src/modules/Creator.lua")
 local New = Creator.New
 local Tween = Creator.Tween
+local CreateButton = require("src/components/ui/Button.lua").New
 
 local NotificationModule = {
 	Size = UDim2.new(0, 300, 1, -100 - 56),
@@ -25912,6 +26344,12 @@ function NotificationModule.New(Config)
     end--]]
 	NotificationModule.NotificationIndex = NotificationModule.NotificationIndex + 1
 	NotificationModule.Notifications[NotificationModule.NotificationIndex] = Notification
+
+	-- A card with actions is a prompt, not a ticker: it waits for a press
+	-- unless the caller asked for a timeout.
+	if #Notification.Buttons > 0 and Config.Duration == nil then
+		Notification.Duration = nil
+	end
 
 	-- local UIStroke = New("UIStroke", {
 	--     ThemeTag = {
@@ -26046,6 +26484,38 @@ function NotificationModule.New(Config)
 		})
 	end
 
+	-- Actions: a right-aligned row under the body. The last button is the
+	-- accent by default, so { Cancel, Confirm } reads left to right.
+	if #Notification.Buttons > 0 then
+		local ActionRow = New("Frame", {
+			Parent = TextContainer,
+			Name = "Actions",
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 32),
+			LayoutOrder = 10,
+		}, {
+			New("UIListLayout", {
+				FillDirection = "Horizontal",
+				HorizontalAlignment = "Right",
+				VerticalAlignment = "Center",
+				Padding = UDim.new(0, 6),
+			}),
+		})
+
+		Notification.UIElements.Buttons = {}
+		for Index, Spec in next, Notification.Buttons do
+			local Variant = Spec.Variant or (Index == #Notification.Buttons and "Primary" or "Secondary")
+			local Button = CreateButton(Spec.Title or "OK", Spec.Icon, function()
+				if type(Spec.Callback) == "function" then
+					Creator.SafeCallback(Spec.Callback)
+				end
+				Notification:Close()
+			end, Variant, ActionRow, nil, true)
+			Button.Size = UDim2.new(0, 0, 1, 0)
+			table.insert(Notification.UIElements.Buttons, Button)
+		end
+	end
+
 	local Main = Creator.NewRoundFrame(NotificationModule.UICorner, "Squircle", {
 		Size = UDim2.new(1, 0, 0, 0),
 		Position = UDim2.new(2, 0, 1, 0),
@@ -26057,6 +26527,8 @@ function NotificationModule.New(Config)
 		},
 		--ZIndex = 20
 	}, {
+		-- Glass: the sheet under the card and the sheen over it. The glow lives
+		-- on the accent button, not here.
 		Creator.NewRoundFrame(NotificationModule.UICorner, "Squircle", {
 			Size = UDim2.new(1, 0, 1, 0),
 			ThemeTag = {
@@ -36648,5 +37120,252 @@ end
 return DynamicShapeModule
 end
 
--- enderhub-windui-mac-chrome41
+__modules["src/components/InfoCardLayout.lua"] = function(require)
+local Layout = {}
+
+function Layout.Calculate(width, actionCount)
+    width = tonumber(width) or 600
+    if width ~= width or width <= 0 or width == math.huge then width = 600 end
+    width = math.max(180, width)
+    local compact = width < 280
+    local padding = width < 280 and 12 or 16
+    local gap = 8
+    local columns = compact and 2 or 4
+    local inner = width - padding * 2
+    local statsY = 121
+    local cellHeight = 38
+    local rows = math.ceil(4 / columns)
+    local actionsY = statsY + rows * cellHeight + (rows - 1) * gap + 8
+    local hasActions = (actionCount or 0) > 0
+    return {
+        Width = width, Padding = padding, Gap = gap, Columns = columns,
+        CellWidth = (inner - (columns - 1) * gap) / columns,
+        CellHeight = cellHeight, StatsY = statsY, ActionsY = actionsY,
+        Height = hasActions and (actionsY + 32 + padding) or (actionsY - 8 + padding),
+        AvatarSize = compact and 48 or 54,
+        NameSize = width < 320 and 19 or 22,
+        IdentityX = padding + (compact and 48 or 54) + 14,
+        IdentityWidth = inner - (compact and 48 or 54) - 14,
+        ActionWidth = hasActions and (inner - ((actionCount or 0) - 1) * gap) / actionCount or 0,
+    }
+end
+
+return Layout
+
+end
+
+__modules["src/components/InfoCard.lua"] = function(require)
+local Creator = require("src/modules/Creator.lua")
+local Layout = require("src/components/InfoCardLayout.lua")
+local New = Creator.New
+local InfoCard = {}
+
+local function radius(config)
+    local window = config.Window
+    return window and window.ElementConfig and window.ElementConfig.UICorner or 23
+end
+local function surface(config, name, height, button)
+    local modern = not config.Window or config.Window.NewElements
+    return Creator.NewRoundFrame(radius(config), "Squircle", {
+        Parent = config.Parent, Name = name, Size = UDim2.new(1, 0, 0, height),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+        ImageTransparency = not modern and 0.93 or nil,
+        ThemeTag = {
+            ImageColor3 = modern and "ElementBackground" or "Text",
+            ImageTransparency = modern and "ElementBackgroundTransparency" or nil,
+        },
+    }, nil, button)
+end
+local function label(parent, name, text, size, transparency, weight)
+    return New("TextLabel", {
+        Parent = parent, Name = name, BackgroundTransparency = 1, BorderSizePixel = 0,
+        Text = text or "", TextSize = size, TextTransparency = transparency or 0,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
+        TextTruncate = Enum.TextTruncate.AtEnd, RichText = false,
+        FontFace = Font.new(Creator.Font, weight or Enum.FontWeight.Medium),
+        ThemeTag = { TextColor3 = "ElementTitle" },
+    })
+end
+local function icon(parent, name, x, y, size)
+    local data = Creator.Icon(name)
+    if not data or not data[1] then return nil end
+    local rect = data[2] or {}
+    return New("ImageLabel", {
+        Parent = parent, Name = "Icon", BackgroundTransparency = 1,
+        Image = data[1], ImageRectOffset = rect.ImageRectPosition or Vector2.new(0, 0),
+        ImageRectSize = rect.ImageRectSize or Vector2.new(0, 0),
+        Position = UDim2.new(0, x, 0, y), Size = UDim2.new(0, size, 0, size),
+        ImageTransparency = 0.3, ThemeTag = { ImageColor3 = "ElementIcon" },
+    })
+end
+local function disconnect(list)
+    for _, connection in ipairs(list) do connection:Disconnect() end
+    for i = #list, 1, -1 do list[i] = nil end
+end
+local function actionButton(parent, name, text, iconName, config)
+    local button = New("TextButton", { Parent = parent, Name = name, Text = "",
+        BackgroundTransparency = 1, AutoButtonColor = false, Selectable = true, BorderSizePixel = 0 })
+    local fill = Creator.NewRoundFrame(12, "Squircle", {
+        Parent = button, Name = "Surface", Size = UDim2.new(1, 0, 1, 0),
+        ImageTransparency = 0.9, ThemeTag = { ImageColor3 = "Button" },
+    })
+    Creator.NewRoundFrame(12, "SquircleGlass", {
+        Parent = button, Name = "Outline", Size = UDim2.new(1, 0, 1, 0),
+        ImageTransparency = 0.92, ThemeTag = { ImageColor3 = "White" },
+    })
+    local textLabel = label(button, "Title", text, 12, 0.1)
+    textLabel.Size = UDim2.new(1, -28, 1, 0)
+    textLabel.Position = UDim2.new(0, 22, 0, 0)
+    textLabel.TextXAlignment = Enum.TextXAlignment.Center
+    icon(button, iconName, 9, 9, 14)
+    local connections = {}
+    local function hover(on)
+        if button.Parent then Creator.Tween(fill, 0.14, { ImageTransparency = on and 0.8 or 0.9 }):Play() end
+    end
+    for _, event in ipairs({ "MouseEnter", "SelectionGained" }) do
+        connections[#connections + 1] = button[event]:Connect(function() hover(true) end)
+    end
+    for _, event in ipairs({ "MouseLeave", "SelectionLost" }) do
+        connections[#connections + 1] = button[event]:Connect(function() hover(false) end)
+    end
+    connections[#connections + 1] = button.Activated:Connect(function()
+        if button.Parent and config.Callback then config.Callback() end
+    end)
+    connections[#connections + 1] = button.Destroying:Connect(function() disconnect(connections) end)
+    return button, textLabel
+end
+
+function InfoCard.New(config)
+    assert(config and config.Parent, "InfoCard requires a Parent")
+    local card = { Values = {}, Labels = {}, Chips = {}, Destroyed = false, Actions = {} }
+    local connections, cells, chips = {}, {}, {}
+    local lastWidth
+    card.Frame = surface(config, "InfoCard", 212)
+    card.Version = label(card.Frame, "Version", config.Version, 10, 0.5)
+    card.Version.Visible = false
+    local avatar = New("ImageLabel", { Parent = card.Frame, Name = "Avatar", Image = config.Avatar or "",
+        BackgroundTransparency = 1, BorderSizePixel = 0 })
+    New("UICorner", { Parent = avatar, CornerRadius = UDim.new(1, 0) })
+    New("UIStroke", { Parent = avatar, Thickness = 1, Transparency = 0.75,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border, ThemeTag = { Color = "ElementTitle" } })
+    card.Welcome = label(card.Frame, "Welcome", config.Welcome or "Welcome,", 12, 0.4)
+    card.Display = label(card.Frame, "DisplayName", config.DisplayName or "Player", 22, 0.02, Enum.FontWeight.SemiBold)
+    card.User = label(card.Frame, "Username", config.Username, 11, 0.5)
+    for i, key in ipairs({ "server", "region" }) do
+        local holder = New("Frame", { Parent = card.Frame, Name = key, BackgroundTransparency = 1 })
+        icon(holder, i == 1 and "server" or "globe", 0, 2, 12)
+        local text = label(holder, "Text", "--", 10, 0.4)
+        text.Position, text.Size = UDim2.new(0, 17, 0, 0), UDim2.new(1, -17, 1, 0)
+        chips[i], card.Chips[key] = holder, text
+    end
+    local divider = New("Frame", { Parent = card.Frame, Name = "Divider", BorderSizePixel = 0,
+        BackgroundTransparency = 0.92, ThemeTag = { BackgroundColor3 = "Text" } })
+    local names = { "activity", "gauge", "users", "timer" }
+    for i, key in ipairs({ "ping", "fps", "players", "session" }) do
+        local cell = New("Frame", { Parent = card.Frame, Name = key, BackgroundTransparency = 1 })
+        icon(cell, names[i], 0, 2, 12)
+        local value = label(cell, "Value", "--", 14, 0.04, Enum.FontWeight.SemiBold)
+        value.Position, value.Size = UDim2.new(0, 17, 0, 0), UDim2.new(1, -17, 0, 19)
+        local caption = label(cell, "Caption", "", 9, 0.5)
+        caption.Position, caption.Size = UDim2.new(0, 0, 0, 21), UDim2.new(1, 0, 0, 13)
+        cells[i], card.Values[key], card.Labels[key] = cell, value, caption
+    end
+    local function reflow()
+        if card.Destroyed then return end
+        local width = card.Frame.AbsoluteSize.X
+        if width == lastWidth then return end
+        lastWidth = width
+        local shape = Layout.Calculate(width, #card.Actions)
+        card.Frame.Size = UDim2.new(1, 0, 0, shape.Height)
+        avatar.Position, avatar.Size = UDim2.new(0, shape.Padding, 0, 17), UDim2.new(0, shape.AvatarSize, 0, shape.AvatarSize)
+        card.Welcome.Position, card.Welcome.Size = UDim2.new(0, shape.IdentityX, 0, 15), UDim2.new(0, shape.IdentityWidth, 0, 16)
+        card.Display.Position, card.Display.Size = UDim2.new(0, shape.IdentityX, 0, 31), UDim2.new(0, shape.IdentityWidth, 0, 28)
+        card.Display.TextSize = shape.NameSize
+        card.User.Position, card.User.Size = UDim2.new(0, shape.IdentityX, 0, 61), UDim2.new(0, shape.IdentityWidth, 0, 15)
+        for i, chip in ipairs(chips) do
+            local w = (shape.Width - shape.Padding * 2 - shape.Gap) / 2
+            chip.Position, chip.Size = UDim2.new(0, shape.Padding + (i - 1) * (w + shape.Gap), 0, 86), UDim2.new(0, w, 0, 18)
+        end
+        divider.Position, divider.Size = UDim2.new(0, shape.Padding, 0, 111), UDim2.new(1, -shape.Padding * 2, 0, 1)
+        for i, cell in ipairs(cells) do
+            local column, row = (i - 1) % shape.Columns, math.floor((i - 1) / shape.Columns)
+            cell.Position = UDim2.new(0, shape.Padding + column * (shape.CellWidth + shape.Gap), 0, shape.StatsY + row * (shape.CellHeight + shape.Gap))
+            cell.Size = UDim2.new(0, shape.CellWidth, 0, shape.CellHeight)
+        end
+        for i, action in ipairs(card.Actions) do
+            action.Button.Position = UDim2.new(0, shape.Padding + (i - 1) * (shape.ActionWidth + shape.Gap), 0, shape.ActionsY)
+            action.Button.Size = UDim2.new(0, shape.ActionWidth, 0, 32)
+        end
+    end
+    function card:SetStats(stats)
+        if self.Destroyed then return end
+        for key, value in pairs(stats or {}) do
+            local target = self.Values[key] or self.Chips[key]
+            if target then target.Text = tostring(value) end
+        end
+    end
+    function card:SetActions(actions)
+        if self.Destroyed then return end
+        assert(type(actions) == "table" and #actions <= 2, "InfoCard supports up to two actions")
+        for _, action in ipairs(self.Actions) do action.Button:Destroy() end
+        self.Actions = {}
+        for i, spec in ipairs(actions) do
+            local button, text = actionButton(self.Frame, spec.Id or "Action", spec.Title,
+                spec.Icon or (i == 1 and "rotate-cw" or "refresh-cw"), spec)
+            self.Actions[#self.Actions + 1] = { Button = button, Label = text }
+        end
+        lastWidth = nil
+        reflow()
+    end
+    function card:Destroy()
+        if self.Destroyed then return end
+        self.Destroyed = true
+        disconnect(connections)
+        self.Frame:Destroy()
+    end
+    connections[#connections + 1] = card.Frame.Destroying:Connect(function()
+        card.Destroyed = true
+        disconnect(connections)
+    end)
+    connections[#connections + 1] = card.Frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
+    card:SetActions(config.Actions or {})
+    return card
+end
+
+function InfoCard.Credits(config)
+    local rows = config.Rows or {}
+    local panel = { Roles = {} }
+    panel.Frame = surface(config, "Credits", 44 + #rows * 24 + 12)
+    panel.Header = label(panel.Frame, "Title", config.Title or "Credits", 14, 0.08, Enum.FontWeight.SemiBold)
+    panel.Header.Position, panel.Header.Size = UDim2.new(0, 16, 0, 13), UDim2.new(1, -32, 0, 20)
+    for i, row in ipairs(rows) do
+        local y = 42 + (i - 1) * 24
+        icon(panel.Frame, row.Icon or "user", 16, y + 3, 13)
+        local role = label(panel.Frame, "Role", row.Role, 11, 0.45)
+        role.Position, role.Size = UDim2.new(0, 38, 0, y), UDim2.new(0.44, -38, 0, 20)
+        local handle = label(panel.Frame, "Handle", row.Handle, 13, 0.05, Enum.FontWeight.SemiBold)
+        handle.AnchorPoint, handle.Position = Vector2.new(1, 0), UDim2.new(1, -16, 0, y)
+        handle.Size, handle.TextXAlignment = UDim2.new(0.53, -16, 0, 20), Enum.TextXAlignment.Right
+        panel.Roles[i] = role
+    end
+    function panel:Destroy() self.Frame:Destroy() end
+    return panel
+end
+
+function InfoCard.Feedback(config)
+    local button = actionButton(config.Parent, "FeedbackFloat", "", config.Icon or "message-square", {})
+    button.AnchorPoint, button.Position = Vector2.new(1, 1), UDim2.new(1, -14, 1, -14)
+    button.Size, button.Visible, button.ZIndex = UDim2.new(0, 42, 0, 42), false, 40
+    for _, child in ipairs(button:GetDescendants()) do
+        if child:IsA("GuiObject") then child.ZIndex = 41 end
+        if child.Name == "Icon" then child.Position, child.Size = UDim2.new(0.5, -8, 0.5, -8), UDim2.new(0, 16, 0, 16) end
+    end
+    return button
+end
+
+return InfoCard
+
+end
+
+-- enderhub-windui-mac-chrome43-info
 return __require("src/Init.lua")

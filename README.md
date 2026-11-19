@@ -37,3 +37,16 @@ I might rewrite this project from scratch later.
     ```luau
     loadstring(game:HttpGet('https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/main_example.lua'))()
     ```
+
+## Ender Hub Info controls
+
+`WindUI:InfoCard`, `WindUI:InfoCredits`, and `WindUI:InfoFeedback` use the fork's
+native rounded surfaces, theme colors, font and element radius. See
+[Info component documentation](build/pages/info-card.md) for the API and cleanup
+contract. These components only display supplied data and invoke supplied UI
+callbacks; they do not start network requests or telemetry.
+
+`npm run build` builds the release from the pinned deployed runtime plus the Info
+component sources. `npm run build:upstream` retains the original upstream build.
+Run `lua tests/InfoCard.lua` to check resizing, actions and cleanup. CI checks the
+committed release for reproducibility and does not create bot commits.

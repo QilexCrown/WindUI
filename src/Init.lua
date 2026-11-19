@@ -397,6 +397,18 @@ end
 --
 -- Only players present in Ranks get a tag. Colours follow the active theme;
 -- Config.Colors { Text, Subtle, Accent, Icon } pins them instead.
+function WindUI:InfoCard(Config)
+	return require("./components/InfoCard").New(Config)
+end
+
+function WindUI:InfoCredits(Config)
+	return require("./components/InfoCard").Credits(Config)
+end
+
+function WindUI:InfoFeedback(Config)
+	return require("./components/InfoCard").Feedback(Config)
+end
+
 function WindUI:PlayerTags(Config)
 	Config = Config or {}
 	Config.WindUI = WindUI
