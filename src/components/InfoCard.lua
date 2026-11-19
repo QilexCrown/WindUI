@@ -45,37 +45,9 @@ local function disconnect(list)
     for _, connection in ipairs(list) do connection:Disconnect() end
     for i = #list, 1, -1 do list[i] = nil end
 end
-local function actionButton(parent, name, text, iconName, config)
-    local button = New("TextButton", { Parent = parent, Name = name, Text = "",
-        BackgroundTransparency = 1, AutoButtonColor = false, Selectable = true, BorderSizePixel = 0 })
-    local fill = Creator.NewRoundFrame(12, "Squircle", {
-        Parent = button, Name = "Surface", Size = UDim2.new(1, 0, 1, 0),
-        ImageTransparency = 0.9, ThemeTag = { ImageColor3 = "Button" },
-    })
-    Creator.NewRoundFrame(12, "SquircleGlass", {
-        Parent = button, Name = "Outline", Size = UDim2.new(1, 0, 1, 0),
-        ImageTransparency = 0.92, ThemeTag = { ImageColor3 = "White" },
-    })
-    local textLabel = label(button, "Title", text, 12, 0.1)
-    textLabel.Size = UDim2.new(1, -28, 1, 0)
-    textLabel.Position = UDim2.new(0, 22, 0, 0)
-    textLabel.TextXAlignment = Enum.TextXAlignment.Center
-    icon(button, iconName, 9, 9, 14)
-    local connections = {}
-    local function hover(on)
-        if button.Parent then Creator.Tween(fill, 0.14, { ImageTransparency = on and 0.8 or 0.9 }):Play() end
-    end
-    for _, event in ipairs({ "MouseEnter", "SelectionGained" }) do
-        connections[#connections + 1] = button[event]:Connect(function() hover(true) end)
-    end
-    for _, event in ipairs({ "MouseLeave", "SelectionLost" }) do
-        connections[#connections + 1] = button[event]:Connect(function() hover(false) end)
-    end
-    connections[#connections + 1] = button.Activated:Connect(function()
-        if button.Parent and config.Callback then config.Callback() end
-    end)
-    connections[#connections + 1] = button.Destroying:Connect(function() disconnect(connections) end)
-    return button, textLabel
+local function actionButton(parent, name, text, iconName, config, window)
+    local glass = require("./GlassButton").New({Parent = parent, Name = name, Title = text, Icon = iconName, Radius = 16, Window = window or config.Window, Callback = config.Callback})
+    return glass.Button, glass.Label
 end
 
 function InfoCard.New(config)
@@ -154,7 +126,7 @@ function InfoCard.New(config)
         self.Actions = {}
         for i, spec in ipairs(actions) do
             local button, text = actionButton(self.Frame, spec.Id or "Action", spec.Title,
-                spec.Icon or (i == 1 and "rotate-cw" or "refresh-cw"), spec)
+                spec.Icon or (i == 1 and "rotate-cw" or "refresh-cw"), spec, config.Window)
             self.Actions[#self.Actions + 1] = { Button = button, Label = text }
         end
         lastWidth = nil
@@ -196,12 +168,15 @@ function InfoCard.Credits(config)
 end
 
 function InfoCard.Feedback(config)
-    local button = actionButton(config.Parent, "FeedbackFloat", "", config.Icon or "message-square", {})
+    local button = actionButton(config.Parent, "FeedbackFloat", "", config.Icon or "message-square", {}, config.Window)
     button.AnchorPoint, button.Position = Vector2.new(1, 1), UDim2.new(1, -14, 1, -14)
     button.Size, button.Visible, button.ZIndex = UDim2.new(0, 42, 0, 42), false, 40
     for _, child in ipairs(button:GetDescendants()) do
         if child:IsA("GuiObject") then child.ZIndex = 41 end
-        if child.Name == "Icon" then child.Position, child.Size = UDim2.new(0.5, -8, 0.5, -8), UDim2.new(0, 16, 0, 16) end
+        if child.Name == "Icon" then
+            child.AnchorPoint = Vector2.new(0.5, 0.5)
+            child.Position, child.Size = UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, 16, 0, 16)
+        end
     end
     return button
 end

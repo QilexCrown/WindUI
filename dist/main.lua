@@ -1,4 +1,4 @@
--- Bundled WindUI fork: src/Init.lua (modules: 74)
+-- Bundled WindUI fork: src/Init.lua (modules: 76)
 local __modules = {}
 local __cache = {}
 local function __require(id)
@@ -411,6 +411,12 @@ end
 --
 -- Only players present in Ranks get a tag. Colours follow the active theme;
 -- Config.Colors { Text, Subtle, Accent, Icon } pins them instead.
+function WindUI:GlassButton(Config)
+ Config = Config or {}
+ Config.Window = Config.Window or WindUI.Window
+ return require("src/components/GlassButton.lua").New(Config)
+end
+
 function WindUI:InfoCredits(Config)
 	return require("src/components/InfoCard.lua").Credits(Config)
 end
@@ -649,6 +655,7 @@ return function(Config)
 		ScrollBarEnabled = Config.ScrollBarEnabled or false,
 		SideBarWidth = Config.SideBarWidth or 200,
 		SideBarVisible = true,
+		ReducedMotion = Config.ReducedMotion == true,
 		Acrylic = Config.Acrylic or false,
 		NewElements = Config.NewElements or false,
 		IgnoreAlerts = Config.IgnoreAlerts or false,
@@ -1836,7 +1843,7 @@ return function(Config)
 		local function SetSidebarVisible(visible)
 			Window.SideBarVisible = visible
 			Window.UIElements.SideBarContainer.Visible = visible
-			if Window.IconRail then Window.IconRail.Frame.Visible = not visible; Window.IconRail:Sync() end
+			if Window.IconRail then Window.IconRail:SetCollapsed(not visible) end
 			-- The bar keeps every control and tag when the sidebar folds away;
 			-- only the panel (and its user card) goes.
 			if UserIcon then
@@ -37206,37 +37213,9 @@ local function disconnect(list)
     for _, connection in ipairs(list) do connection:Disconnect() end
     for i = #list, 1, -1 do list[i] = nil end
 end
-local function actionButton(parent, name, text, iconName, config)
-    local button = New("TextButton", { Parent = parent, Name = name, Text = "",
-        BackgroundTransparency = 1, AutoButtonColor = false, Selectable = true, BorderSizePixel = 0 })
-    local fill = Creator.NewRoundFrame(12, "Squircle", {
-        Parent = button, Name = "Surface", Size = UDim2.new(1, 0, 1, 0),
-        ImageTransparency = 0.9, ThemeTag = { ImageColor3 = "Button" },
-    })
-    Creator.NewRoundFrame(12, "SquircleGlass", {
-        Parent = button, Name = "Outline", Size = UDim2.new(1, 0, 1, 0),
-        ImageTransparency = 0.92, ThemeTag = { ImageColor3 = "White" },
-    })
-    local textLabel = label(button, "Title", text, 12, 0.1)
-    textLabel.Size = UDim2.new(1, -28, 1, 0)
-    textLabel.Position = UDim2.new(0, 22, 0, 0)
-    textLabel.TextXAlignment = Enum.TextXAlignment.Center
-    icon(button, iconName, 9, 9, 14)
-    local connections = {}
-    local function hover(on)
-        if button.Parent then Creator.Tween(fill, 0.14, { ImageTransparency = on and 0.8 or 0.9 }):Play() end
-    end
-    for _, event in ipairs({ "MouseEnter", "SelectionGained" }) do
-        connections[#connections + 1] = button[event]:Connect(function() hover(true) end)
-    end
-    for _, event in ipairs({ "MouseLeave", "SelectionLost" }) do
-        connections[#connections + 1] = button[event]:Connect(function() hover(false) end)
-    end
-    connections[#connections + 1] = button.Activated:Connect(function()
-        if button.Parent and config.Callback then config.Callback() end
-    end)
-    connections[#connections + 1] = button.Destroying:Connect(function() disconnect(connections) end)
-    return button, textLabel
+local function actionButton(parent, name, text, iconName, config, window)
+    local glass = require("src/components/GlassButton.lua").New({Parent = parent, Name = name, Title = text, Icon = iconName, Radius = 16, Window = window or config.Window, Callback = config.Callback})
+    return glass.Button, glass.Label
 end
 
 function InfoCard.New(config)
@@ -37315,7 +37294,7 @@ function InfoCard.New(config)
         self.Actions = {}
         for i, spec in ipairs(actions) do
             local button, text = actionButton(self.Frame, spec.Id or "Action", spec.Title,
-                spec.Icon or (i == 1 and "rotate-cw" or "refresh-cw"), spec)
+                spec.Icon or (i == 1 and "rotate-cw" or "refresh-cw"), spec, config.Window)
             self.Actions[#self.Actions + 1] = { Button = button, Label = text }
         end
         lastWidth = nil
@@ -37357,12 +37336,15 @@ function InfoCard.Credits(config)
 end
 
 function InfoCard.Feedback(config)
-    local button = actionButton(config.Parent, "FeedbackFloat", "", config.Icon or "message-square", {})
+    local button = actionButton(config.Parent, "FeedbackFloat", "", config.Icon or "message-square", {}, config.Window)
     button.AnchorPoint, button.Position = Vector2.new(1, 1), UDim2.new(1, -14, 1, -14)
     button.Size, button.Visible, button.ZIndex = UDim2.new(0, 42, 0, 42), false, 40
     for _, child in ipairs(button:GetDescendants()) do
         if child:IsA("GuiObject") then child.ZIndex = 41 end
-        if child.Name == "Icon" then child.Position, child.Size = UDim2.new(0.5, -8, 0.5, -8), UDim2.new(0, 16, 0, 16) end
+        if child.Name == "Icon" then
+            child.AnchorPoint = Vector2.new(0.5, 0.5)
+            child.Position, child.Size = UDim2.new(0.5, 0, 0.5, 0), UDim2.new(0, 16, 0, 16)
+        end
     end
     return button
 end
@@ -37373,61 +37355,127 @@ end
 
 __modules["src/components/SidebarRail.lua"] = function(require)
 local Creator = require("src/modules/Creator.lua")
+local Motion = require("src/components/ControlMotion.lua")
 local Rail = {Width = 52}
 function Rail.Attach(window)
-    local self = {Buttons = {}, Connections = {}}
-    local root = Creator.New("ScrollingFrame", {
+    local self = {Buttons = {}, Entries = {}, Connections = {}, Generation = 0, Destroyed = false, Collapsed = false}
+    local reduced = window.ReducedMotion == true
+    local root = Creator.New("CanvasGroup", {
         Name = "CollapsedTabRail", Parent = window.UIElements.Main.Main,
         Size = UDim2.new(0, Rail.Width, 1, -window.Topbar.Height),
         Position = UDim2.new(0, 0, 0, window.Topbar.Height),
+        BackgroundTransparency = 1, GroupTransparency = 1, Visible = false,
+    })
+    local scroller = Creator.New("ScrollingFrame", {
+        Name = "Icons", Parent = root, Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
         CanvasSize = UDim2.new(0, 0, 0, 0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollingDirection = Enum.ScrollingDirection.Y, Visible = false,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
     }, {
-        Creator.New("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder,
-            HorizontalAlignment = Enum.HorizontalAlignment.Center}),
+        Creator.New("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center}),
         Creator.New("UIPadding", {PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 8)}),
     })
-    self.Frame = root
+    self.Frame, self.Scroller = root, scroller
+    self.Motion = Motion.New(root, reduced)
+    local function bind(entry, event, fn) entry.Connections[#entry.Connections + 1] = event:Connect(fn) end
+    local function paint(entry)
+        if self.Destroyed then return end
+        local selected = window.TabModule and window.TabModule.SelectedTab == entry.Index
+        local locked = entry.Tab.Locked == true
+        if entry.LastSelected == selected and entry.LastLocked == locked and entry.LastHover == entry.Hover and entry.LastPressed == entry.Pressed then return end
+        entry.LastSelected, entry.LastLocked, entry.LastHover, entry.LastPressed = selected, locked, entry.Hover, entry.Pressed
+        entry.Motion:To("fill", entry.Button, 0.18, {ImageTransparency = selected and 0.9 or entry.Hover and 0.97 or 1})
+        entry.Motion:To("rim", entry.Rim, 0.18, {ImageTransparency = selected and 0.72 or 1})
+        entry.Motion:To("scale", entry.Scale, 0.18, {Scale = entry.Pressed and 0.94 or entry.Hover and 1.08 or selected and 1.04 or 1})
+        entry.Motion:To("position", entry.Icon, 0.18, {Position = UDim2.new(0.5, entry.Hover and 1 or 0, 0.5, 0)})
+        entry.Motion:To("icon", entry.Icon.ImageLabel, 0.18, {ImageTransparency = locked and 0.7 or selected and 0 or entry.Hover and 0.05 or 0.3})
+        entry.Button.Selectable = not locked
+    end
+    local function remove(index)
+        local entry = self.Entries[index]
+        if not entry then return end
+        for _, connection in ipairs(entry.Connections) do connection:Disconnect() end
+        entry.Motion:Destroy()
+        entry.Button:Destroy()
+        self.Entries[index], self.Buttons[index] = nil, nil
+    end
     function self:Refresh()
-        local module = window.TabModule
-        if not module then return end
-        for index, button in pairs(self.Buttons) do
-            button.ImageTransparency = module.SelectedTab == index and 0.90 or 1
-        end
+        if self.Destroyed then return end
+        for _, entry in pairs(self.Entries) do paint(entry) end
     end
     function self:Sync()
-        local module = window.TabModule
-        if not module then return end
-        for index, tab in ipairs(module.Tabs) do
-            if not self.Buttons[index] then
-                local button = Creator.NewRoundFrame(12, "Squircle", {
-                    Name = "RailTab" .. index, Parent = root, Size = UDim2.new(0, 38, 0, 38),
-                    LayoutOrder = index, ImageTransparency = 1, ThemeTag = {ImageColor3 = "Text"},
-                }, nil, true)
-                if tab.Icon then
-                    local icon = Creator.Image(tab.Icon, tab.Icon, 0, window.Folder, "Tab", true, tab.IconThemed, "TabIcon")
-                    icon.Size = UDim2.new(0, 18, 0, 18)
-                    icon.AnchorPoint = Vector2.new(0.5, 0.5)
-                    icon.Position = UDim2.new(0.5, 0, 0.5, 0)
-                    icon.Parent = button
-                    icon.ImageLabel.ImageTransparency = tab.Locked and 0.7 or 0.1
-                else
-                    Creator.New("TextLabel", {Parent = button, BackgroundTransparency = 1,
-                        Size = UDim2.new(1, 0, 1, 0), Text = tostring(index), TextSize = 14,
-                        ThemeTag = {TextColor3 = "Text"}})
-                end
-                self.Buttons[index] = button
-                self.Connections[#self.Connections + 1] = button.MouseButton1Click:Connect(function()
-                    module:SelectTab(index)
-                end)
+        if self.Destroyed or not window.TabModule then return end
+        local tabs, present, indexes = window.TabModule.Tabs, {}, {}
+        -- Sparse tab indices must not drop every icon after the first gap.
+        for index, tab in pairs(tabs) do
+            local source = type(tab) == "table" and tab.UIElements and tab.UIElements.Main
+            if type(tab) == "table" and type(index) == "number" and (not source or source.Parent ~= nil) then
+                indexes[#indexes + 1] = index; present[index] = true
             end
+        end
+        table.sort(indexes)
+        local stale = {}
+        for index in pairs(self.Entries) do if not present[index] then stale[#stale + 1] = index end end
+        for _, index in ipairs(stale) do remove(index) end
+        for rank, index in ipairs(indexes) do
+            local tab = tabs[index]
+            local entry = self.Entries[index]
+            if entry and (entry.Tab ~= tab or entry.IconName ~= tab.Icon) then remove(index); entry = nil end
+            if not entry then
+                local button = Creator.NewRoundFrame(13, "Squircle", {
+                    Name = "RailTab" .. index, Parent = scroller, Size = UDim2.new(0, 38, 0, 38),
+                    LayoutOrder = rank, ImageTransparency = 1, ThemeTag = {ImageColor3 = "Text"},
+                }, nil, true)
+                local rim = Creator.NewRoundFrame(13, "SquircleGlass", {Parent = button, Size = UDim2.new(1, 0, 1, 0),
+                    ImageTransparency = 1, ThemeTag = {ImageColor3 = "Text"}})
+                local iconName = tab.Icon or "circle"
+                local icon = Creator.Image(iconName, iconName, 0, window.Folder, "Tab", not tab.IconColor, tab.IconThemed, "TabIcon")
+                icon.Size = UDim2.new(0, 18, 0, 18)
+                icon.AnchorPoint, icon.Position = Vector2.new(0.5, 0.5), UDim2.new(0.5, 0, 0.5, 0)
+                icon.Parent = button
+                if tab.IconColor then icon.ImageLabel.ImageColor3 = tab.IconColor end
+                entry = {Tab = tab, Index = index, IconName = tab.Icon, Button = button, Rim = rim, Icon = icon,
+                    Scale = Creator.New("UIScale", {Parent = icon, Scale = 1}), Connections = {}}
+                entry.Motion = Motion.New(button, reduced)
+                self.Entries[index], self.Buttons[index] = entry, button
+                local source = tab.UIElements and tab.UIElements.Main
+                if source then bind(entry, source.Destroying, function() if not self.Destroyed then remove(index) end end) end
+                bind(entry, button.Activated, function() if not self.Destroyed and not tab.Locked then window.TabModule:SelectTab(index) end end)
+                bind(entry, button.MouseEnter, function() entry.Hover = true; paint(entry) end)
+                bind(entry, button.MouseLeave, function() entry.Hover, entry.Pressed = false, false; paint(entry) end)
+                bind(entry, button.SelectionGained, function() entry.Hover = true; paint(entry) end)
+                bind(entry, button.SelectionLost, function() entry.Hover, entry.Pressed = false, false; paint(entry) end)
+                bind(entry, button.InputBegan, function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then entry.Pressed = true; paint(entry) end
+                end)
+                bind(entry, button.InputEnded, function() entry.Pressed = false; paint(entry) end)
+            end
+            entry.Button.LayoutOrder = rank
         end
         self:Refresh()
     end
-    root.Destroying:Once(function()
+    function self:SetCollapsed(value)
+        if self.Destroyed then return end
+        self.Collapsed = value == true
+        self.Generation = self.Generation + 1
+        local generation = self.Generation
+        self:Sync()
+        if self.Collapsed then
+            if not root.Visible then root.Position = UDim2.new(0, -5, 0, window.Topbar.Height); root.GroupTransparency = 1 end
+            root.Visible = true
+            self.Motion:To("visibility", root, 0.20, {GroupTransparency = 0, Position = UDim2.new(0, 0, 0, window.Topbar.Height)})
+        else
+            self.Motion:To("visibility", root, 0.16, {GroupTransparency = 1, Position = UDim2.new(0, -5, 0, window.Topbar.Height)})
+            if reduced then root.Visible = false
+            else task.delay(0.17, function() if not self.Destroyed and generation == self.Generation and not self.Collapsed then root.Visible = false end end) end
+        end
+    end
+    self.Connections[1] = root.Destroying:Connect(function()
+        self.Destroyed = true; self.Generation = self.Generation + 1
         for _, connection in ipairs(self.Connections) do connection:Disconnect() end
-        self.Connections, self.Buttons = {}, {}
+        local indexes = {}; for index in pairs(self.Entries) do indexes[#indexes + 1] = index end
+        for _, index in ipairs(indexes) do remove(index) end
+        self.Motion:Destroy()
     end)
     window.IconRail = self
     self:Sync()
@@ -37436,5 +37484,139 @@ return Rail
 
 end
 
--- enderhub-windui-mac-chrome47-rail
+__modules["src/components/ControlMotion.lua"] = function(require)
+local Creator = require("src/modules/Creator.lua")
+local Motion = {}
+function Motion.New(owner, reduced)
+    local self = {Active = {}, Destroyed = false}
+    function self:Cancel(slot)
+        local entry = self.Active[slot]
+        if not entry then return end
+        self.Active[slot] = nil
+        if entry.Connection then entry.Connection:Disconnect() end
+        entry.Tween:Cancel()
+    end
+    function self:To(slot, target, duration, props)
+        if self.Destroyed then return end
+        self:Cancel(slot)
+        if reduced then for key, value in pairs(props) do target[key] = value end; return end
+        local entry = {Tween = Creator.Tween(target, duration, props, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)}
+        self.Active[slot] = entry
+        entry.Connection = entry.Tween.Completed:Connect(function()
+            if self.Active[slot] == entry then self.Active[slot] = nil end
+            entry.Connection:Disconnect()
+        end)
+        entry.Tween:Play()
+    end
+    function self:Destroy()
+        if self.Destroyed then return end
+        self.Destroyed = true
+        local slots = {}
+        for slot in pairs(self.Active) do slots[#slots + 1] = slot end
+        for _, slot in ipairs(slots) do self:Cancel(slot) end
+        if self.Connection then self.Connection:Disconnect(); self.Connection = nil end
+    end
+    self.Connection = owner.Destroying:Connect(function() self:Destroy() end)
+    return self
+end
+return Motion
+
+end
+
+__modules["src/components/GlassButton.lua"] = function(require)
+local Creator = require("src/modules/Creator.lua")
+local Motion = require("src/components/ControlMotion.lua")
+local Glass = {}
+function Glass.New(config)
+    config = config or {}
+    local radius = config.Radius or 18
+    local self = {Selected = config.Selected == true, Destroyed = false, Connections = {}}
+    local button = Creator.New("TextButton", {
+        Name = config.Name or "GlassButton", Parent = config.Parent, Text = "",
+        Size = config.Size or UDim2.new(1, 0, 0, 36), Position = config.Position,
+        BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false, Selectable = true,
+    })
+    self.Button = button
+    self.Fill = Creator.NewRoundFrame(radius, "Squircle", {
+        Name = "GlassFill", Parent = button, Size = UDim2.new(1, 0, 1, 0),
+        ImageTransparency = 0.9, ThemeTag = {ImageColor3 = "Text"},
+    })
+    self.Bezel = Creator.NewRoundFrame(radius, "SquircleGlass", {
+        Name = "GlassBezel", Parent = button, Size = UDim2.new(1, 0, 1, 0),
+        ImageTransparency = 0.72, ThemeTag = {ImageColor3 = "Text"},
+    })
+    local inset = 10
+    if config.Icon then
+        local data = Creator.Icon(config.Icon)
+        if data and data[1] then
+            local rect = data[2] or {}
+            self.Icon = Creator.New("ImageLabel", {
+                Name = "Icon", Parent = button, BackgroundTransparency = 1,
+                Size = UDim2.new(0, 14, 0, 14), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 10, 0.5, 0),
+                Image = data[1], ImageRectOffset = rect.ImageRectPosition or Vector2.new(0, 0), ImageRectSize = rect.ImageRectSize or Vector2.new(0, 0),
+                ImageTransparency = 0.15, ThemeTag = {ImageColor3 = "ElementIcon"},
+            })
+            inset = 28
+        end
+    end
+    self.Label = Creator.New("TextLabel", {
+        Name = "Title", Parent = button, Text = config.Title or "", TextSize = config.TextSize or 12,
+        BackgroundTransparency = 1, BorderSizePixel = 0, RichText = false,
+        TextWrapped = false, TextTruncate = Enum.TextTruncate.AtEnd, TextXAlignment = Enum.TextXAlignment.Center,
+        FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium),
+        Position = UDim2.new(0, inset, 0, 0), Size = UDim2.new(1, -inset - 10, 1, 0),
+        ThemeTag = {TextColor3 = "ElementTitle"},
+    })
+    if self.Icon and (config.Title or "") == "" then
+        self.Icon.AnchorPoint = Vector2.new(0.5, 0.5)
+        self.Icon.Position = UDim2.new(0.5, 0, 0.5, 0)
+    end
+    self.Scale = Creator.New("UIScale", {Parent = button, Scale = 1})
+    local reduced = config.ReducedMotion or (config.Window and config.Window.ReducedMotion)
+    self.Motion = Motion.New(button, reduced)
+    local hovered, pressed = false, false
+    local function paint()
+        if self.Destroyed then return end
+        local segment = config.Mode == "Segment"
+        local fill = segment and (self.Selected and 0.90 or 1) or 0.90
+        local rim = segment and (self.Selected and 0.68 or 1) or 0.76
+        if hovered then fill = segment and (self.Selected and 0.85 or 0.96) or 0.84; rim = math.min(rim, 0.72) end
+        if pressed then fill = 0.81 end
+        self.Motion:To("fill", self.Fill, 0.16, {ImageTransparency = fill})
+        self.Motion:To("bezel", self.Bezel, 0.16, {ImageTransparency = rim})
+        self.Motion:To("label", self.Label, 0.16, {TextTransparency = segment and not self.Selected and 0.45 or 0.03})
+        self.Motion:To("press", self.Scale, pressed and 0.10 or 0.20, {Scale = pressed and 0.975 or 1})
+    end
+    local function bind(event, fn) self.Connections[#self.Connections + 1] = event:Connect(fn) end
+    bind(button.MouseEnter, function() hovered = true; paint() end)
+    bind(button.MouseLeave, function() hovered, pressed = false, false; paint() end)
+    bind(button.SelectionGained, function() hovered = true; paint() end)
+    bind(button.SelectionLost, function() hovered, pressed = false, false; paint() end)
+    local function isPress(input)
+        return input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch
+            or input.KeyCode == Enum.KeyCode.ButtonA or input.KeyCode == Enum.KeyCode.Return
+    end
+    bind(button.InputBegan, function(input) if isPress(input) then pressed = true; paint() end end)
+    bind(button.InputEnded, function(input) if isPress(input) then pressed = false; paint() end end)
+    bind(button.Activated, function() if not self.Destroyed and config.Callback then config.Callback() end end)
+    bind(button.Destroying, function()
+        self.Destroyed = true
+        for _, connection in ipairs(self.Connections) do connection:Disconnect() end
+        self.Connections = {}
+        self.Motion:Destroy()
+    end)
+    function self:SetSelected(value)
+        value = value == true
+        if self.Selected == value then return end
+        self.Selected = value; paint()
+    end
+    function self:Destroy() if not self.Destroyed then button:Destroy() end end
+    paint()
+    return self
+end
+return Glass
+
+end
+
+-- enderhub-windui-mac-chrome48-glass
 return __require("src/Init.lua")

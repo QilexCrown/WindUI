@@ -1,4 +1,4 @@
-// Build the InfoCard release on the pinned, deployed Ender Hub runtime.
+// Build the tested native component overlays on the pinned, deployed runtime.
 // The base retains existing chrome, icons and executor fixes. New components
 // come directly from src; no game-specific hub code is bundled here.
 const fs = require('node:fs');
@@ -6,7 +6,7 @@ const path = require('node:path');
 const fork = path.resolve(__dirname, '..');
 const file = path.join(fork, 'build/enderhub-base.lua');
 let bundle = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
-const moduleIds = ['src/components/InfoCardLayout.lua', 'src/components/InfoCard.lua', 'src/components/SidebarRail.lua'];
+const moduleIds = ['src/components/InfoCardLayout.lua', 'src/components/InfoCard.lua', 'src/components/SidebarRail.lua', 'src/components/ControlMotion.lua', 'src/components/GlassButton.lua'];
 for (const id of moduleIds) {
     const source = fs.readFileSync(path.join(fork, id), 'utf8').replace(/\r\n/g, '\n');
     const chunk = `__modules[${JSON.stringify(id)}] = function(require)\n` + source.replace(
@@ -28,6 +28,10 @@ for (const id of moduleIds) {
     }
 }
 bundle = require('./sidebar-rail')(bundle);
+if (!bundle.includes('function WindUI:GlassButton(Config)')) {
+ const marker='function WindUI:PlayerTags(Config)';
+ bundle=bundle.replace(marker, 'function WindUI:GlassButton(Config)\n Config = Config or {}\n Config.Window = Config.Window or WindUI.Window\n return require("src/components/GlassButton.lua").New(Config)\nend\n\n'+marker);
+}
 if (!bundle.includes('function WindUI:InfoCard(Config)')) {
     const marker = 'function WindUI:PlayerTags(Config)';
     if (bundle.split(marker).length !== 2) throw Error('Ambiguous Init module');
@@ -38,7 +42,7 @@ if (!bundle.includes('function WindUI:InfoCredits(Config)')) {
     bundle = bundle.replace(marker, 'function WindUI:InfoCredits(Config)\n\treturn require("src/components/InfoCard.lua").Credits(Config)\nend\n\nfunction WindUI:InfoFeedback(Config)\n\treturn require("src/components/InfoCard.lua").Feedback(Config)\nend\n\n' + marker);
 }
 bundle = bundle.replace(/-- enderhub-windui-[^\n]+\nreturn __require\("src\/Init.lua"\)/,
-    '-- enderhub-windui-mac-chrome47-rail\nreturn __require("src/Init.lua")');
+    '-- enderhub-windui-mac-chrome48-glass\nreturn __require("src/Init.lua")');
 const count = [...bundle.matchAll(/^__modules\[/gm)].length;
 bundle = bundle.replace(/\(modules: \d+\)/, `(modules: ${count})`);
 fs.writeFileSync(path.join(fork, 'dist/main.lua'), bundle);

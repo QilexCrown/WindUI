@@ -19,7 +19,7 @@ local function signal()
 end
 local function node(class)
     local object = {ClassName = class, AbsoluteSize = {X = 600, Y = 300}, Children = {}, Signals = {}}
-    for _, event in ipairs({'Destroying', 'MouseEnter', 'MouseLeave', 'SelectionGained', 'SelectionLost', 'Activated'}) do
+    for _, event in ipairs({'Destroying', 'MouseEnter', 'MouseLeave', 'SelectionGained', 'SelectionLost', 'Activated', 'InputBegan', 'InputEnded'}) do
         object[event] = signal()
     end
     function object:GetPropertyChangedSignal(name)
@@ -58,10 +58,15 @@ end
 function Creator.NewRoundFrame(_, shape, props) local item = Creator.New('ImageLabel', props); item.Shape = shape; return item end
 function Creator.Icon() return {'icon', {}} end
 function Creator.Tween(item, _, props)
-    return {Play = function() for key, value in pairs(props) do item[key] = value end end}
+    local t = {Completed = signal()}
+    function t:Play()for key,value in pairs(props)do item[key]=value end;self.Completed:Fire()end
+    function t:Cancel()self.Completed:Fire()end
+    return t
 end
 local Layout = assert(loadfile('src/components/InfoCardLayout.lua'))()
-local environment = setmetatable({
+local components={}
+local environment
+environment = setmetatable({
     Enum = enum,
     UDim = {new = function(scale, offset) return {Scale = scale, Offset = offset} end},
     UDim2 = {new = function(x, xo, y, yo) return {X = {Scale = x, Offset = xo}, Y = {Scale = y, Offset = yo}} end},
@@ -71,8 +76,12 @@ local environment = setmetatable({
     ColorSequence = {new = function(...) return {...} end},
     require = function(id)
         if id == '../modules/Creator' then return Creator end
-        assert(id == './InfoCardLayout', id)
-        return Layout
+        if id == './InfoCardLayout' then return Layout end
+        local name=id:match('([^/]+)$')
+        if not components[name] then
+            local c=assert(loadfile('src/components/'..name..'.lua'));setfenv(c,environment);components[name]=c()
+        end
+        return components[name]
     end,
 }, {__index = _G})
 local chunk = assert(loadfile('src/components/InfoCard.lua'))
@@ -120,6 +129,11 @@ local credits = InfoCard.Credits({Parent = node('Frame'), Rows = {{Role = 'Owner
 assert(credits.Frame.Shape == 'Squircle' and credits.Header.Text == 'Credits' and #credits.Roles == 2)
 local feedback = InfoCard.Feedback({Parent = node('Frame')})
 assert(feedback.Name == 'FeedbackFloat' and feedback.Size.X.Offset == 42 and feedback.AnchorPoint.X == 1)
+for _, child in ipairs(feedback:GetDescendants()) do
+    if child.Name == 'Icon' then
+        assert(child.AnchorPoint.X == 0.5 and child.Position.X.Offset == 0 and child.Position.Y.Offset == 0, 'feedback icon is off center')
+    end
+end
 feedback:Destroy()
 credits:Destroy()
 assert(active == 0, 'native controls left listeners alive')

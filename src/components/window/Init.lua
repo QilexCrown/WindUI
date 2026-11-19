@@ -58,6 +58,7 @@ return function(Config)
 		ScrollBarEnabled = Config.ScrollBarEnabled or false,
 		SideBarWidth = Config.SideBarWidth or 200,
 		SideBarVisible = true,
+		ReducedMotion = Config.ReducedMotion == true,
 		Acrylic = Config.Acrylic or false,
 		NewElements = Config.NewElements or false,
 		IgnoreAlerts = Config.IgnoreAlerts or false,
