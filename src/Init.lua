@@ -401,10 +401,6 @@ function WindUI:InfoCard(Config)
 	return require("./components/InfoCard").New(Config)
 end
 
-function WindUI:SetEffects(Options)
-	Creator.SetEffects(Options)
-end
-
 function WindUI:InfoCredits(Config)
 	return require("./components/InfoCard").Credits(Config)
 end

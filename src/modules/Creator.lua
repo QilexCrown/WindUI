@@ -647,20 +647,8 @@ function Creator.New(Name, Properties, Children)
 	return Object
 end
 
-local MotionController = require("./Motion").New(TweenService, function(duration, style, direction, ...) return TweenInfo.new(duration, style or Enum.EasingStyle.Quint, direction or Enum.EasingDirection.Out, ...) end)
-local GlassMaterial = require("./Glass")
-
-function Creator.SetEffects(options)
-	options = options or {}
-	if options.ReducedMotion ~= nil then MotionController.ReducedMotion = options.ReducedMotion == true end
-	if options.Animations ~= nil then MotionController.Enabled = options.Animations ~= false end
-	if options.Glass ~= nil then GlassMaterial.SetEnabled(options.Glass) end
-end
-
-function Creator.GetActiveAnimations() return MotionController:GetActiveCount() end
-
 function Creator.Tween(Object, Time, Properties, ...)
-	return MotionController:Create(Object, Time, Properties, ...)
+	return TweenService:Create(Object, TweenInfo.new(Time, ...), Properties)
 end
 
 --[[function Creator.NewRoundFrame(Radius, Type, Properties, Children, isButton, ReturnTable)
@@ -735,9 +723,7 @@ end
 end]]
 
 function Creator.NewRoundFrame(Radius, Type, Properties, Children, IsButton, ReturnTable)
-	local frame, wrapper = DynamicShapeModule:New(Radius, Type, Properties, Children, IsButton, nil)
-	GlassMaterial.Apply(Creator, frame, Radius, Type, Properties)
-	return frame, wrapper
+	return DynamicShapeModule:New(Radius, Type, Properties, Children, IsButton, nil)
 end
 
 local New = Creator.New
