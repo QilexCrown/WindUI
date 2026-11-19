@@ -31,10 +31,7 @@ jobs:
         uses: ok-nick/setup-aftman@v0.3.0
 
       - name: Check Info components
-        run: |
-          lua tests/InfoCard.lua
-          lua tests/ToolbarLayout.lua
-          lua tests/IOS26.lua
+        run: lua tests/InfoCard.lua
 
       - name: Install Rojo, Lune and DarkLua
         run: aftman install

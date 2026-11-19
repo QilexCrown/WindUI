@@ -1,143 +1,171 @@
-local Creator = require("../../modules/Creator")
-local TextService = game:GetService("TextService")
 local Tag = {}
-function Tag:New(config, parent)
-    config = config or {}
-    local glass = config.Style == "Glass" or (config.Style == nil and config.Window and config.Window.IOS26)
-    local self = {Title = config.Title or "Tag", Icon = config.Icon, Color = config.Color or Color3.fromHex("#315dff"),
-        Height = 26, Priority = config.Priority or 0, CompactTitle = config.CompactTitle, Destroyed = false}
-    local connections, icon, gradient, foreground = {}, nil, nil, Color3.new(1, 1, 1)
-    local compact = false
-    local frame = Creator.NewRoundFrame(13, "Squircle", {
-        Name = glass and "IOS26Tag" or "Tag", Parent = parent,
-        Size = UDim2.new(0, 80, 0, self.Height),
-        AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
-        ImageTransparency = glass and 0.90 or 0,
-        ThemeTag = glass and {ImageColor3 = "Text"} or nil,
-    }, {
-        Creator.NewRoundFrame(13, "SquircleOutline", {
-            Size = UDim2.new(1, 0, 1, 0), ImageTransparency = glass and 0.83 or 0.88,
-            ThemeTag = {ImageColor3 = "Text"}, Name = "Bezel",
-        }),
-    })
-    self.TagFrame, self.Frame = frame, frame
-    local title = Creator.New("TextLabel", {
-        Name = "Title", Parent = frame, Text = self.Title,
-        FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium), TextSize = 12,
-        BackgroundTransparency = 1, TextXAlignment = Enum.TextXAlignment.Center,
-        TextTruncate = Enum.TextTruncate.AtEnd, TextWrapped = false,
-        Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0),
-        ThemeTag = glass and {TextColor3 = "Text"} or nil,
-    })
-    self.Title = title.Text
-    local compactLabel
-    if self.CompactTitle then
-        compactLabel = Creator.New("TextLabel", {
-            Name = "CompactTitle", Parent = frame, Text = self.CompactTitle,
-            FontFace = Font.new(Creator.Font, Enum.FontWeight.Medium), TextSize = 12,
-            BackgroundTransparency = 1, TextTruncate = Enum.TextTruncate.AtEnd,
-            Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0), Visible = false,
-            ThemeTag = glass and {TextColor3 = "Text"} or nil,
-        })
-        self.CompactTitle = compactLabel.Text
-    end
-    local function measure(text)
-        return TextService:GetTextSize(tostring(text or ""), 12, Enum.Font.GothamMedium, Vector2.new(10000, 26)).X
-    end
-    local function refreshMetrics()
-        self.Width = math.max(32, math.min(144, math.ceil(measure(self.Title)) + (icon and 40 or 20)))
-        self.CompactWidth = icon and 30 or self.CompactTitle and math.max(32, math.ceil(measure(self.CompactTitle)) + 20) or self.Width
-    end
-    local function applyColor()
-        if gradient then gradient:Destroy(); gradient = nil end
-        if glass then return end
-        local color = self.Color
-        if typeof(color) == "string" then color = Creator.GetThemeProperty(color, Creator.Theme) end
-        if typeof(color) == "table" then
-            gradient = Creator.New("UIGradient", {Parent = frame})
-            for key, value in pairs(color) do gradient[key] = value end
-            frame.ImageColor3 = Color3.new(1, 1, 1)
-            color = Creator.GetAverageColor(gradient)
-        else frame.ImageColor3 = color end
-        foreground = Creator.GetTextColorForHSB(color)
-        title.TextColor3 = foreground
-        if compactLabel then compactLabel.TextColor3 = foreground end
-        if icon then icon.ImageLabel.ImageColor3 = foreground end
-    end
-    function self:GetMetrics()
-        return {Width = self.Width, CompactWidth = self.CompactWidth, Priority = self.Priority}
-    end
-    function self:SetLayout(state)
-        if self.Destroyed then return self end
-        compact = state.Compact
-        frame.Visible = state.Visible
-        frame.Size = UDim2.new(0, state.Width, 0, self.Height)
-        frame.Position = UDim2.new(0, state.X or 0, 0.5, 0)
-        local inset = icon and not compact and 30 or 10
-        title.Position = UDim2.new(0, inset, 0, 0)
-        title.Size = UDim2.new(1, -inset - 10, 1, 0)
-        title.Visible = not (compact and (icon ~= nil or compactLabel ~= nil))
-        if compactLabel then compactLabel.Visible = compact and icon == nil end
-        if icon then
-            icon.AnchorPoint = Vector2.new(compact and 0.5 or 0, 0.5)
-            icon.Position = UDim2.new(compact and 0.5 or 0, compact and 0 or 10, 0.5, 0)
-        end
-        return self
-    end
-    local function changed()
-        refreshMetrics()
-        if self.OnLayoutChanged then self.OnLayoutChanged()
-        else self:SetLayout({Width = self.Width, Compact = false, Visible = true}) end
-    end
-    function self:SetTitle(text)
-        self.Title = tostring(text or "")
-        title.Text = self.Title
-        changed()
-        return self
-    end
-    function self:SetColor(color)
-        self.Color = color
-        applyColor()
-        return self
-    end
-    function self:SetIcon(value)
-        self.Icon = value
-        if icon then icon:Destroy(); icon = nil end
-        if value then
-            icon = Creator.Image(value, value, 0, config.Window, "Tag", false)
-            icon.Size, icon.Parent = UDim2.new(0, 14, 0, 14), frame
-            if glass then Creator.AddThemeObject(icon.ImageLabel, {ImageColor3 = "Text"})
-            else icon.ImageLabel.ImageColor3 = foreground end
-        end
-        changed()
-        return self
-    end
-    local function cleanup()
-        if self.Destroyed then return end
-        self.Destroyed = true
-        for _, connection in ipairs(connections) do connection:Disconnect() end
-        connections = {}
-        if self.OnDestroyed then self.OnDestroyed() end
-        self.OnLayoutChanged, self.OnDestroyed = nil, nil
-    end
-    function self:Destroy()
-        if not self.Destroyed then frame:Destroy() end
-        return self
-    end
-    self:SetIcon(config.Icon)
-    applyColor()
-    connections[#connections + 1] = title:GetPropertyChangedSignal("Text"):Connect(function()
-        if self.Destroyed then return end
-        self.Title = title.Text; changed()
-    end)
-    if compactLabel then
-        connections[#connections + 1] = compactLabel:GetPropertyChangedSignal("Text"):Connect(function()
-            if self.Destroyed then return end
-            self.CompactTitle = compactLabel.Text; changed()
-        end)
-    end
-    connections[#connections + 1] = frame.Destroying:Connect(cleanup)
-    connections[#connections + 1] = Creator:OnThemeChange(function() if not self.Destroyed then applyColor() end end)
-    return self
+
+local Creator = require("../../modules/Creator")
+local New = Creator.New
+local Tween = Creator.Tween
+
+function Tag:New(TagConfig, Parent)
+	local TagModule = {
+		Title = TagConfig.Title or "Tag",
+		Icon = TagConfig.Icon,
+		Color = TagConfig.Color or Color3.fromHex("#315dff"),
+		Radius = TagConfig.Radius or 999,
+		Border = TagConfig.Border or false,
+
+		TagFrame = nil,
+		Height = 26,
+		Padding = 10,
+		TextSize = 14,
+		IconSize = 16,
+	}
+
+	local TagIcon
+	if TagModule.Icon then
+		TagIcon = Creator.Image(TagModule.Icon, TagModule.Icon, 0, TagConfig.Window, "Tag", false)
+
+		TagIcon.Size = UDim2.new(0, TagModule.IconSize, 0, TagModule.IconSize)
+		TagIcon.ImageLabel.ImageColor3 = typeof(TagModule.Color) == "Color3"
+				and Creator.GetTextColorForHSB(TagModule.Color)
+			or typeof(TagModule.Color) == "string"
+				and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme)))
+	end
+
+	local TagTitle = New("TextLabel", {
+		BackgroundTransparency = 1,
+		AutomaticSize = "XY",
+		TextSize = TagModule.TextSize,
+		FontFace = Font.new(Creator.Font, Enum.FontWeight.SemiBold),
+		Text = TagModule.Title,
+		-- A tag with no Color used to evaluate to `false` here and the property
+		-- write threw, killing the whole window build on the version tag.
+		TextColor3 = typeof(TagModule.Color) == "Color3" and Creator.GetTextColorForHSB(TagModule.Color) or typeof(
+			TagModule.Color
+		) == "string" and (Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme)))
+			or Color3.new(1, 1, 1),
+		LayoutOrder = 9999,
+	})
+
+	local BackgroundGradient
+
+	if typeof(TagModule.Color) == "table" then
+		BackgroundGradient = New("UIGradient")
+		for key, value in next, TagModule.Color do
+			BackgroundGradient[key] = value
+		end
+
+		TagTitle.TextColor3 = Creator.GetTextColorForHSB(Creator.GetAverageColor(BackgroundGradient))
+		if TagIcon then
+			TagIcon.ImageLabel.ImageColor3 = Creator.GetTextColorForHSB(Creator.GetAverageColor(BackgroundGradient))
+		end
+	end
+
+	local TagFrame = Creator.NewRoundFrame(TagModule.Radius, "Squircle", {
+		AutomaticSize = "X",
+		Size = UDim2.new(0, 0, 0, TagModule.Height),
+		Parent = Parent,
+		ImageColor3 = typeof(TagModule.Color) == "Color3" and TagModule.Color
+			or typeof(TagModule.Color) == "table" and Color3.new(1, 1, 1)
+			or nil,
+		ThemeTag = typeof(TagModule.Color) == "string" and {
+			ImageColor3 = TagModule.Color,
+		},
+	}, {
+		BackgroundGradient,
+		Creator.NewRoundFrame(TagModule.Radius + 1, "SquircleGlass", {
+			Size = UDim2.new(1, 1, 1, 1),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			ThemeTag = {
+				ImageColor3 = "White",
+			},
+			ImageTransparency = 0.75,
+		}),
+		New("Frame", {
+			Size = UDim2.new(0, 0, 1, 0),
+			AutomaticSize = "X",
+			Name = "Content",
+			BackgroundTransparency = 1,
+		}, {
+			TagIcon,
+			TagTitle,
+			New("UIPadding", {
+				PaddingLeft = UDim.new(0, TagModule.Padding),
+				PaddingRight = UDim.new(0, TagModule.Padding),
+			}),
+			New("UIListLayout", {
+				FillDirection = "Horizontal",
+				VerticalAlignment = "Center",
+				Padding = UDim.new(0, TagModule.Padding / 1.5),
+			}),
+		}),
+	})
+
+	function TagModule:SetTitle(text)
+		TagModule.Title = text
+		TagTitle.Text = text
+
+		return TagModule
+	end
+
+	function TagModule:SetColor(color)
+		TagModule.Color = color
+		if typeof(color) == "table" then
+			local avgColor = Creator.GetAverageColor(color)
+			Tween(TagTitle, 0.06, { TextColor3 = Creator.GetTextColorForHSB(avgColor) }):Play()
+			local gradient = TagFrame:FindFirstChildOfClass("UIGradient") or New("UIGradient", { Parent = TagFrame })
+			for k, v in next, color do
+				gradient[k] = v
+			end
+			Tween(TagFrame, 0.06, { ImageColor3 = Color3.new(1, 1, 1) }):Play()
+		else
+			if BackgroundGradient then
+				BackgroundGradient:Destroy()
+			end
+			Tween(TagTitle, 0.06, { TextColor3 = Creator.GetTextColorForHSB(color) }):Play()
+			if TagIcon then
+				Tween(TagIcon.ImageLabel, 0.06, { ImageColor3 = Creator.GetTextColorForHSB(color) }):Play()
+			end
+			Tween(TagFrame, 0.06, { ImageColor3 = color }):Play()
+		end
+
+		return TagModule
+	end
+
+	function TagModule:SetIcon(icon)
+		TagModule.Icon = icon
+
+		if TagIcon then
+			TagIcon:Destroy()
+			TagIcon = nil
+		end
+
+		if icon then
+			TagIcon = Creator.Image(icon, icon, 0, TagConfig.Window, "Tag", false)
+
+			TagIcon.Size = UDim2.new(0, TagModule.IconSize, 0, TagModule.IconSize)
+			TagIcon.Parent = TagFrame:FindFirstChild("Content")
+
+			if typeof(TagModule.Color) == "Color3" then
+				TagIcon.ImageLabel.ImageColor3 = Creator.GetTextColorForHSB(TagModule.Color)
+			elseif typeof(TagModule.Color) == "table" then
+				TagIcon.ImageLabel.ImageColor3 = Creator.GetTextColorForHSB(Creator.GetAverageColor(BackgroundGradient))
+			end
+		end
+		return TagModule
+	end
+
+	function TagModule:Destroy()
+		TagFrame:Destroy()
+		return TagModule
+	end
+
+	Creator:OnThemeChange(function(NewTheme, OldTheme)
+		TagTitle.TextColor3 = Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme))
+		TagIcon.ImageLabel.ImageColor3 =
+			Creator.GetTextColorForHSB(Creator.GetThemeProperty(TagModule.Color, Creator.Theme))
+	end)
+
+	return TagModule
 end
+
 return Tag
