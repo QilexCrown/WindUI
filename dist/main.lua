@@ -1,4 +1,4 @@
--- Bundled WindUI fork: src/Init.lua (modules: 73)
+-- Bundled WindUI fork: src/Init.lua (modules: 75)
 local __modules = {}
 local __cache = {}
 local function __require(id)
@@ -417,6 +417,10 @@ end
 
 function WindUI:InfoFeedback(Config)
 	return require("src/components/InfoCard.lua").Feedback(Config)
+end
+
+function WindUI:SetEffects(Options)
+	Creator.SetEffects(Options)
 end
 
 function WindUI:InfoCard(Config)
@@ -27316,8 +27320,17 @@ function Creator.New(Name, Properties, Children)
 	return Object
 end
 
+local MotionController = require("src/modules/Motion.lua").New(TweenService, function(duration, style, direction, ...) return TweenInfo.new(duration, style or Enum.EasingStyle.Quint, direction or Enum.EasingDirection.Out, ...) end)
+local GlassMaterial = require("src/modules/Glass.lua")
+function Creator.SetEffects(options)
+    options = options or {}
+    if options.ReducedMotion ~= nil then MotionController.ReducedMotion = options.ReducedMotion == true end
+    if options.Animations ~= nil then MotionController.Enabled = options.Animations ~= false end
+    if options.Glass ~= nil then GlassMaterial.SetEnabled(options.Glass) end
+end
+function Creator.GetActiveAnimations() return MotionController:GetActiveCount() end
 function Creator.Tween(Object, Time, Properties, ...)
-	return TweenService:Create(Object, TweenInfo.new(Time, ...), Properties)
+    return MotionController:Create(Object, Time, Properties, ...)
 end
 
 --[[function Creator.NewRoundFrame(Radius, Type, Properties, Children, isButton, ReturnTable)
@@ -27392,7 +27405,9 @@ end
 end]]
 
 function Creator.NewRoundFrame(Radius, Type, Properties, Children, IsButton, ReturnTable)
-	return DynamicShapeModule:New(Radius, Type, Properties, Children, IsButton, nil)
+	local frame, wrapper = DynamicShapeModule:New(Radius, Type, Properties, Children, IsButton, nil)
+	GlassMaterial.Apply(Creator, frame, Radius, Type, Properties)
+	return frame, wrapper
 end
 
 local New = Creator.New
@@ -37120,6 +37135,137 @@ end
 return DynamicShapeModule
 end
 
+__modules["src/modules/Motion.lua"] = function(require)
+local Motion = {}
+
+function Motion.New(service, makeInfo)
+    local self = {ReducedMotion = false, Enabled = true}
+    local states = setmetatable({}, {__mode = 'k'})
+    local dead = setmetatable({}, {__mode = 'k'})
+    local count = 0
+    function self:GetActiveCount() return count end
+    function self:Create(object, duration, properties, ...)
+        local info
+        if self.ReducedMotion or not self.Enabled then info = makeInfo(0) else info = makeInfo(duration, ...) end
+        local native = service:Create(object, info, properties)
+        local proxy, owned, completed, destroyed = {}, false, nil, false
+        local generation = 0
+        local function release()
+            if not owned then return end
+            owned = false
+            count = count - 1
+            if completed then completed:Disconnect(); completed = nil end
+            local state = states[object]
+            if not state then return end
+            state.tweens[proxy] = nil
+            for property in pairs(properties) do
+                if state.channels[property] == proxy then state.channels[property] = nil end
+            end
+            if not next(state.tweens) then
+                if state.destroying then state.destroying:Disconnect() end
+                states[object] = nil
+            end
+        end
+        function proxy:Play()
+            if destroyed or dead[object] then return end
+            local playback = tostring(native.PlaybackState):match('([^%.]+)$')
+            if owned and (playback == 'Completed' or playback == 'Cancelled') then release() end
+            if not owned then
+                local state = states[object]
+                if not state then
+                    state = {channels = {}, tweens = {}}
+                    states[object] = state
+                    if object.Destroying then
+                        state.destroying = object.Destroying:Connect(function()
+                            dead[object] = true
+                            local pending = {}
+                            for tween in pairs(state.tweens) do pending[#pending + 1] = tween end
+                            for _, tween in ipairs(pending) do tween:Cancel() end
+                        end)
+                    end
+                end
+                local conflicts = {}
+                for property in pairs(properties) do
+                    local previous = state.channels[property]
+                    if previous and previous ~= proxy then conflicts[previous] = true end
+                end
+                -- Claim the new channels first so cancelling the final previous
+                -- tween cannot tear down the object state underneath us.
+                owned = true
+                count = count + 1
+                state.tweens[proxy] = true
+                for property in pairs(properties) do state.channels[property] = proxy end
+                generation = generation + 1
+                local playingGeneration = generation
+                completed = native.Completed:Connect(function()
+                    local state = tostring(native.PlaybackState):match('([^%.]+)$')
+                    if generation == playingGeneration and state ~= 'Playing' and state ~= 'Delayed' then release() end
+                end)
+                for previous in pairs(conflicts) do previous:Cancel() end
+            end
+            if owned and not destroyed and not dead[object] then native:Play() end
+        end
+        function proxy:Cancel() if not destroyed then release(); native:Cancel() end end
+        function proxy:Pause() if not destroyed then native:Pause() end end
+        function proxy:Destroy()
+            if destroyed then return end
+            destroyed = true
+            release()
+            native:Cancel()
+            native:Destroy()
+        end
+        return setmetatable(proxy, {__index = function(_, key)
+            local value = native[key]
+            if type(value) == 'function' then return function(_, ...) return value(native, ...) end end
+            return value
+        end})
+    end
+    return self
+end
+
+return Motion
+
+end
+
+__modules["src/modules/Glass.lua"] = function(require)
+local Glass = {Enabled = true}
+local surfaces = setmetatable({}, {__mode = 'k'})
+local roles = {ElementBackground = true, Button = true, Background = true,
+    WindowBackground = true, TabBackground = true, Text = true}
+
+function Glass.SetEnabled(enabled)
+    Glass.Enabled = enabled ~= false
+    for frame, overlay in pairs(surfaces) do
+        if frame.Parent and overlay.Parent then overlay.Visible = Glass.Enabled end
+    end
+end
+
+function Glass.Apply(creator, frame, radius, shape, properties)
+    if shape ~= 'Squircle' or surfaces[frame] then return end
+    local tags = properties and properties.ThemeTag
+    if not tags or not roles[tags.ImageColor3] then return end
+    if type(properties.ImageTransparency) == 'number' and properties.ImageTransparency >= 0.98 then return end
+    if frame:FindFirstChildOfClass('UIListLayout') or frame:FindFirstChildOfClass('UIGridLayout') then return end
+    -- One static image and gradient per visible semantic surface. No blur,
+    -- pointer tracking, heartbeat task, or extra hover connection is needed.
+    local overlay = creator.NewRoundFrame(radius, 'SquircleGlass', {
+        Parent = frame, Name = 'LiquidGlass', Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1, ImageTransparency = 0.85, Active = false,
+        ZIndex = frame.ZIndex, Visible = Glass.Enabled, ThemeTag = {ImageColor3 = 'White'},
+    })
+    creator.New('UIGradient', {Parent = overlay, Rotation = 115,
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.12),
+            NumberSequenceKeypoint.new(0.46, 0.92),
+            NumberSequenceKeypoint.new(1, 0.55),
+        })})
+    surfaces[frame] = overlay
+end
+
+return Glass
+
+end
+
 __modules["src/components/InfoCardLayout.lua"] = function(require)
 local Layout = {}
 
@@ -37367,5 +37513,5 @@ return InfoCard
 
 end
 
--- enderhub-windui-mac-chrome43-info
+-- enderhub-windui-mac-chrome44-glass
 return __require("src/Init.lua")

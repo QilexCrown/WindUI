@@ -50,3 +50,26 @@ callbacks; they do not start network requests or telemetry.
 component sources. `npm run build:upstream` retains the original upstream build.
 Run `lua tests/InfoCard.lua` to check resizing, actions and cleanup. CI checks the
 committed release for reproducibility and does not create bot commits.
+
+## Liquid glass and motion
+
+Visible element surfaces share a restrained squircle glass highlight. Existing
+control layouts, colors and explicit animation curves remain supported. Default
+transitions use Quint/Out easing; conflicting animations cancel when a replacement
+plays, while independent property channels remain active. Idle effects use no
+per-control heartbeat or cursor-tracking loop.
+
+```lua
+WindUI:SetEffects({Glass = true, Animations = true, ReducedMotion = false})
+WindUI:SetEffects({Glass = false, ReducedMotion = true}) -- lightweight mode
+print(WindUI.Creator.GetActiveAnimations())
+```
+
+Reduced motion removes transition delays and repetitions as well as duration.
+Disabling glass hides the static highlight layers. Run `lua tests/Motion.lua`,
+`lua tests/Glass.lua`, and `lua tests/InfoCard.lua` for lifecycle and control checks.
+These are bounded behavior checks, not a guarantee of a particular frame rate on
+all devices. Existing game, executor and application workloads still affect FPS.
+
+Rollback baseline: commit `37cba3a` on `backup/pre-liquid-glass-20261119`. Ask to undo
+and the feature commits can be reverted while preserving unrelated later work.
